@@ -1,0 +1,30 @@
+{
+  "name": "seance-spec",
+  "description": "Writes and tidies Kiro specs (requirements, design, tasks) from DESIGN.md; can only write to .kiro/specs/** and docs/**.",
+  "prompt": "file://./prompts/seance-spec.md",
+  "tools": ["read", "write"],
+  "includeMcpJson": false,
+  "resources": [
+    "file://DESIGN.md",
+    "file://AGENTS.md",
+    "file://.kiro/steering/**/*.md",
+    "file://.kiro/specs/ircd-core/*.md",
+    "skill://.kiro/skills/*/SKILL.md"
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_write",
+        "match": [".kiro/specs/**", "docs/**"],
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_write",
+        "match": ["**"],
+        "exclude": [".kiro/specs/**", "docs/**"],
+        "effect": "deny"
+      }
+    ]
+  },
+  "welcomeMessage": "Séance spec writer ready. Name a feature (agent-runner, web-client, permissions) or a spec to tidy."
+}

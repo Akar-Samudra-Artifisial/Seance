@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "guard-shell",
+      "description": "Block destructive or secret-leaking shell commands: rm -rf outside node_modules/dist/.turbo, git push --force, git reset --hard, git clean -f, curl | sh, paths outside the repo, printing .env or other secret files.",
+      "trigger": "PreToolUse",
+      "matcher": "shell",
+      "action": {
+        "type": "command",
+        "command": "node .kiro/hooks/scripts/guard-shell.mjs"
+      },
+      "timeout": 10
+    }
+  ]
+}

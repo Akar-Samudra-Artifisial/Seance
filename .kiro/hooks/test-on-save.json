@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "test-on-save",
+      "description": "Run the irc-protocol unit and property tests whenever the agent saves a TypeScript file in packages/irc-protocol.",
+      "trigger": "PostFileSave",
+      "matcher": "packages/irc-protocol/.*\\.ts$",
+      "action": {
+        "type": "command",
+        "command": "pnpm --filter @seance/irc-protocol test"
+      },
+      "timeout": 180
+    }
+  ]
+}

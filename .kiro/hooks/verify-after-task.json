@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "verify-after-task",
+      "description": "After each spec task completes, typecheck and test the whole monorepo so a task is never marked done on a red build.",
+      "trigger": "PostTaskExec",
+      "action": {
+        "type": "command",
+        "command": "pnpm typecheck && pnpm test"
+      },
+      "timeout": 600
+    }
+  ]
+}
