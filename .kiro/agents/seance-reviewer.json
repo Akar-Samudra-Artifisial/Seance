@@ -1,0 +1,34 @@
+{
+  "name": "seance-reviewer",
+  "description": "Read-only Séance reviewer: checks quality, security and spec conformance; shell limited to test, typecheck, lint and read-only git.",
+  "prompt": "file://./prompts/seance-reviewer.md",
+  "tools": ["read", "shell"],
+  "includeMcpJson": false,
+  "resources": [
+    "file://DESIGN.md",
+    "file://AGENTS.md",
+    "file://.kiro/steering/**/*.md",
+    "skill://.kiro/skills/*/SKILL.md"
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_write",
+        "match": ["**"],
+        "effect": "deny"
+      },
+      {
+        "capability": "shell",
+        "match": ["pnpm typecheck*", "pnpm test*", "pnpm lint*", "pnpm --filter * test*", "pnpm --filter * typecheck*", "pnpm --filter * lint*", "git diff*", "git status*", "git log*", "git show*"],
+        "effect": "allow"
+      },
+      {
+        "capability": "shell",
+        "match": ["*"],
+        "exclude": ["pnpm typecheck*", "pnpm test*", "pnpm lint*", "pnpm --filter * test*", "pnpm --filter * typecheck*", "pnpm --filter * lint*", "git diff*", "git status*", "git log*", "git show*"],
+        "effect": "deny"
+      }
+    ]
+  },
+  "welcomeMessage": "Séance reviewer ready. I review the current diff (or a range you name) against the spec, steering and security rules."
+}

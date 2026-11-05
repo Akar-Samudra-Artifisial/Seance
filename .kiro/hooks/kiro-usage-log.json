@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "kiro-usage-log",
+      "description": "At the end of each agent turn, append one short entry to docs/KIRO_USAGE.md describing which Kiro features were used. Raw material for the Kiroween write-up.",
+      "trigger": "Stop",
+      "action": {
+        "type": "agent",
+        "prompt": "Housekeeping for the Kiroween write-up. Look only at the turn that just finished. If it changed nothing in the repository, only answered a question, or only edited docs/KIRO_USAGE.md, do nothing and reply exactly 'usage log: skipped'. Otherwise append ONE entry to the '## Log' section of docs/KIRO_USAGE.md (newest at the bottom), following the entry template at the top of that file: '### YYYY-MM-DD — <short title>' (today's date), then three bullets: 'Kiro features:' (choose from spec, hook, steering, agent, MCP, skill, PBT, and name the specific file, e.g. spec ircd-core task 2.1, hook guard-shell), 'Produced:' (files or behavior created, one line), 'Notes:' (anything notable for judges, e.g. a hook blocked a command, a property test found a bug; write 'none' otherwise). Keep the entry under 6 lines, do not rewrite or reorder existing entries, do not touch any other file, and do not run shell commands."
+      }
+    }
+  ]
+}

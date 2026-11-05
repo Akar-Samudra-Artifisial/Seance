@@ -15,10 +15,13 @@ packages/
   irc-protocol/    @seance/irc-protocol  IrcMessage type, parser, serializer, numerics (no I/O)
   db/              @seance/db            Prisma schema + client
 .kiro/
-  steering/        Always-on guidance (this folder)
+  steering/        Guidance: always-on (product, tech, structure, security) + fileMatch per area
   specs/           Feature specs: requirements.md, design.md, tasks.md
-  hooks/           PreToolUse hooks (deny-list)
-  agents/          Kiro agent definitions (coder, reviewer, researcher, chanserv)
+  hooks/           guard-shell (PreToolUse deny-list), test-on-save, verify-after-task, kiro-usage-log
+  agents/          Development agents: seance-dev, seance-reviewer, seance-spec (prompts/ holds their prompts)
+  skills/          On-demand references: irc-rfc2812, acp-runner, kiroween-submission
+  settings/        mcp.json (Playwright, Context7)
+docs/              KIRO_USAGE.md (Kiro usage log for the write-up)
 workspaces/        Per-channel git worktrees (git-ignored, created at runtime)
 DESIGN.md          Source of truth for product design
 ```

@@ -1,0 +1,46 @@
+{
+  "name": "seance-dev",
+  "description": "Default Séance implementation agent: works through .kiro/specs tasks with read/write/shell, guarded against destructive commands.",
+  "prompt": "file://./prompts/seance-dev.md",
+  "tools": ["read", "write", "shell", "@mcp"],
+  "includeMcpJson": true,
+  "resources": [
+    "file://DESIGN.md",
+    "file://AGENTS.md",
+    "file://.kiro/steering/**/*.md",
+    "skill://.kiro/skills/*/SKILL.md"
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_write",
+        "match": ["apps/**", "packages/**", "spikes/**", "docs/**", ".kiro/specs/**", "pnpm-lock.yaml"],
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_write",
+        "match": ["**/.env*"],
+        "exclude": ["**/.env.example"],
+        "effect": "deny"
+      },
+      {
+        "capability": "shell",
+        "match": ["pnpm *", "node *", "git status*", "git diff*", "git log*", "git show*", "git add *", "git commit *", "git stash*", "ls*", "pwd"],
+        "exclude": ["pnpm publish*", "pnpm dlx *"],
+        "effect": "allow"
+      },
+      {
+        "capability": "shell",
+        "match": ["git push*", "pnpm publish*", "npm publish*", "pnpm dlx *", "npx *"],
+        "exclude": ["git push --force*", "git push -f*"],
+        "effect": "ask"
+      },
+      {
+        "capability": "shell",
+        "match": ["rm -rf /*", "rm -rf ~*", "rm -rf ..*", "sudo *", "git push --force*", "git push -f*", "git reset --hard*", "git clean -f*", "curl * | sh*", "curl * | bash*", "wget * | sh*", "cat .env*", "printenv*"],
+        "effect": "deny"
+      }
+    ]
+  },
+  "welcomeMessage": "Séance dev agent ready. Name a spec task (e.g. ircd-core task 1) or describe the change."
+}
