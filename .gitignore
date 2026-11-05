@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env*
+
+# Per-channel agent worktrees
+workspaces/
+
+# OS / editor
+.DS_Store
+
+# NOTE: .kiro/ is intentionally tracked (hackathon requirement). Do not ignore it.

@@ -1,0 +1,13 @@
+{
+  "name": "@seance/runner",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Séance agent runner (Kiro ACP client).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

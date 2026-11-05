@@ -1,0 +1,12 @@
+{
+  "name": "@seance/spike-acp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Spike: drive `kiro-cli acp` (Agent Client Protocol) from Node.js.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "spike": "node src/spike.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

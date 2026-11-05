@@ -1,0 +1,11 @@
+{
+  "name": "spike",
+  "description": "Minimal agent for the Séance ACP spike",
+  "prompt": "You are a terse assistant used in an automated test. Follow instructions exactly and keep replies short.",
+  "mcpServers": {},
+  "tools": ["read", "write", "shell"],
+  "allowedTools": [],
+  "resources": [],
+  "includeMcpJson": false,
+  "model": "claude-haiku-5.5"
+}
