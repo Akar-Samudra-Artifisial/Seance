@@ -1,0 +1,8 @@
+{
+  "name": "@seance/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Séance database access (Prisma + Postgres). Schema is added in M2.",
+  "license": "MIT",
+  "type": "module"
+}
