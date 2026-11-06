@@ -102,6 +102,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: `.kiro/specs/ircd-agent-commands/tasks.md` with 16 tasks, 4 checkpoints and a 9-wave Task Dependency Graph
 - Notes: each handler registers its command as it lands so tests run through the real server; the final checkpoint runs `pnpm typecheck && pnpm test`.
 
+### 2026-11-06 — Bugfix ircd-agent-commands-fixes: six review findings
+- Kiro features: spec (`ircd-agent-commands-fixes` bugfix/design/tasks), agent (seance-dev), PBT (P1 invited-set invariant, P2 WHOIS 318, P3 AWAY, P4 preservation), steering (testing, irc-protocol)
+- Produced: invited-set cleanup on PART/KICK/QUIT/NICK with a 100-entry cap, validated and capped `whoisExtra` with a guaranteed 318, trimmed AWAY, `targetKey`/`targetOnline` plus 301 on INVITE, shared reply helpers, ECONNRESET/EPIPE logged at debug (482 ircd tests pass)
+- Notes: 43 exploration tests failed first on unfixed code; the old P3 away model counted " " as away, which was the bug; `pnpm --filter … test -- --run <file>` runs the whole package, so single files use `exec vitest run`.
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.

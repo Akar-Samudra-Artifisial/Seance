@@ -3,7 +3,7 @@ import type { IrcMessage } from "@seance/irc-protocol";
 import type { Client } from "./client.js";
 import type { CommandRouter, DispatchOutcome, RouterContext } from "./command-router.js";
 import { quitClient } from "./handlers/quit.js";
-import { AWAYLEN, clampBytes, stripControl } from "./text-limits.js";
+import { normalizeAway } from "./text-limits.js";
 
 /**
  * In-process client used by agents (Req 12). It registers with the
@@ -86,7 +86,7 @@ class VirtualClientImpl implements VirtualClient {
   }
 
   setAway(text?: string): void {
-    const clean = text === undefined ? "" : clampBytes(stripControl(text), AWAYLEN);
+    const clean = normalizeAway(text);
     if (clean === "") {
       delete this.away;
     } else {

@@ -6,6 +6,7 @@ import { normalizeHost } from "./host.js";
 import { ConnectionGate, DEFAULT_LIMITS } from "./limits.js";
 import type { SessionLimits } from "./limits.js";
 import { ConnectionSession } from "./network-client.js";
+import { logSocketError } from "./socket-errors.js";
 
 export const DEFAULT_TCP_PORT = 6667;
 
@@ -84,10 +85,7 @@ export class TcpTransport {
     );
     socket.on("data", (chunk: Buffer) => session.receive(chunk));
     socket.on("error", (error) => {
-      this.ctx.logger.error(
-        { clientId: session.client.id, error },
-        `TCP socket error for ${session.client.id}: ${error.message}`,
-      );
+      logSocketError(this.ctx.logger, "TCP socket", session.client.id, error);
       socket.destroy();
     });
     socket.on("close", () => {

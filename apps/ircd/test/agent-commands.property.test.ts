@@ -86,7 +86,7 @@ describe("ircd-agent-commands properties", () => {
           agent.dispatch({ command: "AWAY", params: text === undefined ? [] : [text] });
         }
         const last = sequence[sequence.length - 1];
-        const expectAway = last !== undefined && last.length > 0;
+        const expectAway = last !== undefined && last.trim().length > 0; // blank text clears away (fixes Req 2.9)
 
         const seen = inbox.get("o") ?? [];
         seen.length = 0;

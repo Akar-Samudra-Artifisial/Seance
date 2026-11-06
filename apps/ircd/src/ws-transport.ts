@@ -9,6 +9,7 @@ import { ConnectionGate, DEFAULT_LIMITS } from "./limits.js";
 import type { SessionLimits } from "./limits.js";
 import { ConnectionSession } from "./network-client.js";
 import { isOriginAllowed } from "./origin.js";
+import { logSocketError } from "./socket-errors.js";
 
 export const DEFAULT_WS_PORT = 6668;
 
@@ -127,10 +128,7 @@ export class WsTransport {
       session.receive(text);
     });
     socket.on("error", (error) => {
-      this.ctx.logger.error(
-        { clientId: session.client.id, error },
-        `WebSocket error for ${session.client.id}: ${error.message}`,
-      );
+      logSocketError(this.ctx.logger, "WebSocket", session.client.id, error);
       socket.terminate();
     });
     socket.on("close", () => {

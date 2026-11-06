@@ -19,6 +19,10 @@ const logger: RouterLogger = {
   error(fields, message) {
     console.error(message, redact(fields));
   },
+  debug(fields, message) {
+    // Opt-in: only IRCD_DEBUG=1 enables debug output.
+    if (process.env["IRCD_DEBUG"] === "1") console.debug(message, redact(fields));
+  },
 };
 
 async function main(): Promise<void> {

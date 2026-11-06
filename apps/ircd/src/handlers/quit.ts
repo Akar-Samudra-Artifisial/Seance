@@ -45,7 +45,7 @@ export function quitClient(ctx: RouterContext, client: Client, reason: string): 
     logFailure(ctx, client, "broadcast", error);
   }
   try {
-    ctx.channels.removeClient(client.id); // deletes empty channels (Req 11.3)
+    ctx.channels.removeClient(client.id, client.nick); // deletes empty channels (Req 11.3)
   } catch (error) {
     logFailure(ctx, client, "channel removal", error);
   }

@@ -8,6 +8,8 @@ import type { EventBus } from "./event-bus.js";
 /** Minimal structured logger; never pass message params or secrets. */
 export interface RouterLogger {
   error(fields: Readonly<Record<string, unknown>>, message: string): void;
+  /** Optional diagnostics; a logger without it simply drops debug lines. */
+  debug?(fields: Readonly<Record<string, unknown>>, message: string): void;
 }
 
 /**

@@ -52,3 +52,12 @@ export function clampTrailing(
   const budget = MAX_LINE_BYTES - 2 - 2 - Buffer.byteLength(head, "utf8");
   return clampBytes(text, Math.max(0, budget));
 }
+
+/**
+ * Cleaned AWAY text: control chars replaced, trimmed, clamped to AWAYLEN, no
+ * trailing space. `""` means "not away".
+ */
+export function normalizeAway(text: string | undefined): string {
+  if (text === undefined) return "";
+  return clampBytes(stripControl(text).trim(), AWAYLEN).trimEnd();
+}

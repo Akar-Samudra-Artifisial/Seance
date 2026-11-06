@@ -67,7 +67,7 @@ describe("INVITE success path (Req 5.1-5.3)", () => {
     expect(tOut[0]?.prefix).toBe(`Op!user@${s.server.ctx.serverName}`);
     expect(tOut[0]?.params).toEqual(["tina", "#Room"]);
 
-    expect(s.events).toEqual([{ channel: "#Room", inviter: "Op", target: "tina", ts: NOW_MS }]);
+    expect(s.events).toEqual([{ channel: "#Room", inviter: "Op", target: "tina", targetKey: "tina", targetOnline: true, ts: NOW_MS }]);
     expect(s.server.ctx.channels.isInvited("#Room", "tina")).toBe(true);
   });
 });
@@ -251,7 +251,7 @@ describe("InviteResolver (Req 6)", () => {
     expect(s.msgs("o")[0]?.params).toEqual(["Op", "coder", "#Room"]);
     expect(s.msgs("b")).toHaveLength(0);
     void bystander;
-    expect(s.events).toEqual([{ channel: "#Room", inviter: "Op", target: "coder", ts: NOW_MS }]);
+    expect(s.events).toEqual([{ channel: "#Room", inviter: "Op", target: "coder", targetKey: "coder", targetOnline: false, ts: NOW_MS }]);
     expect(s.server.ctx.channels.isInvited("#Room", "coder")).toBe(true);
   });
 
