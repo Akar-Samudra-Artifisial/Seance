@@ -1,0 +1,461 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "0.1 Verify how `kiro-cli acp --agent <name>` resolves agent files when the process cwd differs from the session cwd": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977717905
+      },
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977732006
+      },
+      {
+        "executionId": "e939a677-209d-4538-a81b-df9abeab2a88",
+        "chatSessionId": "sess_1649d92b-9f65-4412-8bf3-deaa56d9476d",
+        "timestamp": 1793977775427
+      },
+      {
+        "executionId": "e939a677-209d-4538-a81b-df9abeab2a88",
+        "chatSessionId": "sess_1649d92b-9f65-4412-8bf3-deaa56d9476d",
+        "timestamp": 1793978315706
+      }
+    ],
+    "1.1 Set up the package, scripts and turbo wiring": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718144
+      }
+    ],
+    "1.2 Add ports, clock and logger": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718244
+      }
+    ],
+    "1.3 Implement `loadRunnerConfig(env)` and `ConfigError`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718309
+      }
+    ],
+    "2.1 Implement `parseProfile` and `AgentRegistry.load`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718374
+      }
+    ],
+    "2.2 Add the three committed profiles": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718432
+      }
+    ],
+    "3.1 Promote `redact()` and add value redaction": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718476
+      }
+    ],
+    "3.2 Implement `parseFrame(line)` and encode helpers": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718528
+      }
+    ],
+    "3.5 Implement `AcpClient`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718581
+      }
+    ],
+    "4.1 Implement the Fake_Agent": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718681
+      }
+    ],
+    "4.2 Add shared fixtures": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718745
+      }
+    ],
+    "5.1 Define the `AgentHarness` interface and `buildSpawnSpec`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718861
+      }
+    ],
+    "5.2 Implement `AcpHarness`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977718944
+      }
+    ],
+    "5.3 Add the hung-agent watchdog to `AcpHarness`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719028
+      }
+    ],
+    "5.4 Implement `HeadlessHarness`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719093
+      }
+    ],
+    "5.5 Add the in-process `FakeHarness` fixture": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719225
+      }
+    ],
+    "6. Checkpoint - harness and fixtures": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719278
+      }
+    ],
+    "7.1 Implement `sanitizeChannel` and `confine`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719332
+      }
+    ],
+    "7.3 Implement git runner and `WorktreeManager`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719396
+      }
+    ],
+    "8.1 Implement `transition()` and the session types": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719457
+      }
+    ],
+    "9.1 Implement `WhoisSnapshot`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719512
+      }
+    ],
+    "9.2 Implement `SessionStore` and the in-memory store": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719564
+      }
+    ],
+    "9.3 Implement `Session` (effects runner)": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719629
+      }
+    ],
+    "10.1 Implement untrusted wrapping and prompt builders": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719707
+      }
+    ],
+    "10.2 Implement `ChannelLog`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719764
+      }
+    ],
+    "11.1 Implement `formatLines`, `budgetFor` and `SentenceBuffer`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719826
+      }
+    ],
+    "11.2 Implement `AgentOutput`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719875
+      }
+    ],
+    "11.3 Wire output into `Session`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719928
+      }
+    ],
+    "12.1 Implement `decide` and the deny list": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977719977
+      }
+    ],
+    "12.2 Implement `canonicalise` and `handlePermissionRequest`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720078
+      }
+    ],
+    "13.1 Implement `acceptMetering` and `CreditAccumulator`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720129
+      }
+    ],
+    "13.3 Implement `CreditLedger`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720193
+      }
+    ],
+    "13.4 Implement `!reset-credits`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720248
+      }
+    ],
+    "13.5 Implement `renderWhois`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720310
+      }
+    ],
+    "14. Checkpoint - core components": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720371
+      }
+    ],
+    "15.1 Implement `SessionManager`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720429
+      }
+    ],
+    "16.1 Implement allow-list, ban list and resolver": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720482
+      }
+    ],
+    "16.2 Implement `InviteGate`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720543
+      }
+    ],
+    "16.5 Implement `InviteController`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720592
+      }
+    ],
+    "17.1 Implement `exorcise`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720660
+      }
+    ],
+    "17.2 Wire the Exorcism triggers": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977720863
+      }
+    ],
+    "17.3 Handle process exit and revival": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977721248
+      }
+    ],
+    "17.4 Handle hung agents": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977721542
+      }
+    ],
+    "18.1 Implement the shutdown sequence": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977721636
+      }
+    ],
+    "19.1 Implement `createRunner`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977721700
+      }
+    ],
+    "20. Checkpoint - runner library": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977721776
+      }
+    ],
+    "21.1 Publish `irc.message` from `deliverMessage`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977721840
+      }
+    ],
+    "21.2 Write the ircd test for `irc.message`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977721893
+      }
+    ],
+    "21.3 Add `runner-wiring.ts`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977721981
+      }
+    ],
+    "21.4 Wire the runner in `apps/ircd/src/index.ts`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722036
+      }
+    ],
+    "22.1 Add the integration fixture": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722093
+      }
+    ],
+    "22.2 Write `invite.integration.test.ts`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722152
+      }
+    ],
+    "22.3 Write `message-flow.integration.test.ts`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722217
+      }
+    ],
+    "22.4 Write `permissions.integration.test.ts`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722345
+      }
+    ],
+    "22.5 Write `exorcism.integration.test.ts`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722415
+      }
+    ],
+    "22.6 Write `hung-agent.integration.test.ts`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722461
+      }
+    ],
+    "22.7 Write `credits.integration.test.ts`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722505
+      }
+    ],
+    "22.8 Write `shutdown.integration.test.ts`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722549
+      }
+    ],
+    "23.1 Write `e2e.kiro.test.ts`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722604
+      }
+    ],
+    "24.1 Add the README section for runner environment variables": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722669
+      }
+    ],
+    "24.2 Write `docs/DEMO_AGENT_RUNNER.md`": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722722
+      }
+    ],
+    "25. Final checkpoint": [
+      {
+        "executionId": "77356cf1-87da-4fc4-be7c-87d0e39f3a4a",
+        "chatSessionId": "sess_2524fff7-f8bb-45fb-be96-b6cd3e6816ba",
+        "timestamp": 1793977722790
+      }
+    ],
+    "0. Task 0: spike on agent file resolution (blocks every other task)": [
+      {
+        "executionId": "e939a677-209d-4538-a81b-df9abeab2a88",
+        "chatSessionId": "sess_1649d92b-9f65-4412-8bf3-deaa56d9476d",
+        "timestamp": 1793978316217
+      }
+    ]
+  }
+}

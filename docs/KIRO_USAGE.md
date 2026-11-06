@@ -107,6 +107,31 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: invited-set cleanup on PART/KICK/QUIT/NICK with a 100-entry cap, validated and capped `whoisExtra` with a guaranteed 318, trimmed AWAY, `targetKey`/`targetOnline` plus 301 on INVITE, shared reply helpers, ECONNRESET/EPIPE logged at debug (482 ircd tests pass)
 - Notes: 43 exploration tests failed first on unfixed code; the old P3 away model counted " " as away, which was the bug; `pnpm --filter … test -- --run <file>` runs the whole package, so single files use `exec vitest run`.
 
+### 2026-11-06 — agent-runner requirements: invite hardening
+- Kiro features: spec agent-runner (requirements.md update via spec workflow sub-agent)
+- Produced: invite dedup + per-inviter rate limit (SEANCE_INVITE_RATE), SEANCE_INVITERS allow-list, synchronous snapshot-only whoisExtra; new glossary terms
+- Notes: none
+
+### 2026-11-06 — agent-runner requirements analysis
+- Kiro features: spec agent-runner (analyze requirements, requirements.md update)
+- Produced: Requirement 1.10 made unconditional (agent process cwd = agent definitions dir, worktree as session cwd); Requirement 9.9 exorcism leave message independent of worktree reset result
+- Notes: first two analysis calls aborted, third succeeded with 2 clarifying questions
+
+### 2026-11-06 — agent-runner design
+- Kiro features: spec agent-runner (design.md via spec workflow sub-agent), PBT properties P1–P12
+- Produced: .kiro/specs/agent-runner/design.md (architecture, ports, state machine, permission policy, fake ACP agent, traceability table)
+- Notes: design found the ircd never publishes irc.message and skips the InviteResolver for online targets; runner-side fallbacks recorded as D1–D10
+
+### 2026-11-06 — agent-runner tasks
+- Kiro features: spec agent-runner (tasks.md via spec workflow sub-agent), PBT tasks for P1–P12, Task Dependency Graph
+- Produced: .kiro/specs/agent-runner/tasks.md (26 top-level tasks, Task 0 spike first, 14 dependency waves)
+- Notes: integration tests placed in apps/ircd/test/runner to avoid a package cycle; no lint script exists in the repo yet
+
+### 2026-11-06 — agent-runner task 0.1: agent file resolution spike
+- Kiro features: spec (agent-runner task 0.1), agent (spec-task-execution via the task orchestrator), ACP (`kiro-cli acp` spike S8)
+- Produced: `spikes/acp/src/s8-agent-resolution.ts`, `s8` script, and the "S8: agent file resolution" section in `spikes/acp/FINDINGS.md`
+- Notes: agent files resolve from the process cwd only; a missing file silently falls back to `kiro_default`, so the runner should check `modes.currentModeId`.
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.
@@ -138,3 +163,23 @@ Scope: how IRC modes govern agent capabilities across apps/ircd and apps/runner.
 Cover: +o = write files, git commit and shell inside the channel worktree; +v = speak only; no mode = listen only; +m default for agent channels; enforcement in the ACP session/request_permission handler (allow_once / reject_once) with path confinement to workspaces/<channel>; never --trust-all-tools; .kiro PreToolUse deny-list hooks for agent sessions; /ban; only human ops' messages become instructions, all other text wrapped in <untrusted>; agent output never executed; per-channel credit cap and credits.exceeded event; audit table entries for every mode change, kick, permission decision and blocked tool call; judge accounts via PASS and max 2 active agent channels.
 Include correctness properties (e.g. no write tool call is ever allowed for a non-op; every permission decision produces exactly one audit row) and tasks that reference requirement IDs.
 ```
+
+### 2026-11-06 — agent-runner spec update from FINDINGS S8 and new spike S9
+- Kiro features: spec agent-runner (requirements.md, design.md, tasks.md)
+- Produced: fail-closed agent resolution (startup file check 1.11, `currentModeId` check 2.15–2.16, Fake_Agent `modeId`, req 12.14, tests), spike task 0.2 (S9: steering/hooks in session cwd) with a conditional hooks-exclusion follow-up
+- Notes: none
+
+### 2026-11-06 — spike S9: workspace config from the ACP session cwd
+- Kiro features: `kiro-cli acp` driven by `spikes/acp/src/s9-session-cwd-config.ts` (6 Haiku prompts, `pnpm --filter @seance/spike-acp s9`); spec agent-runner updates
+- Produced: `spikes/acp/FINDINGS.md` section "S9: workspace config from the session cwd" (AGENTS.md and skills in the session cwd are loaded; steering, hooks and MCP were not), Requirement 4 criterion 12 with design and tasks 7.3/7.4 updates
+- Notes: hooks/MCP "not loaded" holds only for the tested hook format and profile settings
+
+### 2026-11-06 — S9 spike wired into spec agent-runner
+- Kiro features: spec agent-runner (task 0.2, requirement 4.12, design Worktrees step 4, tasks 7.3/7.4), skill acp-runner, hook guard-shell
+- Produced: `spikes/acp/src/s9-session-cwd-config.ts`, `s9` script, FINDINGS.md section S9; AGENTS.md and skills load from the session cwd, so worktrees exclude `/.kiro/` and `/AGENTS.md`
+- Notes: hook guard-shell blocked two shell commands (a `~/.kiro` mention and a temp script outside the repo)
+
+### 2026-11-06 — agent-runner hardening: protected paths, prompt gate, spike S10
+- Kiro features: spec agent-runner (requirements 4.12–4.14 and 8.14–8.16, design Worktrees steps 4–5 and P4, tasks 0.3, 7.3, 7.4, 9.3, 9.5, 12.1–12.4), hook guard-shell
+- Produced: `spikes/acp/src/s10-nested-config.ts` (`s10` script) and FINDINGS section S10; security tests 7.4, 9.5, 12.3, 12.4 made required
+- Notes: S10's mid-session AGENTS.md result is confounded (code present in the turn 1 prompt); guard-shell blocked a command reading the OS temp directory
