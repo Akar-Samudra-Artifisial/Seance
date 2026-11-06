@@ -1,0 +1,141 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "9.1 RF-P2/RF-P3: for any prefix, command and Unicode text, the serialized relayed line is at most 512 bytes including CRLF, the clamped text is a whole-code-point prefix of the input, and text that already fits is unchanged (`clamp(clamp(t)) == clamp(t)`)": [
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942176999
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942190431
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942744958
+      }
+    ],
+    "9.2 RF-P4: for any strings `a` and `b`, `safeEqual(a, b)` is true if and only if `a === b`": [
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942177056
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942190505
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942745213
+      }
+    ],
+    "9.3 RF-P5: for any `USER` input, registration succeeds if and only if the username and real name satisfy the documented rules": [
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942177099
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942192209
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942746170
+      }
+    ],
+    "9.4 RF-P7: for any sequence of arrivals, the token bucket never exceeds `floodBurst` at once, `ConnectionGate` never exceeds `maxConnections`, and queued bytes never exceed `maxWriteBufferBytes`": [
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942177145
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942192250
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942747139
+      }
+    ],
+    "9.5 RF-P8: `isOriginAllowed` accepts an `Origin` if and only if it is absent, listed (case-insensitive), or the list holds `*`": [
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942177204
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942192515
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942748124
+      }
+    ],
+    "9.6 RF-P1: for any number of `close()` calls on a virtual client, no keep-alive timer is scheduled and each peer sees exactly one `QUIT`": [
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942177294
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942749129
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942980813
+      }
+    ],
+    "9.7 RF-P6: after `close()`, a network client routes no further input and the wire is destroyed no later than the grace period unless it closed earlier": [
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942177338
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942749849
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942980849
+      }
+    ],
+    "10. Final checkpoint": [
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942177378
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793942989955
+      },
+      {
+        "executionId": "db53a82a-dc53-4808-be28-065c54626dc9",
+        "chatSessionId": "sess_706a10cc-e6eb-4991-9f0b-4d1045e92ff9",
+        "timestamp": 1793943347312
+      }
+    ]
+  }
+}
