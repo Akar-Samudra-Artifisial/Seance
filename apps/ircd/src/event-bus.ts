@@ -1,0 +1,101 @@
+import type { IrcMessage } from "@seance/irc-protocol";
+
+/** A channel `PRIVMSG`/`NOTICE` delivered to the channel. */
+export type IrcMessageEvent = {
+  readonly channel: string;
+  /** Nick of the sender. */
+  readonly from: string;
+  readonly message: IrcMessage;
+};
+
+/** A channel mode change (Req 9.10): channel, affected mode, target member. */
+export type IrcModeEvent = {
+  readonly channel: string;
+  /** Nick of the operator who made the change. */
+  readonly by: string;
+  /** Mode letter without sign: `o`, `v` or `m`. */
+  readonly mode: "o" | "v" | "m";
+  readonly adding: boolean;
+  /** Target nick for `o`/`v`; undefined for channel-wide modes such as `m`. */
+  readonly target?: string;
+};
+
+/** A kick (Req 10.4) so the agent runner can cancel the target's session. */
+export type IrcKickEvent = {
+  readonly channel: string;
+  readonly by: string;
+  readonly target: string;
+  readonly reason: string;
+};
+
+/** An accepted `INVITE` so the agent runner can react to invited agents. */
+export type IrcInviteEvent = {
+  readonly channel: string;
+  /** Nick of the inviting channel member. */
+  readonly inviter: string;
+  /** Nick of the invited user. */
+  readonly target: string;
+  /** Event time in epoch milliseconds, from the injectable clock. */
+  readonly ts: number;
+};
+
+export type EventMap = {
+  readonly "irc.invite": IrcInviteEvent;
+  readonly "irc.message": IrcMessageEvent;
+  readonly "irc.mode": IrcModeEvent;
+  readonly "irc.kick": IrcKickEvent;
+};
+
+export type EventName = keyof EventMap;
+export type Listener<K extends EventName> = (event: EventMap[K]) => void;
+export type Unsubscribe = () => void;
+
+/** Called when a listener throws; receives the event name and the error. */
+export type ListenerErrorHandler = (name: EventName, error: unknown) => void;
+
+const defaultErrorHandler: ListenerErrorHandler = (name, error) => {
+  console.error(`EventBus listener for "${name}" threw:`, error);
+};
+
+/**
+ * Typed in-process event bus. Listeners run synchronously in subscription
+ * order. A throwing listener never affects the publisher or other listeners;
+ * its error is reported to the error handler. Swappable for Redis pub/sub.
+ */
+export class EventBus {
+  private readonly listeners = new Map<EventName, Set<Listener<never>>>();
+
+  constructor(private readonly onError: ListenerErrorHandler = defaultErrorHandler) {}
+
+  /** Register a listener; the returned function removes it (idempotent). */
+  subscribe<K extends EventName>(name: K, listener: Listener<K>): Unsubscribe {
+    let set = this.listeners.get(name);
+    if (set === undefined) {
+      set = new Set();
+      this.listeners.set(name, set);
+    }
+    // Wrap so the same function subscribed twice yields independent entries.
+    const entry: Listener<K> = (event) => listener(event);
+    set.add(entry as Listener<never>);
+    return () => {
+      set.delete(entry as Listener<never>);
+    };
+  }
+
+  publish<K extends EventName>(name: K, event: EventMap[K]): void {
+    const set = this.listeners.get(name);
+    if (set === undefined) return;
+    // Snapshot so (un)subscribing during dispatch is safe.
+    for (const listener of [...set] as Listener<K>[]) {
+      try {
+        listener(event);
+      } catch (error) {
+        try {
+          this.onError(name, error);
+        } catch (handlerError) {
+          console.error("EventBus error handler threw:", handlerError);
+        }
+      }
+    }
+  }
+}

@@ -37,6 +37,71 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: complete `.kiro/` folder, `AGENTS.md`, this log
 - Notes: guard-shell blocks `rm -rf` outside build dirs, force-push, `git reset --hard`, `git clean -f`, `curl | sh`, paths outside the repo and printing secrets.
 
+### 2026-11-06 — ircd-core task 1.1: IrcMessage type and parse()
+- Kiro features: spec (ircd-core task 1.1), agent (spec-task-execution via the task orchestrator), hook (guard-shell)
+- Produced: `packages/irc-protocol/src/parse.ts` (RFC 2812 `parse()`, `ParseError` sentinel, `isParseError`) plus 20 unit tests in `test/parse.test.ts`
+- Notes: guard-shell blocked a `../../node_modules/.bin/tsc` path outside the package cwd; the agent reran from the repo root. All 21 tests pass.
+
+### 2026-11-06 — ircd-core task 1.2: serialize()
+- Kiro features: spec (ircd-core task 1.2), agent (spec-task-execution via the task orchestrator)
+- Produced: `packages/irc-protocol/src/serialize.ts` (`serialize()`: trailing-param colon rule, single CRLF, throws over 512 UTF-8 bytes) plus unit tests in `test/serialize.test.ts`
+- Notes: none
+
+### 2026-11-06 — ircd-core task 3.1: Client and ConnectionManager
+- Kiro features: spec (ircd-core task 3.1), agent (spec-task-execution via the task orchestrator)
+- Produced: `apps/ircd/src/client.ts` (Client interface) and `src/connection-manager.ts` (case-mapped nick index, registration state machine, `broadcastToPeers`) plus 11 unit tests in `test/connection-manager.test.ts`
+- Notes: none
+
+### 2026-11-06 — ircd-core task 4.1: PASS, NICK, USER handlers
+- Kiro features: spec (ircd-core task 4.1), agent (spec-task-execution via the task orchestrator)
+- Produced: `apps/ircd/src/handlers/registration.ts` (464/462/431/432/433 errors, rfc1459 nick-in-use check, `onRegistrationComplete` hook for 4.2) plus 9 tests in `test/registration.test.ts`
+- Notes: root `pnpm typecheck` timed out, so tsc and vitest ran per package (30 tests pass).
+
+### 2026-11-06 — ircd-core task 4.2: welcome burst and MOTD
+- Kiro features: spec (ircd-core task 4.2), agent (spec-task-execution via the task orchestrator)
+- Produced: welcome burst 001–005 then 375/372/376 in `onRegistrationComplete` (`apps/ircd/src/handlers/registration.ts`), optional `motd`/`createdAt` on `RouterContext`, 5 new tests in `test/registration.test.ts`
+- Notes: spec drift caught: tasks.md said 001–004 (Req 3.8) but requirements Req 3.9 requires 005, so 005 was added; root `pnpm typecheck` timed out, per-package runs pass (35 ircd + 56 protocol tests).
+
+### 2026-11-06 — ircd-core task 4.4: PING/PONG and keep-alive timers
+- Kiro features: spec (ircd-core task 4.4), agent (spec-task-execution via the task orchestrator)
+- Produced: `apps/ircd/src/handlers/keepalive.ts` (PING→PONG, 461 without token), idle PING and `Ping timeout` close timers in `ConnectionManager`, router `touch()` on every input, 7 fake-timer tests in `test/keepalive.test.ts`
+- Notes: turbo hung at "Finishing writing to cache..." after typecheck/test finished, so results were read from the background run; not yet wired into `src/index.ts` (task 8.4).
+
+### 2026-11-06 — ircd-core task 5: channel and messaging handlers
+- Kiro features: spec (ircd-core tasks 5.1–5.7), agent (spec-task-execution via the task orchestrator)
+- Produced: `apps/ircd/src/handlers/{join,part,privmsg,notice,topic,names,list}.ts`, shared `message.ts` delivery path, `names.ts` 353 splitter, `topic-reply.ts`, tests in `apps/ircd/test/` (96 ircd tests pass)
+- Notes: NOTICE reuses PRIVMSG delivery with all error replies suppressed; root `pnpm typecheck`/`test` timed out, so runs were per package; handlers not yet wired into `src/index.ts` (task 8.4).
+
+### 2026-11-06 — ircd-core task 9.1: VirtualClient
+- Kiro features: spec (ircd-core task 9.1), agent (spec-task-execution via the task orchestrator)
+- Produced: `apps/ircd/src/virtual-client.ts` (`dispatch()` through `CommandRouter` with `serialize()` boundary check, `onMessage()` subscription), `IrcServer.createVirtualClient()` in `src/server.ts`, tests in `test/virtual-client.test.ts` (117 ircd tests pass)
+- Notes: overlong/malformed agent messages are rejected before routing; root `pnpm typecheck`/`test` timed out, so runs were per package; parity test (9.2) still open.
+
+### 2026-11-06 — Spec ircd-review-fixes: seven review findings
+- Kiro features: spec (`ircd-review-fixes` requirements/design/tasks), steering (security, irc-protocol, testing), hook (guard-shell)
+- Produced: virtual-client keep-alive/close fix, byte-clamped relays + TOPICLEN/KICKLEN, timing-safe PASS, USER validation, final close, flood/connection/registration/write-buffer limits, WS Origin allow-list; 49 tests in `apps/ircd/test/review-fixes.test.ts`
+- Notes: guard-shell blocked a python heredoc and a `/tmp` write (outside repo); mutation check made 3 regression tests fail; root `pnpm typecheck`/`test` timed out, so runs were per package (166 ircd tests pass).
+
+### 2026-11-06 — ircd-review-fixes design.md format fix
+- Kiro features: spec (`ircd-review-fixes` design.md)
+- Produced: added Architecture, Components and Interfaces, Data Models, Correctness Properties, Error Handling and Testing Strategy sections to `.kiro/specs/ircd-review-fixes/design.md`
+- Notes: none
+
+### 2026-11-06 — Spec ircd-agent-commands: design
+- Kiro features: spec (`ircd-agent-commands` design.md), steering (irc-protocol, security, testing), PBT (properties P1–P6 planned)
+- Produced: `.kiro/specs/ircd-agent-commands/design.md` covering AWAY/WHOIS/INVITE handlers, the sync InviteResolver, `normalizeHost`, the `reflectedReply` clamp and `Wire.isDestroyed()`
+- Notes: the design was checked against the real `apps/ircd` source and found that `handleUser` drops the real name and that virtual clients had no injectable clock.
+
+### 2026-11-06 — agent-runner requirements spec
+- Kiro features: spec agent-runner (requirements-first workflow, requirements.md), requirement-detailer sub-agents refined all 12 requirements, PBT properties P1–P6 stated as FOR ALL criteria
+- Produced: .kiro/specs/agent-runner/requirements.md and .config.kiro (EARS, glossary, 12 requirements)
+- Notes: none
+
+### 2026-11-06 — Spec ircd-agent-commands: tasks
+- Kiro features: spec (`ircd-agent-commands` tasks.md), PBT (sub-tasks for properties P1–P6)
+- Produced: `.kiro/specs/ircd-agent-commands/tasks.md` with 16 tasks, 4 checkpoints and a 9-wave Task Dependency Graph
+- Notes: each handler registers its command as it lands so tests run through the real server; the final checkpoint runs `pnpm typecheck && pnpm test`.
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.
