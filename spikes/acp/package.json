@@ -7,6 +7,9 @@
   "type": "module",
   "scripts": {
     "spike": "node src/spike.ts",
+    "s8": "node src/s8-agent-resolution.ts",
+    "s9": "node src/s9-session-cwd-config.ts",
+    "s10": "node src/s10-nested-config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }
