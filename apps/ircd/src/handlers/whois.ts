@@ -10,11 +10,44 @@ import { clampTrailing, stripControl } from "../text-limits.js";
 /** Description sent in `312`. */
 const SERVER_INFO = "Séance IRC server";
 
-/** Build the `320` lines from `whoisExtra()`; a throwing callback is logged and skipped. */
+/** Most `320` lines sent per WHOIS. */
+export const WHOIS_EXTRA_MAX = 10;
+
+export interface SanitizedWhoisExtra {
+  readonly lines: readonly string[];
+  /** Human-readable problems; empty when `value` was a clean array of strings. */
+  readonly problems: readonly string[];
+}
+
+function describeType(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+/** Pure: never throws. Keeps string elements in order, then caps at {@link WHOIS_EXTRA_MAX}. */
+export function sanitizeWhoisExtra(value: unknown): SanitizedWhoisExtra {
+  if (!Array.isArray(value)) {
+    return {
+      lines: [],
+      problems: [`whoisExtra returned ${describeType(value)}, expected an array`],
+    };
+  }
+  const items: readonly unknown[] = value;
+  const strings = items.filter((item): item is string => typeof item === "string");
+  const skipped = items.length - strings.length;
+  return {
+    lines: strings.slice(0, WHOIS_EXTRA_MAX),
+    problems: skipped > 0 ? [`skipped ${skipped} non-string element(s)`] : [],
+  };
+}
+
+/** Build the `320` lines from `whoisExtra()`; bad output is logged and sanitized. */
 function extraLines(ctx: RouterContext, client: Client, target: Client): readonly string[] {
   if (target.whoisExtra === undefined) return [];
+  let value: unknown;
   try {
-    return target.whoisExtra();
+    value = target.whoisExtra();
   } catch (error) {
     ctx.logger.error(
       { command: "WHOIS", clientId: client.id, targetId: target.id, error },
@@ -22,6 +55,14 @@ function extraLines(ctx: RouterContext, client: Client, target: Client): readonl
     );
     return [];
   }
+  const { lines, problems } = sanitizeWhoisExtra(value);
+  if (problems.length > 0) {
+    ctx.logger.error(
+      { command: "WHOIS", clientId: client.id, targetId: target.id, valueType: describeType(value), problems },
+      `WHOIS extra info invalid: ${problems.join("; ")}`,
+    );
+  }
+  return lines;
 }
 
 /** Replies for a registered target, in Req 2.1 / 3.2 order. */
@@ -29,14 +70,13 @@ function buildWhoisReplies(
   ctx: RouterContext,
   to: Client,
   target: Client,
-): readonly IrcMessage[] {
+  out: IrcMessage[],
+): void {
   const me = to.nick ?? "*";
   const nick = target.nick ?? "*";
   const user = target.user ?? nick;
   const host = target.host ?? ctx.serverName;
   const server = ctx.serverName;
-  const out: IrcMessage[] = [];
-
   out.push({
     prefix: server,
     command: Numerics.RPL_WHOISUSER,
@@ -91,13 +131,6 @@ function buildWhoisReplies(
     command: Numerics.RPL_WHOISIDLE,
     params: [me, nick, String(idle), String(signon), "seconds idle, signon time"],
   });
-
-  out.push({
-    prefix: server,
-    command: Numerics.RPL_ENDOFWHOIS,
-    params: [me, nick, "End of /WHOIS list"],
-  });
-  return out;
 }
 
 /**
@@ -117,7 +150,23 @@ function handleWhois(ctx: RouterContext, client: Client, msg: IrcMessage): void 
     reflectedReply(ctx, client, Numerics.RPL_ENDOFWHOIS, [nick], "End of /WHOIS list");
     return;
   }
-  for (const reply of buildWhoisReplies(ctx, client, target)) client.send(reply);
+  const replies: IrcMessage[] = [];
+  try {
+    buildWhoisReplies(ctx, client, target, replies);
+  } catch (error) {
+    ctx.logger.error(
+      { command: "WHOIS", clientId: client.id, targetId: target.id, error },
+      `WHOIS reply build failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    // 318 is always last and sent exactly once, whatever happened above.
+    replies.push({
+      prefix: ctx.serverName,
+      command: Numerics.RPL_ENDOFWHOIS,
+      params: [client.nick ?? "*", target.nick ?? "*", "End of /WHOIS list"],
+    });
+  }
+  for (const reply of replies) client.send(reply);
 }
 
 /** Register WHOIS on the router. */

@@ -61,7 +61,7 @@ function handleKick(ctx: RouterContext, client: Client, msg: IrcMessage): void {
     ctx.connections.get(id)?.send(kickMsg);
   }
   // Removes the target and deletes the channel when empty.
-  ctx.channels.part(target.id, channel.name);
+  ctx.channels.part(target.id, channel.name, target.nick);
   // Req 10.4: let the runner cancel the target's session.
   ctx.events?.publish("irc.kick", {
     channel: channel.name,

@@ -2,15 +2,8 @@ import { Numerics } from "@seance/irc-protocol";
 import type { IrcMessage } from "@seance/irc-protocol";
 import type { Client } from "../client.js";
 import type { CommandRouter, RouterContext } from "../command-router.js";
-import { AWAYLEN, clampBytes, stripControl } from "../text-limits.js";
-
-function numeric(ctx: RouterContext, client: Client, code: string, text: string): void {
-  client.send({
-    prefix: ctx.serverName,
-    command: code,
-    params: [client.nick ?? "*", text],
-  });
-}
+import { numeric } from "../replies.js";
+import { normalizeAway } from "../text-limits.js";
 
 /**
  * `AWAY [:text]`: Req 1.1, 1.2, 1.8.
@@ -18,9 +11,9 @@ function numeric(ctx: RouterContext, client: Client, code: string, text: string)
  * empty or missing text clears it.
  */
 function handleAway(ctx: RouterContext, client: Client, msg: IrcMessage): void {
-  const text = msg.params[0] ?? "";
-  if (text.length > 0) {
-    client.away = clampBytes(stripControl(text), AWAYLEN);
+  const away = normalizeAway(msg.params[0]);
+  if (away !== "") {
+    client.away = away;
     numeric(ctx, client, Numerics.RPL_NOWAWAY, "You have been marked as being away");
     return;
   }

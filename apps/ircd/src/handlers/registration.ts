@@ -4,21 +4,9 @@ import type { IrcMessage } from "@seance/irc-protocol";
 import type { Client } from "../client.js";
 import { nowSeconds } from "../clock.js";
 import type { CommandRouter, RouterContext } from "../command-router.js";
+import { numeric } from "../replies.js";
 import { AWAYLEN, KICKLEN, TOPICLEN, clampBytes } from "../text-limits.js";
 import { quitClient } from "./quit.js";
-
-function numeric(
-  ctx: RouterContext,
-  client: Client,
-  code: string,
-  ...rest: readonly string[]
-): void {
-  client.send({
-    prefix: ctx.serverName,
-    command: code,
-    params: [client.nick ?? "*", ...rest],
-  });
-}
 
 const SERVER_VERSION = "seance-ircd-0.1";
 const DEFAULT_CREATED_AT = new Date();
@@ -162,6 +150,7 @@ function handleNick(ctx: RouterContext, client: Client, msg: IrcMessage): void {
     return;
   }
   if (client.registered && oldNick !== undefined) {
+    ctx.channels.renameNick(client.id, oldNick, nick);
     // Req 3.10: tell the client and each peer sharing a channel, once.
     ctx.connections.broadcastToPeers(
       client,

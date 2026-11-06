@@ -2,7 +2,7 @@ import { Numerics } from "@seance/irc-protocol";
 import type { Client } from "../client.js";
 import { nowSeconds } from "../clock.js";
 import type { RouterContext } from "../command-router.js";
-import { awayReply, reflectedReply } from "../replies.js";
+import { awayReply, numeric, prefixOf, reflectedReply } from "../replies.js";
 import { clampTrailing } from "../text-limits.js";
 
 export type MessageCommand = "PRIVMSG" | "NOTICE";
@@ -21,24 +21,6 @@ export type DeliverResult =
   | "no-such-nick"
   | "no-such-channel"
   | "cannot-send";
-
-function numeric(
-  ctx: RouterContext,
-  client: Client,
-  code: string,
-  ...rest: readonly string[]
-): void {
-  client.send({
-    prefix: ctx.serverName,
-    command: code,
-    params: [client.nick ?? "*", ...rest],
-  });
-}
-
-function prefixOf(ctx: RouterContext, client: Client): string {
-  const nick = client.nick ?? "*";
-  return `${nick}!${client.user ?? nick}@${client.host ?? ctx.serverName}`;
-}
 
 /**
  * Shared PRIVMSG/NOTICE delivery path (Req 6.1–6.6, 6.10, 6.11).

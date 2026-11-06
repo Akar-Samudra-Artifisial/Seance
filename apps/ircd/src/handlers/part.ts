@@ -37,7 +37,7 @@ function partOne(
     ctx.connections.get(id)?.send(partMsg);
   }
   // Removes the member and deletes the channel when empty (Req 5.8).
-  ctx.channels.part(client.id, channel.name);
+  ctx.channels.part(client.id, channel.name, client.nick);
 }
 
 /** `PART <channel>{,<channel>} [:reason]`: Req 5.6–5.10 (461 via minParams). */

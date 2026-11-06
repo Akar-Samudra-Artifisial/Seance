@@ -35,6 +35,10 @@ export type IrcInviteEvent = {
   readonly inviter: string;
   /** Nick of the invited user. */
   readonly target: string;
+  /** `irc_lower(target)`: the case-mapped key, so consumers need not re-derive it. */
+  readonly targetKey: string;
+  /** True when the target is a registered connected client; false for a resolver-claimed nick. */
+  readonly targetOnline: boolean;
   /** Event time in epoch milliseconds, from the injectable clock. */
   readonly ts: number;
 };

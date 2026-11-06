@@ -1,9 +1,9 @@
-import { Numerics, isValidNick } from "@seance/irc-protocol";
+import { Numerics, irc_lower, isValidNick } from "@seance/irc-protocol";
 import type { IrcMessage } from "@seance/irc-protocol";
 import type { Client } from "../client.js";
 import { nowMs } from "../clock.js";
 import type { CommandRouter, RouterContext } from "../command-router.js";
-import { prefixOf, reflectedReply } from "../replies.js";
+import { awayReply, prefixOf, reflectedReply } from "../replies.js";
 
 /**
  * Ask the resolver whether it claims an unconnected nick. Only a synchronous
@@ -108,10 +108,15 @@ function handleInvite(ctx: RouterContext, client: Client, msg: IrcMessage): void
     command: Numerics.RPL_INVITING,
     params: [inviterNick, targetNick, channel.name],
   });
+  if (target !== undefined && target.away !== undefined) {
+    client.send(awayReply(ctx, client, target)); // RFC 2812 3.2.7
+  }
   ctx.events?.publish("irc.invite", {
     channel: channel.name,
     inviter: inviterNick,
     target: targetNick,
+    targetKey: irc_lower(targetNick),
+    targetOnline: target !== undefined,
     ts: nowMs(ctx),
   });
 }

@@ -23,6 +23,20 @@ export type JoinResult =
   | { readonly kind: "joined"; readonly channel: Channel }
   | { readonly kind: "already-member"; readonly channel: Channel };
 
+/** Most invite records kept per channel; the oldest is dropped first. */
+export const INVITED_MAX = 100;
+
+/** Insert `key` as the newest invite record and evict the oldest above the cap. */
+function record(channel: Channel, key: string): void {
+  channel.invited.delete(key);
+  channel.invited.add(key);
+  while (channel.invited.size > INVITED_MAX) {
+    const oldest = channel.invited.values().next();
+    if (oldest.done === true) break;
+    channel.invited.delete(oldest.value);
+  }
+}
+
 /**
  * Owns all channels, membership and channel modes. Channels are keyed by
  * `irc_lower(name)` (rfc1459 case-mapping). A channel is created on first
@@ -68,8 +82,27 @@ export class ChannelRegistry {
   invite(name: string, nick: string): boolean {
     const channel = this.get(name);
     if (channel === undefined) return false;
-    channel.invited.add(irc_lower(nick));
+    record(channel, irc_lower(nick));
     return true;
+  }
+
+  /**
+   * Move invite records from `oldNick` to `newNick` for a registered client's
+   * NICK change. Never leaves a current member in an invited set.
+   */
+  renameNick(clientId: string, oldNick: string, newNick: string): void {
+    const oldKey = irc_lower(oldNick);
+    const newKey = irc_lower(newNick);
+    for (const channel of this.channels.values()) {
+      if (channel.members.has(clientId)) {
+        channel.invited.delete(newKey);
+        continue;
+      }
+      if (oldKey !== newKey && channel.invited.has(oldKey)) {
+        channel.invited.delete(oldKey);
+        record(channel, newKey);
+      }
+    }
   }
 
   /** Whether an invite record exists for `nick` on the channel. */
@@ -82,10 +115,11 @@ export class ChannelRegistry {
    * Returns false when the channel does not exist or the client is not in it
    * (caller replies `442`, Req 5.6).
    */
-  part(clientId: string, name: string): boolean {
+  part(clientId: string, name: string, nick?: string): boolean {
     const key = irc_lower(name);
     const channel = this.channels.get(key);
     if (channel === undefined || !channel.members.delete(clientId)) return false;
+    if (nick !== undefined) channel.invited.delete(irc_lower(nick));
     if (channel.members.size === 0) this.channels.delete(key);
     return true;
   }
@@ -94,9 +128,11 @@ export class ChannelRegistry {
    * Remove a client from every channel (QUIT, Req 11.3). Returns the channels
    * the client was in, including any that were deleted as a result.
    */
-  removeClient(clientId: string): readonly Channel[] {
+  removeClient(clientId: string, nick?: string): readonly Channel[] {
     const affected: Channel[] = [];
+    const nickKey = nick === undefined ? undefined : irc_lower(nick);
     for (const [key, channel] of [...this.channels]) {
+      if (nickKey !== undefined) channel.invited.delete(nickKey);
       if (!channel.members.delete(clientId)) continue;
       affected.push(channel);
       if (channel.members.size === 0) this.channels.delete(key);
