@@ -52,7 +52,10 @@ export function classifyLine(input: ClassifyInput): Classification {
   }
 }
 
-/** Text markers rendered next to colour so state never depends on colour alone (R14.10). */
+/**
+ * Text markers rendered next to colour so state never depends on colour alone (R14.10).
+ * Event lines no longer need a "[kick]" marker: their "*** ... was kicked" text says it.
+ */
 export function markersFor(kind: LineKind, mention: boolean): readonly string[] {
   const markers: string[] = [];
   switch (kind) {
@@ -61,13 +64,6 @@ export function markersFor(kind: LineKind, mention: boolean): readonly string[] 
       break;
     case "tool-denied":
       markers.push("[denied]");
-      break;
-    case "exorcised":
-    case "exorcised-kick":
-      markers.push("[exorcised]");
-      break;
-    case "kick":
-      markers.push("[kick]");
       break;
     default:
       break;

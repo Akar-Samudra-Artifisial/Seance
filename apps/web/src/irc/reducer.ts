@@ -1,5 +1,5 @@
 import type { IrcMessage } from "@seance/irc-protocol";
-import { channelKey, queryKey } from "./casemap.js";
+import { channelKey, keyOf, queryKey } from "./casemap.js";
 import { getOwn, withEntry, withoutEntry } from "./record.js";
 import { classifyLine } from "./classify.js";
 import { isMention } from "./mention.js";
@@ -23,10 +23,21 @@ import {
   openWindow,
   queryCount,
   rememberClosed,
+  sessionStartText,
   updateWindow,
+  userHostOf,
 } from "./reducer.route.js";
+import { dropAway, moveAway, onAwayReply, onInboundAway, onSelfAway } from "./reducer.away.js";
+import {
+  applyChannelModeChange,
+  applyUserModeChange,
+  onChannelModeReply,
+  onUserModeReply,
+} from "./reducer.modes.js";
 import { isErrorNumeric, onEndOfWhois, onErrorNumeric, onList, onWhoisReply } from "./reducer.whois.js";
-import type { ClientState } from "./types.js";
+import { exorcismText } from "./selectors.js";
+import { EXORCISED_MAX } from "./types.js";
+import type { ClientState, Window } from "./types.js";
 
 export { initialState } from "./reducer.route.js";
 
@@ -36,6 +47,8 @@ export interface ReduceResult {
   readonly send: readonly IrcMessage[];
   /** True when a line flagged as Mention was appended. */
   readonly mention: boolean;
+  /** Token (last parameter) of an inbound PONG; the Store matches it against its lag ping. */
+  readonly pong?: string;
 }
 
 const NUMERIC = /^\d{3}$/;
@@ -54,7 +67,9 @@ function statusLine(state: ClientState, msg: IrcMessage, nowMs: number): ReduceR
   const numeric = NUMERIC.test(msg.command);
   const text = numeric ? numericText(msg) : [msg.command, ...msg.params].join(" ");
   const kind = msg.command === "372" || msg.command === "375" || msg.command === "376" ? "motd" : "numeric";
-  return done(appendStatus(state, { kind: numeric ? kind : "system", text }, nowMs));
+  return done(
+    appendStatus(state, { kind: numeric ? kind : "system", text, ...(numeric ? { code: msg.command } : {}) }, nowMs),
+  );
 }
 
 function onWelcome(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult {
@@ -65,7 +80,25 @@ function onWelcome(state: ClientState, msg: IrcMessage, nowMs: number): ReduceRe
     ownNick: nick !== undefined && nick !== "" ? nick : state.ownNick,
     ...(msg.prefix !== undefined ? { server: msg.prefix } : {}),
   };
-  return done(appendStatus(base, { kind: "numeric", text: msg.params[1] ?? "" }, nowMs));
+  const session = appendStatus(base, { kind: "system", text: sessionStartText(nowMs) }, nowMs);
+  return done(appendStatus(session, { kind: "numeric", text: msg.params[1] ?? "", code: "001" }, nowMs));
+}
+
+/** `{ prefix }` for a line spec when the message carries `nick!user@host`. */
+function prefixSpec(msg: IrcMessage): { readonly prefix?: { readonly user: string; readonly host: string } } {
+  const prefix = userHostOf(msg.prefix);
+  return prefix === undefined ? {} : { prefix };
+}
+
+function withoutExorcised(w: Window, nick: string): Window {
+  if (w.exorcised === undefined) return w;
+  const kept = w.exorcised.filter((n) => keyOf(n) !== keyOf(nick));
+  return kept.length === w.exorcised.length ? w : { ...w, exorcised: kept };
+}
+
+function withExorcised(w: Window, nick: string): Window {
+  const list = [...(withoutExorcised(w, nick).exorcised ?? []), nick];
+  return { ...w, exorcised: list.slice(-EXORCISED_MAX) };
 }
 
 function onJoin(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult {
@@ -74,15 +107,23 @@ function onJoin(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResul
   if (channel === undefined || nick === "") return statusLine(state, msg, nowMs);
   const key = channelKey(channel);
   if (isOwnNick(state, nick)) {
+    const isNew = getOwn(state.windows, key) === undefined;
     const opened = openWindow(state, "channel", channel, true);
-    return done(appendTo(opened, key, { kind: "join", text: `You have joined ${channel}` }, nowMs));
+    const withSession = isNew
+      ? appendTo(opened, key, { kind: "system", text: sessionStartText(nowMs) }, nowMs)
+      : opened;
+    return done(
+      appendTo(withSession, key, { kind: "join", text: `Now talking in ${channel}`, ...prefixSpec(msg) }, nowMs),
+    );
   }
   if (getOwn(state.windows, key) === undefined) return done(state);
   const withMember = updateWindow(state, key, (w) => ({
-    ...w,
+    ...withoutExorcised(w, nick),
     members: addMember(w.members, nick),
   }));
-  return done(appendTo(withMember, key, { kind: "join", text: `${nick} has joined ${channel}` }, nowMs));
+  return done(
+    appendTo(withMember, key, { kind: "join", text: `${nick} has joined ${channel}`, from: nick, ...prefixSpec(msg) }, nowMs),
+  );
 }
 
 function onNames(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult {
@@ -112,7 +153,8 @@ function onChat(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResul
   const raw = msg.params[1] ?? "";
   if (target === undefined) return statusLine(state, msg, nowMs);
   if (isNotice && isServerPrefix(msg.prefix)) {
-    return done(appendStatus(state, { kind: "notice", text: raw }, nowMs));
+    const server = msg.prefix ?? state.server ?? "server";
+    return done(appendStatus(state, { kind: "notice", text: `-${server}- ${raw}` }, nowMs));
   }
   const from = nickOf(msg.prefix);
   const own = isOwnNick(state, from);
@@ -161,10 +203,13 @@ function onLeave(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResu
   const key = channelKey(channel);
   if (getOwn(state.windows, key)?.kind !== "channel") return done(state);
   const reason = (isKick ? msg.params[2] : msg.params[1]) ?? "";
-  const suffix = reason === "" ? "" : ` (${reason})`;
+  let suffix = reason === "" ? "" : ` (${reason})`;
   let text: string;
   if (isKick) {
     const kicker = nickOf(msg.prefix);
+    // Same empty-reason rule as the exorcism line (R11.2, R11.5).
+    const shown = exorcismText({ agent: who, kicker, reason }).reason;
+    suffix = shown === undefined ? "" : ` (${shown})`;
     text = `${who} was kicked from ${channel} by ${kicker === "" ? "the server" : kicker}${suffix}`;
   } else {
     text = `${who} has left ${channel}${suffix}`;
@@ -176,11 +221,21 @@ function onLeave(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResu
   const logged = appendTo(
     state,
     key,
-    { kind: cls.kind, text, ...(cls.exorcism !== undefined ? { exorcism: cls.exorcism } : {}) },
+    {
+      kind: cls.kind,
+      text,
+      ...(cls.exorcism !== undefined ? { exorcism: cls.exorcism } : {}),
+      ...(isKick ? {} : { from: who, ...prefixSpec(msg) }),
+    },
     nowMs,
   );
   if (own) return done(closeChannel(logged, key));
-  return done(updateWindow(logged, key, (w) => ({ ...w, members: removeMember(w.members, who) })));
+  return done(
+    updateWindow(logged, key, (w) => {
+      const pruned = { ...w, members: removeMember(w.members, who) };
+      return cls.kind === "exorcised-kick" ? withExorcised(pruned, who) : pruned;
+    }),
+  );
 }
 
 function onQuit(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult {
@@ -193,13 +248,13 @@ function onQuit(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResul
     const win = getOwn(next.windows, key);
     if (win?.kind !== "channel" || !hasMember(win.members, nick)) continue;
     next = updateWindow(next, key, (w) => ({ ...w, members: removeMember(w.members, nick) }));
-    next = appendTo(next, key, { kind: "quit", text }, nowMs);
+    next = appendTo(next, key, { kind: "quit", text, from: nick, ...prefixSpec(msg) }, nowMs);
   }
   const qKey = queryKey(nick);
   if (getOwn(next.windows, qKey)?.kind === "query") {
-    next = appendTo(next, qKey, { kind: "quit", text }, nowMs);
+    next = appendTo(next, qKey, { kind: "quit", text, from: nick, ...prefixSpec(msg) }, nowMs);
   }
-  return done(next);
+  return done(dropAway(next, nick));
 }
 
 /** 331 / 332 / TOPIC: set or clear the topic of an open channel and log it. */
@@ -219,7 +274,7 @@ function onTopic(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResu
   if (isCmd) {
     const setter = nickOf(msg.prefix);
     const who = setter === "" ? "Server" : setter;
-    line = text === "" ? `${who} cleared the topic` : `${who} changed the topic to: ${text}`;
+    line = text === "" ? `${who} cleared the topic` : `${who} sets topic: ${text}`;
   } else {
     line = text === "" ? `No topic is set for ${channel}` : `Topic for ${channel}: ${text}`;
   }
@@ -238,7 +293,7 @@ function onInvite(state: ClientState, msg: IrcMessage, nowMs: number): ReduceRes
 
 /** 305 / 306: away status notices go to the Active_Window. */
 function onAway(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult {
-  return done(appendTo(state, state.activeKey, { kind: "numeric", text: numericText(msg) }, nowMs));
+  return done(appendTo(onSelfAway(state, msg), state.activeKey, { kind: "numeric", text: numericText(msg) }, nowMs));
 }
 
 function onNick(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult {
@@ -259,7 +314,7 @@ function onNick(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResul
       next = appendTo(next, queryKey(to), { kind: "nick", text }, nowMs);
     }
   }
-  return done(next);
+  return done(moveAway(next, from, to));
 }
 
 /** Rename a Query_Window; if the new key is taken by another window, leave both as they are. */
@@ -280,13 +335,17 @@ function renameQuery(state: ClientState, oldKey: string, to: string): ClientStat
 function onMode(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult {
   const target = msg.params[0];
   const modes = msg.params[1];
+  if (target !== undefined && modes !== undefined && !isChannelName(target) && isOwnNick(state, target)) {
+    return done(applyUserModeChange(state, target, modes));
+  }
   if (target === undefined || modes === undefined || !isChannelName(target)) return statusLine(state, msg, nowMs);
   const key = channelKey(target);
   if (getOwn(state.windows, key)?.kind !== "channel") return done(state);
   const args = msg.params.slice(2);
   const setter = nickOf(msg.prefix);
-  const text = `${setter === "" ? "Server" : setter} sets mode ${[modes, ...args].join(" ")}`;
-  const updated = updateWindow(state, key, (w) => ({ ...w, members: applyModes(w.members, modes, args) }));
+  const text = `${setter === "" ? "Server" : setter} sets mode: ${[modes, ...args].join(" ")}`;
+  const withMembers = updateWindow(state, key, (w) => ({ ...w, members: applyModes(w.members, modes, args) }));
+  const updated = applyChannelModeChange(withMembers, target, modes);
   return done(appendTo(updated, key, { kind: "mode", text }, nowMs));
 }
 
@@ -301,6 +360,14 @@ function route(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult
       return onNick(state, msg, nowMs);
     case "MODE":
       return onMode(state, msg, nowMs);
+    case "324": {
+      const next = onChannelModeReply(state, msg);
+      return next === undefined ? statusLine(state, msg, nowMs) : done(next);
+    }
+    case "221": {
+      const next = onUserModeReply(state, msg);
+      return next === undefined ? statusLine(state, msg, nowMs) : done(next);
+    }
     case "331":
     case "332":
     case "TOPIC":
@@ -310,13 +377,16 @@ function route(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult
     case "305":
     case "306":
       return onAway(state, msg, nowMs);
+    case "AWAY":
+      return done(onInboundAway(state, msg, nowMs));
     case "311":
     case "319":
     case "312":
     case "320":
     case "317":
-    case "301":
       return done(onWhoisReply(state, msg, nowMs));
+    case "301":
+      return done(onWhoisReply(onAwayReply(state, msg), msg, nowMs));
     case "318":
       return done(onEndOfWhois(state, msg, nowMs));
     case "322":
@@ -327,6 +397,10 @@ function route(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult
     case "PING": {
       const token = msg.params[0];
       return done(state, false, [{ command: "PONG", params: token === undefined ? [] : [token] }]);
+    }
+    case "PONG": {
+      const token = msg.params[msg.params.length - 1];
+      return token === undefined ? done(state) : { ...done(state), pong: token };
     }
     case "JOIN":
       return onJoin(state, msg, nowMs);

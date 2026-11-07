@@ -13,11 +13,13 @@ import { ConnectDialog } from "./ConnectDialog.js";
 import { InputLine } from "./InputLine.js";
 import { MenuBar } from "./MenuBar.js";
 import { Mdi } from "./Mdi.js";
+import { MinimisedTray } from "./MinimisedTray.js";
 import { QueryWindow } from "./QueryWindow.js";
 import { SkipLink } from "./SkipLink.js";
 import { StatusBar } from "./StatusBar.js";
 import { UnreadAnnouncer } from "./UnreadAnnouncer.js";
 import { Switchbar } from "./Switchbar.js";
+import { TitleBar } from "./TitleBar.js";
 import { Toolbar } from "./Toolbar.js";
 import { StatusWindow } from "./StatusWindow.js";
 
@@ -60,14 +62,17 @@ export function Shell(): ReactNode {
     };
   }, [activateByIndex]);
   const win = active ?? EMPTY_STATUS;
+  // A minimised window leaves the MDI area (R4.3).
+  const hidden = useClientStore((s) => s.ui.minimised.includes(s.client.activeKey));
   return (
     <div className="flex h-full flex-col bg-chrome-face font-chrome">
       <SkipLink />
       <UnreadAnnouncer />
+      <TitleBar />
       <MenuBar />
       <Toolbar />
       <Mdi>
-        {win.kind === "status" ? (
+        {hidden ? null : win.kind === "status" ? (
           <StatusWindow window={win} />
         ) : win.kind === "channel" ? (
           <ChannelWindow window={win} />
@@ -75,8 +80,9 @@ export function Shell(): ReactNode {
           <QueryWindow window={win} />
         )}
       </Mdi>
-      <Switchbar />
       <InputLine />
+      <MinimisedTray />
+      <Switchbar />
       <StatusBar />
       <ConnectDialog />
     </div>

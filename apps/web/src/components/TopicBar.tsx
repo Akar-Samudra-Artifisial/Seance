@@ -1,17 +1,49 @@
 import type { ReactNode } from "react";
+import { formatIrc, modeSuffix } from "../irc/index.js";
+import { IrcText } from "./Spans.js";
 
-export const NO_TOPIC_TEXT = "(no topic set)";
+function plain(text: string): string {
+  return formatIrc(text)
+    .map((s) => s.text)
+    .join("");
+}
 
-/** Channel topic line. The topic is untrusted text and is rendered as a plain React text node. */
-export function TopicBar(props: { readonly topic: string | undefined }): ReactNode {
-  const { topic } = props;
-  const hasTopic = topic !== undefined && topic !== "";
+/**
+ * Channel topic line: `<channel> (<modes>): <topic>`. Modes and topic are omitted when empty.
+ * All server-supplied strings are untrusted and rendered through IrcText as React text.
+ */
+export function TopicBar(props: {
+  readonly channel: string;
+  readonly modes: string | undefined;
+  readonly topic: string | undefined;
+}): ReactNode {
+  const { channel, modes, topic } = props;
+  const suffix = modeSuffix(modes ?? "");
+  const topicPlain = topic === undefined ? "" : plain(topic);
+  const hasTopic = topicPlain !== "";
+  const full = `${plain(channel)}${suffix}${hasTopic ? `: ${topicPlain}` : ""}`;
   return (
     <p
       aria-label="Channel topic"
-      className="bevel-sunken truncate bg-chrome-face px-1 font-chrome text-sm text-chrome-outline"
+      title={full}
+      className="bevel-sunken h-6 truncate whitespace-nowrap bg-ghost-bg px-1 font-chat text-sm leading-6 text-ghost-text"
     >
-      {hasTopic ? topic : NO_TOPIC_TEXT}
+      <span className="text-ghost-orange">
+        <IrcText text={channel} />
+      </span>
+      {suffix === "" ? null : (
+        <span className="text-timestamp-dim">
+          {" ("}
+          <IrcText text={suffix.slice(2, -1)} />
+          {")"}
+        </span>
+      )}
+      {hasTopic ? (
+        <>
+          {": "}
+          <IrcText text={topic ?? ""} />
+        </>
+      ) : null}
     </p>
   );
 }

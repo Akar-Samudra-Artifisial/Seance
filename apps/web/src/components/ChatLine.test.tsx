@@ -20,9 +20,13 @@ describe("ChatLine", () => {
       text: "",
       exorcism: { agent: "Coder", kicker: "\x02op\x02", reason: "\x034bad\x03 code" },
     });
-    expect(c.textContent).toBe("[00:00] [exorcised] *** Coder has been exorcised by op (bad code)");
+    expect(c.textContent).toBe("[00:00] *** Coder has been exorcised by op (bad code)");
     expect(c.querySelector(".text-irc-4")?.textContent).toBe("bad");
-    expect(c.querySelector(".font-bold")).not.toBeNull();
+    expect(c.querySelector(".font-bold")?.textContent).toBe("exorcised");
+    expect(c.querySelector(".line-through")?.textContent).toBe("Coder");
+    expect(c.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe("exorcised");
+    expect(c.querySelector(".border-ghost-purple")).not.toBeNull();
+    expect(c.querySelector("[style]")).toBeNull();
     expect(c.textContent).not.toContain("\x03");
   });
 
@@ -33,8 +37,17 @@ describe("ChatLine", () => {
         kind: "exorcised-kick",
         exorcism: { agent: "coder", kicker: "op", reason },
       });
-      expect(c.textContent).toBe("[00:00] [exorcised] *** coder has been exorcised by op");
+      expect(c.textContent).toBe("[00:00] *** coder has been exorcised by op");
     }
+  });
+
+  it("omits a reason equal to the kicker", () => {
+    const c = renderLine({
+      ...base,
+      kind: "exorcised-kick",
+      exorcism: { agent: "coder", kicker: "Op", reason: "op" },
+    });
+    expect(c.textContent).toBe("[00:00] *** coder has been exorcised by Op");
   });
 
   it("links http URLs with a safe rel", () => {

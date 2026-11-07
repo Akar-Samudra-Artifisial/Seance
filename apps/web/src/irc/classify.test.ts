@@ -67,9 +67,9 @@ describe("markersFor", () => {
   it("maps kinds to text markers", () => {
     expect(markersFor("tool", false)).toEqual(["[tool]"]);
     expect(markersFor("tool-denied", false)).toEqual(["[denied]"]);
-    expect(markersFor("exorcised", false)).toEqual(["[exorcised]"]);
-    expect(markersFor("exorcised-kick", false)).toEqual(["[exorcised]"]);
-    expect(markersFor("kick", false)).toEqual(["[kick]"]);
+    expect(markersFor("exorcised", false)).toEqual([]);
+    expect(markersFor("exorcised-kick", false)).toEqual([]);
+    expect(markersFor("kick", false)).toEqual([]);
     expect(markersFor("message", true)).toEqual(["[mention]"]);
     expect(markersFor("message", false)).toEqual([]);
   });

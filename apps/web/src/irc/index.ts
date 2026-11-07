@@ -23,7 +23,8 @@ export {
 export { irc_lower, isValidNick, keyOf } from "./casemap.js";
 export { appendLine } from "./buffer.js";
 export { formatClock } from "./time.js";
-export { isMention } from "./mention.js";
+export type { MentionSegment } from "./mention.js";
+export { isMention, mentionSegments } from "./mention.js";
 export type { Span } from "./formatter.js";
 export { formatIrc } from "./formatter.js";
 export type { Segment } from "./linkify.js";
@@ -40,6 +41,8 @@ export type { Classification, ClassifyInput } from "./classify.js";
 export { KNOWN_AGENTS, classifyLine, isKnownAgent, markersFor } from "./classify.js";
 export type { ReduceResult } from "./reducer.js";
 export { initialState, reduce } from "./reducer.js";
+export type { CreditsLine, StatusCounts } from "./selectors.js";
+export { creditsTotal, exorcismText, modeSuffix, parseCreditsLine, statusCounts, titleOf } from "./selectors.js";
 export { resetForReconnect } from "./reset.js";
 export type { Completion, CompletionCycle } from "./complete.js";
 export { completeNick } from "./complete.js";

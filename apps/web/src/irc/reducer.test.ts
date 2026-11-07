@@ -19,7 +19,7 @@ describe("reduce", () => {
     const s = registered();
     expect(s.phase).toBe("registered");
     expect(s.ownNick).toBe("me");
-    expect(s.windows["status"]?.lines.map((l) => l.text)).toEqual(["Welcome"]);
+    expect(s.windows["status"]?.lines.map((l) => l.text).slice(1)).toEqual(["Welcome"]);
   });
 
   it("routes 002-005, MOTD and server NOTICE to status", () => {
@@ -30,7 +30,7 @@ describe("reduce", () => {
       m("372", ["me", "- Server is haunted"], "irc.test"),
       m("NOTICE", ["me", "hello"], "irc.test"),
     );
-    expect(s.windows["status"]?.lines.map((l) => l.kind)).toEqual(["numeric", "numeric", "motd", "motd", "notice"]);
+    expect(s.windows["status"]?.lines.map((l) => l.kind)).toEqual(["system", "numeric", "numeric", "motd", "motd", "notice"]);
   });
 
   it("own JOIN opens and activates the channel window", () => {
@@ -78,7 +78,7 @@ describe("reduce", () => {
     const before = registered();
     const r = reduce(before, m("PING", ["tok"]), 1);
     expect(r.send).toEqual([{ command: "PONG", params: ["tok"] }]);
-    expect(r.state.windows["status"]?.lines).toHaveLength(1);
+    expect(r.state.windows["status"]?.lines).toHaveLength(2);
   });
 
   it("unknown messages become status text and input is not mutated", () => {

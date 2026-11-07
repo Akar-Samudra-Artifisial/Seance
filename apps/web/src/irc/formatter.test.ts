@@ -37,6 +37,20 @@ describe("formatIrc", () => {
     expect(formatIrc("\x0316x")).toEqual([{ text: "x", bold: false, underline: false }]);
   });
 
+  it("colours the Fake_Agent reply without showing the colour digits", () => {
+    expect(formatIrc("\x0312The veil is thin tonight.\x0F")).toEqual([
+      { text: "The veil is thin tonight.", fg: 12, bold: false, underline: false },
+    ]);
+  });
+
+  it("shows digits that follow a full two-digit colour code (runner wire form of the Fake_Agent reply)", () => {
+    // The runner strips the agent's own \x03 and re-wraps with the agent colour (coder = 12),
+    // so "\x0312The…" arrives as "\x0312" + "12The…". The second "12" is text.
+    expect(formatIrc("\x031212The veil is thin tonight.\x0F")).toEqual([
+      { text: "12The veil is thin tonight.", fg: 12, bold: false, underline: false },
+    ]);
+  });
+
   it("consumes at most two digits", () => {
     expect(formatIrc("\x03123")).toEqual([{ text: "3", fg: 12, bold: false, underline: false }]);
   });

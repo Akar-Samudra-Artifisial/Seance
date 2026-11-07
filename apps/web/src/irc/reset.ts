@@ -3,9 +3,11 @@ import type { ClientState, Window } from "./types.js";
 
 function resetWindow(win: Window): Window {
   // Keep lines and flags; membership and topic come back from the server after re-registration.
-  const { topic: _topic, members: _members, ...rest } = win;
+  const { topic: _topic, members: _members, modes: _modes, exorcised: _exorcised, ...rest } = win;
   void _topic;
   void _members;
+  void _modes;
+  void _exorcised;
   return win.kind === "channel" ? { ...rest, members: nullRecord() } : rest;
 }
 
@@ -22,6 +24,8 @@ export function resetForReconnect(state: ClientState): ClientState {
     phase: "connecting",
     windows,
     whoisPending: nullRecord(),
+    away: nullRecord(),
     expectingNames: [],
+    userModes: "",
   };
 }

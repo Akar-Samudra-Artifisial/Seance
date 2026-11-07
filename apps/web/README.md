@@ -2,6 +2,32 @@
 
 The Séance web client: a retro, keyboard-first IRC client built with Next.js, Tailwind and Zustand. It speaks plain IRC over WebSocket to the Ircd. See [DESIGN.md](../../DESIGN.md) for the UI design.
 
+## Window chrome
+
+The layout follows the Figma mockup (see [docs/KIRO_USAGE.md](../../docs/KIRO_USAGE.md) for the frames used). From top to bottom:
+
+- **Title bar**: app icon, title and caption buttons. The title is `Séance — [#chan (+mnt): topic]` for a channel, `Séance — [Status: nick (+i) on host]` for the status window and `Séance — [nick]` for a query. Empty topics and empty mode strings are left out. The document title is the same text. Minimise and maximise are disabled; close quits when connected.
+- **Menu bar**: File, View, Favorites, Tools, Commands, Window, Help, with `Alt+<letter>` mnemonics and arrow-key navigation. Items that need an argument put the command into the input line (for example `/join #`) instead of opening a dialog.
+- **Toolbar**: 16 px icons for connect, options, channel list, agents and logs, plus the `Theme: Ghost` label.
+- **MDI child windows**: each window has its own title bar with minimise, maximise and close. Minimised windows move to a tray above the switchbar and stay in the switchbar; click the bar to restore. The status window cannot be closed.
+- **Switchbar**: one button per window (unread in link blue, mention in orange) and a credits counter at the right end. The counter sums the latest `total` per agent from `320` WHOIS lines like `credits: #dev 9.60 / total 12.00`. It reads `credits: 0.0` until such a line arrives.
+- **Status bar**: `Connected to <host> as <nick>` (with ` (TLS)` for `wss:`), `lag <s>s`, and `<a> agents · <w> away · <o> ops`. Lag comes from a `PING :seance-lag-<n>` sent every 30 s; it reads `lag –` before the first reply.
+
+### Modes and away tracking
+
+The client sends `MODE <channel>` once after joining and keeps channel flags (such as `+mnt`) from `324` and later `MODE` changes. Flags with a parameter (`o`, `v`, `b`, `k`, `l`, `e`, `I`) are not part of the shown string. User modes come from `221` and `MODE <ownnick>`. Away state comes from `301`, `305`, `306` and inbound `AWAY`; away members are dimmed in the nick list and counted in the status bar. The client never polls WHOIS for away state.
+
+### Line formats
+
+- Chat: `[HH:MM] <@nick> text`, `<+nick>` for voiced, `<nick>` otherwise.
+- Events: `*** nick (user@host) has joined #chan`, `has left`, `has quit`, `is now known as`, `sets mode:`, `sets topic:`.
+- WHOIS: classic lines, each starting with the nick in bold, for example `coder is user@host * Real name`, `coder on #chan`, then each `320` line as received, then `coder End of /WHOIS list.`.
+- Exorcism: a kick of a known agent reads `*** coder has been exorcised by alice (reason)`. When the reason is empty or equals the kicker nick, the parentheses are dropped. The agent stays in the nick list, struck through, until it rejoins, the window closes or the client reconnects.
+
+### Disabled items
+
+These render greyed out with `aria-disabled` and do nothing: the Favorites menu, Options, Channel list, the theme toggle, and the title bar minimise and maximise buttons. The Options dialog, channel list window, Classic theme, CRT scanlines and floating ghosts are out of scope for now.
+
 ## Run against a local Ircd
 
 1. Start the Ircd and allow the origin the browser will use:

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { formatIrc, linkify } from "../irc/index.js";
+import { formatIrc, linkify, mentionSegments } from "../irc/index.js";
 import type { Span } from "../irc/index.js";
 
 // Full class literals so Tailwind sees every name at build time. No inline style.
@@ -63,7 +63,8 @@ export function hasVisibleText(text: string): boolean {
 }
 
 /** Renders formatter spans; http(s) URLs become anchors, everything else is a text node. */
-export function Spans(props: { readonly spans: readonly Span[] }): ReactNode {
+export function Spans(props: { readonly spans: readonly Span[]; readonly highlight?: string }): ReactNode {
+  const { highlight } = props;
   return props.spans.map((span, i) => (
     <span key={i} className={spanClass(span)}>
       {linkify(span.text).map((seg, j) =>
@@ -77,8 +78,18 @@ export function Spans(props: { readonly spans: readonly Span[] }): ReactNode {
           >
             {seg.text}
           </a>
-        ) : (
+        ) : highlight === undefined ? (
           seg.text
+        ) : (
+          mentionSegments(seg.text, highlight).map((part, k) =>
+            part.hit ? (
+              <span key={k} className="font-bold text-ghost-orange">
+                {part.text}
+              </span>
+            ) : (
+              part.text
+            ),
+          )
         ),
       )}
     </span>
@@ -86,6 +97,6 @@ export function Spans(props: { readonly spans: readonly Span[] }): ReactNode {
 }
 
 /** Formats untrusted text (colour codes, bold, underline) and renders it as spans. */
-export function IrcText(props: { readonly text: string }): ReactNode {
-  return <Spans spans={formatIrc(props.text)} />;
+export function IrcText(props: { readonly text: string; readonly highlight?: string }): ReactNode {
+  return <Spans spans={formatIrc(props.text)} {...(props.highlight !== undefined ? { highlight: props.highlight } : {})} />;
 }

@@ -28,7 +28,9 @@ export function ConnectDialog(): ReactNode {
   const [nick, setNick] = useState(storedNick ?? "");
   const [serverUrl, setServerUrl] = useState(storedUrl);
   const [password, setPassword] = useState("");
+  const connectRequests = useClientStore((s) => s.ui.connectRequests);
   const [dismissed, setDismissed] = useState(false);
+  const [seenRequests, setSeenRequests] = useState(connectRequests);
   const [hadRegistered, setHadRegistered] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const nickRef = useRef<HTMLInputElement>(null);
@@ -38,6 +40,11 @@ export function ConnectDialog(): ReactNode {
 
   const visible = phase !== "registered" && !dismissed;
 
+  // A request from the Toolbar or menu reopens a dismissed dialog.
+  if (connectRequests !== seenRequests) {
+    setSeenRequests(connectRequests);
+    setDismissed(false);
+  }
   // A registration reopens the dialog for the next disconnect.
   if (phase === "registered" && (!hadRegistered || dismissed)) {
     setHadRegistered(true);
@@ -110,7 +117,7 @@ export function ConnectDialog(): ReactNode {
       >
         <h2
           id="connect-title"
-          className="bg-linear-to-r from-title-from to-title-to px-1 font-title text-xl font-bold text-chrome-highlight"
+          className="bg-linear-to-r from-title-from to-title-to px-1 font-chrome text-xs font-bold text-chrome-highlight"
         >
           Connect to Séance
         </h2>

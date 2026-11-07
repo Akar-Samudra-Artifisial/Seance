@@ -13,11 +13,32 @@
   --color-title-from: #000080;
   --color-title-to: #1084d0;
 
+  /* Inactive title bar: Figma gradient #808080 -> #b5b5b5. Figma's #e4e4e4 caption fails 4.5:1,
+     so the inactive caption is black (5.3:1 / 9.6:1 at the two ends). */
+  --color-title-inactive-from: #808080;
+  --color-title-inactive-to: #b5b5b5;
+  --color-title-inactive-text: #000000;
+
+  /* Switchbar button faces: resting uses chrome-face; the active window is the Figma "light" #dfdfdf. */
+  --color-switch-face: #c0c0c0;
+  --color-switch-active: #dfdfdf;
+  --color-switch-text: #000000;
+
   --color-ghost-bg: #0b0b0f;
   --color-ghost-text: #d8d4c8;
   --color-ghost-orange: #c8761f;
   --color-ghost-green: #6a9955;
   --color-ghost-purple: #9a80c2;
+
+  /* Chat line colours on the ghost background. Not in Figma: link-blue and mention-bar (chosen).
+     Figma #7a756b timestamp and #5f5f66 away fail 4.5:1 on #0b0b0f, so they are lightened. */
+  --color-link-blue: #6aa0ff;
+  --color-timestamp-dim: #8a8578;
+  --color-action-purple: #9a80c2;
+  --color-event-green: #6a9955;
+  --color-tool-grey: #7d7d7d;
+  --color-away-grey: #7e7e87;
+  --color-mention-bar: #c8761f;
 
   --color-nick-coder: #3b78ff;
   --color-nick-reviewer: #4caf50;
@@ -73,6 +94,85 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-chrome-outline);
   outline-offset: 1px;
+}
+
+/* Win95 scrollbar: 16px, arrow buttons, dithered track, raised thumb. Tokens only.
+   Opt in with the `win95-scroll` class. Firefox has no pseudo-elements, so it gets the
+   standard properties; Chromium and Safari get the full look. */
+@layer components {
+  .win95-scroll {
+    overflow: auto;
+  }
+
+  @supports not selector(::-webkit-scrollbar) {
+    .win95-scroll {
+      scrollbar-width: auto;
+      scrollbar-color: var(--color-chrome-face) var(--color-chrome-highlight);
+    }
+  }
+
+  .win95-scroll::-webkit-scrollbar {
+    width: 16px;
+    height: 16px;
+  }
+
+  .win95-scroll::-webkit-scrollbar-corner {
+    background-color: var(--color-chrome-face);
+  }
+
+  .win95-scroll::-webkit-scrollbar-track {
+    background-image: conic-gradient(
+      var(--color-chrome-highlight) 25%,
+      var(--color-chrome-face) 0 50%,
+      var(--color-chrome-highlight) 0 75%,
+      var(--color-chrome-face) 0
+    );
+    background-size: 2px 2px;
+  }
+
+  .win95-scroll::-webkit-scrollbar-thumb,
+  .win95-scroll::-webkit-scrollbar-button:single-button {
+    background-color: var(--color-chrome-face);
+    background-repeat: no-repeat;
+    background-position: center;
+    box-shadow:
+      inset 1px 1px 0 var(--color-chrome-highlight),
+      inset -1px -1px 0 var(--color-chrome-shadow),
+      1px 1px 0 var(--color-chrome-outline);
+  }
+
+  .win95-scroll::-webkit-scrollbar-button:single-button {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
+
+  .win95-scroll::-webkit-scrollbar-button:single-button:active {
+    box-shadow:
+      inset 1px 1px 0 var(--color-chrome-shadow),
+      inset -1px -1px 0 var(--color-chrome-highlight);
+  }
+
+  /* Arrows are conic wedges in the outline colour. */
+  .win95-scroll::-webkit-scrollbar-button:single-button:vertical:decrement {
+    background-image: conic-gradient(from 135deg at 50% 0%, var(--color-chrome-outline) 90deg, transparent 0);
+    background-size: 7px 4px;
+  }
+
+  .win95-scroll::-webkit-scrollbar-button:single-button:vertical:increment {
+    background-image: conic-gradient(from -45deg at 50% 100%, var(--color-chrome-outline) 90deg, transparent 0);
+    background-size: 7px 4px;
+  }
+
+  .win95-scroll::-webkit-scrollbar-button:single-button:horizontal:decrement {
+    background-image: conic-gradient(from 45deg at 0% 50%, var(--color-chrome-outline) 90deg, transparent 0);
+    background-size: 4px 7px;
+  }
+
+  .win95-scroll::-webkit-scrollbar-button:single-button:horizontal:increment {
+    background-image: conic-gradient(from 225deg at 100% 50%, var(--color-chrome-outline) 90deg, transparent 0);
+    background-size: 4px 7px;
+  }
 }
 
 /* Honour the user's motion preference: no animations or transitions. */

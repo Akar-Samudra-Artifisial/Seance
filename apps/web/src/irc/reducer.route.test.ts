@@ -28,7 +28,7 @@ describe("reducer routing", () => {
 
   it("MODE appends a mode line", () => {
     const s = run(joined(), m("MODE", ["#dev", "+o", "me"], "op!o@h"));
-    expect(lastLine(s, "c:#dev")).toMatchObject({ kind: "mode", text: "op sets mode +o me" });
+    expect(lastLine(s, "c:#dev")).toMatchObject({ kind: "mode", text: "op sets mode: +o me" });
   });
 
   it("QUIT writes a line with reason in channels and the query window", () => {
@@ -134,7 +134,7 @@ describe("reducer routing", () => {
   it("322/323 land in Status even when a channel is active", () => {
     const s = run(joined(), m("322", ["me", "#a", "3", ""], "irc.test"), m("323", ["me", "End of /LIST"], "irc.test"));
     expect(s.windows["status"]?.lines.map((l) => l.text).slice(-2)).toEqual(["#a 3", "End of /LIST"]);
-    expect(lastLine(s, "c:#dev")?.text).toBe("You have joined #Dev");
+    expect(lastLine(s, "c:#dev")?.text).toBe("Now talking in #Dev");
   });
 
   it("agent MODE +o/+v and -o change member flags", () => {
@@ -142,7 +142,7 @@ describe("reducer routing", () => {
     s = run(s, m("MODE", ["#dev", "+ov", "Coder", "reviewer"], "op!o@h"));
     expect(s.windows["c:#dev"]?.members?.["coder"]).toMatchObject({ op: true, voice: false });
     expect(s.windows["c:#dev"]?.members?.["reviewer"]).toMatchObject({ op: false, voice: true });
-    expect(lastLine(s, "c:#dev")).toMatchObject({ kind: "mode", text: "op sets mode +ov Coder reviewer" });
+    expect(lastLine(s, "c:#dev")).toMatchObject({ kind: "mode", text: "op sets mode: +ov Coder reviewer" });
     s = run(s, m("MODE", ["#dev", "-o", "coder"], "op!o@h"));
     expect(s.windows["c:#dev"]?.members?.["coder"]?.op).toBe(false);
   });

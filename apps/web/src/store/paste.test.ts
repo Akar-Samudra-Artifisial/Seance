@@ -43,6 +43,8 @@ function setup() {
     storage: createClientStorage(null, [ORIGIN]),
     now: () => 1000,
     setTimeout: (fn, ms) => {
+      // The 30 s lag timer is not under test here; keep it out of the paste timer list.
+      if (ms === 30_000) return -1;
       const id = nextId++;
       timers.push({ id, fn, ms });
       return id;

@@ -1,7 +1,8 @@
 import type { IrcMessage } from "@seance/irc-protocol";
 import { keyOf } from "./casemap.js";
 import { getOwn, withEntry, withoutEntry } from "./record.js";
-import { MAX_WHOIS_PENDING, appendStatus, appendTo, capRecord } from "./reducer.route.js";
+import { parseCreditsLine } from "./credits.js";
+import { CREDITS_MAX, MAX_WHOIS_PENDING, appendStatus, appendTo, capRecord } from "./reducer.route.js";
 import type { ClientState, WhoisPending } from "./types.js";
 
 /** Numerics whose replies are collected into `whoisPending`. */
@@ -77,7 +78,12 @@ export function onWhoisReply(state: ClientState, msg: IrcMessage, nowMs: number)
   }
   const updated = applyReply(existing ?? blankPending(nick), msg);
   const pending = withEntry(existing === undefined ? state.whoisPending : withoutEntry(state.whoisPending, key), key, updated);
-  return { ...state, whoisPending: capRecord(pending, MAX_WHOIS_PENDING) };
+  const next = { ...state, whoisPending: capRecord(pending, MAX_WHOIS_PENDING) };
+  if (msg.command !== "320") return next;
+  const parsed = parseCreditsLine(msg.params[2] ?? "");
+  if (parsed === undefined) return next;
+  const withoutOld = withoutEntry(state.credits, key);
+  return { ...next, credits: capRecord(withEntry(withoutOld, key, parsed.total), CREDITS_MAX) };
 }
 
 /** 318: emit the grouped block into the Active_Window and drop the collected data. */

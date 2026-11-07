@@ -43,6 +43,19 @@ describe("WHOIS grouping", () => {
     expect(s.whoisPending).toEqual({});
   });
 
+  it("keeps the 320 lines in received order as data for the line-based rendering", () => {
+    const s = run(registered(), [
+      msg("311", "me", "Coder", "coder", "host", "*", "Coder Agent"),
+      msg("320", "me", "Coder", "model: x"),
+      msg("320", "me", "Coder", "tools: shell"),
+      msg("320", "me", "Coder", "credits: #dev 1.00 / total 2.00"),
+      msg("318", "me", "coder", "End of /WHOIS list"),
+    ]);
+    const block = (s.windows["c:#chan"]?.lines ?? []).find((l) => l.kind === "whois");
+    expect(block?.whois?.special).toEqual(["model: x", "tools: shell", "credits: #dev 1.00 / total 2.00"]);
+    expect(block?.whois?.nick).toBe("Coder");
+  });
+
   it("401 replaces the block with an error line and discards collected replies", () => {
     const s = run(registered(), [
       ...WHOIS.slice(0, 2),

@@ -55,6 +55,10 @@ export interface Line {
   readonly exorcism?: ExorcismParts;
   /** Set only when kind is "whois"; all fields are untrusted plain text. `text` is a one-line summary. */
   readonly whois?: WhoisPending;
+  /** Set on join, part and quit lines from the message prefix. Untrusted plain text. */
+  readonly prefix?: { readonly user: string; readonly host: string };
+  /** Three-digit numeric of a server reply line; rendered dim before the text. */
+  readonly code?: string;
   readonly mention: boolean;
   /** Sent by the own nick. */
   readonly own: boolean;
@@ -83,6 +87,10 @@ export interface Window {
   readonly topic?: string;
   /** Channel only; key = irc_lower(nick). */
   readonly members?: Readonly<Record<string, Member>>;
+  /** Channel only; flags without arguments, sorted, e.g. `+mnt`. Undefined/"" = unknown or none. */
+  readonly modes?: string;
+  /** Channel only; display nicks of kicked Known_Agents, oldest first, at most EXORCISED_MAX. Never in `members`. */
+  readonly exorcised?: readonly string[];
 }
 
 export interface WhoisPending {
@@ -121,10 +129,16 @@ export interface ClientState {
   readonly closedLines: Readonly<Record<string, readonly Line[]>>;
   /** Key = irc_lower(nick). */
   readonly whoisPending: Readonly<Record<string, WhoisPending>>;
+  /** Latest credits `total` per agent from `320` lines; key = irc_lower(nick), null-prototype, max 50. */
+  readonly credits: Readonly<Record<string, number>>;
+  /** Away text per nick; key = irc_lower(nick), null-prototype, max 200 (AWAY_MAX). Cleared on reconnect. */
+  readonly away: Readonly<Record<string, string>>;
   readonly nextLineId: number;
   readonly paste: PasteState;
   /** Channels whose NAMES reply came from a user-issued /names. */
   readonly expectingNames: readonly string[];
+  /** Own user modes, e.g. `+iw`; "" when unknown. */
+  readonly userModes: string;
 }
 
 export const BUFFER_CAP = 1000;
@@ -133,3 +147,4 @@ export const HISTORY_MAX = 100;
 export const PASTE_MAX_LINES = 5;
 export const PASTE_INTERVAL_MS = 500;
 export const LINE_MAX_BYTES = 512;
+export const EXORCISED_MAX = 20;

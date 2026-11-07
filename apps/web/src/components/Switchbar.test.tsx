@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { createClientStore } from "../store/client-store.js";
 import { ClientStoreProvider } from "../store/react.js";
@@ -72,6 +72,45 @@ describe("Switchbar", () => {
   });
 });
 
+describe("Switchbar layout and CreditsCounter", () => {
+  it("keeps every window in the bar and shows the credits total as a named status", () => {
+    const { store, recv } = setup();
+    store.getState().minimiseWindow("c:#dev");
+    recv(":srv 320 alice coder :credits: #dev 9.60 / total 12.00");
+    const { container } = render(
+      <ClientStoreProvider store={store}>
+        <Switchbar />
+      </ClientStoreProvider>,
+    );
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+    const counter = screen.getByRole("status", { name: "Credits used by agents" });
+    expect(counter.textContent).toBe("credits: 12.0");
+    expect(container.querySelector("[style]")).toBeNull();
+  });
+
+  it("clears credits only when connecting to a different server", () => {
+    const other = "ws://127.0.0.1:6681";
+    const socket = new FakeSocket();
+    const store = createClientStore({
+      createSocket: () => socket,
+      storage: createClientStorage({ getItem: () => null, setItem: () => undefined }, [ORIGIN, other]),
+      now: () => 1000,
+      setTimeout: () => 0,
+      clearTimeout: () => undefined,
+      defaultServerUrl: ORIGIN,
+      allowedOrigins: [ORIGIN, other],
+    });
+    store.getState().connect({ nick: "alice", serverUrl: ORIGIN, password: undefined });
+    socket.onopen?.();
+    socket.onmessage?.({ data: ":srv 320 alice coder :credits: #dev 1.00 / total 5.00\r\n" });
+    expect(Object.keys(store.getState().client.credits)).toHaveLength(1);
+    store.getState().connect({ nick: "alice", serverUrl: ORIGIN, password: undefined });
+    expect(Object.keys(store.getState().client.credits)).toHaveLength(1);
+    store.getState().connect({ nick: "alice", serverUrl: other, password: undefined });
+    expect(Object.keys(store.getState().client.credits)).toHaveLength(0);
+  });
+});
+
 describe("window shortcuts", () => {
   it("Alt+2 activates the second window", () => {
     const { store } = setup();
@@ -92,7 +131,9 @@ describe("window shortcuts", () => {
         <Shell />
       </ClientStoreProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Close bob" }));
+    // The child title bar's Close button (the app Title_Bar has its own "Close").
+    const child = screen.getByRole("region", { name: "bob window" });
+    fireEvent.click(within(child).getByRole("button", { name: "Close" }));
     expect(store.getState().client.windows["q:bob"]).toBeUndefined();
   });
 });

@@ -18,6 +18,7 @@ export const STATUS_KEY = "status";
 export const MAX_QUERIES = 50;
 export const MAX_CLOSED = 50;
 export const MAX_WHOIS_PENDING = 50;
+export const CREDITS_MAX = 50;
 
 /** A line to append; id and timestamp are assigned by `appendTo`. */
 export interface LineSpec {
@@ -26,8 +27,27 @@ export interface LineSpec {
   readonly from?: string;
   readonly exorcism?: ExorcismParts;
   readonly whois?: WhoisPending;
+  readonly prefix?: { readonly user: string; readonly host: string };
+  readonly code?: string;
   readonly mention?: boolean;
   readonly own?: boolean;
+}
+
+/** `--- Session start: YYYY-MM-DD HH:MM` in the local time zone of the runtime. */
+export function sessionStartText(nowMs: number): string {
+  const d = new Date(nowMs);
+  const p = (n: number, w = 2): string => String(n).padStart(w, "0");
+  const date = `${p(d.getFullYear(), 4)}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return `--- Session start: ${date} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** `user` and `host` of a `nick!user@host` prefix; undefined for server or partial prefixes. */
+export function userHostOf(prefix: string | undefined): { readonly user: string; readonly host: string } | undefined {
+  if (prefix === undefined) return undefined;
+  const bang = prefix.indexOf("!");
+  const at = prefix.indexOf("@", bang + 1);
+  if (bang === -1 || at === -1) return undefined;
+  return { user: prefix.slice(bang + 1, at), host: prefix.slice(at + 1) };
 }
 
 export function emptyWindow(key: string, kind: WindowKind, name: string): Window {
@@ -45,9 +65,12 @@ export function initialState(ownNick = ""): ClientState {
     activeKey: STATUS_KEY,
     closedLines: nullRecord(),
     whoisPending: nullRecord(),
+    credits: nullRecord(),
+    away: nullRecord(),
     nextLineId: 1,
     paste: { queue: [] },
     expectingNames: [],
+    userModes: "",
   };
 }
 
@@ -92,6 +115,8 @@ export function appendTo(state: ClientState, key: string, spec: LineSpec, nowMs:
     ...(spec.from !== undefined ? { from: spec.from } : {}),
     ...(spec.exorcism !== undefined ? { exorcism: spec.exorcism } : {}),
     ...(spec.whois !== undefined ? { whois: spec.whois } : {}),
+    ...(spec.prefix !== undefined ? { prefix: spec.prefix } : {}),
+    ...(spec.code !== undefined ? { code: spec.code } : {}),
   };
   const inactive = target.key !== state.activeKey;
   const updated: Window = {

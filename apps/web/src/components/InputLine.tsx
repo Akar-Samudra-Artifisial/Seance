@@ -15,6 +15,23 @@ export function InputLine(): ReactNode {
   const cycle = useRef<CompletionCycle | null>(null);
   const pendingCaret = useRef<number | null>(null);
 
+  // A menu item prefilled the line: take the text, clear the slot and focus (R2.5).
+  const draft = useClientStore((s) => s.ui.draft);
+  const clearDraft = useClientStore((s) => s.clearDraft);
+  // The text is adopted while rendering (derived-state pattern); the effect only does side effects.
+  const [seenDraft, setSeenDraft] = useState<string | null>(null);
+  if (draft !== seenDraft && (draft !== null || seenDraft !== null)) {
+    setSeenDraft(draft);
+    if (draft !== null) setText(draft);
+  }
+  useLayoutEffect(() => {
+    if (draft === null) return;
+    cycle.current = null;
+    pendingCaret.current = draft.length;
+    clearDraft();
+    inputRef.current?.focus();
+  }, [draft, clearDraft]);
+
   // Place the caret after React has written the completed value into the input.
   useLayoutEffect(() => {
     if (pendingCaret.current !== null && inputRef.current !== null) {

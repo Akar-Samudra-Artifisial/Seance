@@ -38,7 +38,8 @@ function setup() {
     },
     storage: createClientStorage(null, [ORIGIN]),
     now: () => Date.now(),
-    setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+    // The 30 s lag timer is not under test here; keep it out of the paste timer count.
+    setTimeout: (fn, ms) => (ms === 30_000 ? -1 : globalThis.setTimeout(fn, ms)),
     clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof globalThis.setTimeout>),
     defaultServerUrl: ORIGIN,
     allowedOrigins: [ORIGIN],

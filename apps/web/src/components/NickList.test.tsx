@@ -17,10 +17,10 @@ describe("NickList", () => {
     { nick: "coder", op: true, voice: false },
   );
 
-  it("is a named list with channel and member count", () => {
+  it("is a named list with channel and user count, plus footer", () => {
     render(<NickList channel="#dev" members={sample} />);
-    expect(screen.getByRole("list", { name: "Members of #dev, 4 members" })).toBeTruthy();
-    expect(screen.getByText("4 nicks")).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Members of #dev (4 users)" })).toBeTruthy();
+    expect(screen.getByText("4 users · 2 agents")).toBeTruthy();
   });
 
   it("orders ops, voiced, others with @ and + prefixes", () => {
@@ -37,15 +37,26 @@ describe("NickList", () => {
     expect(items[2]?.className).toContain("text-nick-human");
   });
 
-  it("handles an empty or missing member set", () => {
-    render(<NickList channel="#dev" members={undefined} />);
-    expect(screen.getByRole("list", { name: "Members of #dev, 0 members" })).toBeTruthy();
-    expect(screen.getByText("0 nicks")).toBeTruthy();
+  it("marks agents with an accessible ghost icon, grey while away", () => {
+    const away = Object.assign(Object.create(null) as Record<string, string>, { reviewer: "" });
+    render(<NickList channel="#dev" members={sample} away={away} />);
+    expect(screen.getAllByRole("img", { name: "agent" })).toHaveLength(1);
+    expect(screen.getAllByRole("img", { name: "agent, away" })).toHaveLength(1);
+    const items = within(screen.getByRole("list")).getAllByRole("listitem");
+    expect(items[1]?.className).toContain("text-away-grey");
   });
 
-  it("uses singular wording for one member", () => {
-    render(<NickList channel="#dev" members={members({ nick: "me", op: true, voice: false })} />);
-    expect(screen.getByRole("list", { name: "Members of #dev, 1 member" })).toBeTruthy();
-    expect(screen.getByText("1 nick")).toBeTruthy();
+  it("shows exorcised rows below live members without counting them", () => {
+    render(<NickList channel="#dev" members={members({ nick: "me", op: true, voice: false })} exorcised={["coder"]} />);
+    const items = within(screen.getByRole("list")).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual(["@me", "coder"]);
+    expect(items[1]?.className).toContain("line-through");
+    expect(screen.getByText("1 users · 0 agents")).toBeTruthy();
+  });
+
+  it("handles an empty or missing member set", () => {
+    render(<NickList channel="#dev" members={undefined} />);
+    expect(screen.getByRole("list", { name: "Members of #dev (0 users)" })).toBeTruthy();
+    expect(screen.getByText("0 users · 0 agents")).toBeTruthy();
   });
 });

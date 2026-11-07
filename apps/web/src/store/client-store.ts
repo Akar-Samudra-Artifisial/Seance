@@ -20,11 +20,22 @@ import {
 } from "../irc/index.js";
 import type { ClientState, ConnectParams, History, HistoryDirection, InputContext, LineKind } from "../irc/index.js";
 import { channelKey, chatKey } from "../irc/casemap.js";
-import { getOwn, withEntry, withoutEntry } from "../irc/record.js";
+import { getOwn, nullRecord, withEntry, withoutEntry } from "../irc/record.js";
 import { appendStatus, appendTo, openWindow, rememberClosed } from "../irc/reducer.route.js";
 import type { LineSpec } from "../irc/reducer.route.js";
 import type { CreateSocket, WebSocketLike } from "./socket.js";
 import type { ClientStorage } from "./storage.js";
+
+/** Host, port and TLS flag (`wss:` only) of a server URL; falls back to the raw text for non-URLs. */
+function describeEndpoint(serverUrl: string): { readonly host: string; readonly port: string; readonly tls: boolean } {
+  try {
+    const u = new URL(serverUrl);
+    const tls = u.protocol === "wss:";
+    return { host: u.hostname, port: u.port !== "" ? u.port : tls ? "443" : "80", tls };
+  } catch {
+    return { host: serverUrl, port: "?", tls: false };
+  }
+}
 
 /** Audio output for the optional mention sound (Requirement 10.3). */
 export interface MentionAudio {
@@ -58,6 +69,14 @@ export interface UiState {
   readonly mentionSound: boolean;
   /** Input_Line command history (R7.23). */
   readonly history: History;
+  /** Round-trip time of the last answered lag ping in seconds; null = unknown. */
+  readonly lagSeconds: number | null;
+  /** Window keys hidden from the MDI area and shown in the Minimised_Tray (R4.3). */
+  readonly minimised: readonly string[];
+  /** Text a menu item wants in the Input_Line; null = none. InputLine consumes it. */
+  readonly draft: string | null;
+  /** Counter bumped by `requestConnectDialog`; the Connect_Dialog reopens when it changes. */
+  readonly connectRequests: number;
 }
 
 export interface ClientStore {
@@ -80,8 +99,20 @@ export interface ClientStore {
   dispose(): void;
   /** Toggle the mention sound (off by default). Call it from a user gesture: enabling unlocks audio. */
   setMentionSound(enabled: boolean): void;
+  /** Hide a window in the Minimised_Tray; routing, unread and mention flags are untouched. */
+  minimiseWindow(key: string): void;
+  /** Un-minimise a window and make it active. */
+  restoreWindow(key: string): void;
+  /** Put a command prefix (for example `/join #`) into the Input_Line and request focus. */
+  insertCommand(prefix: string): void;
+  /** Called by the Input_Line after it took the draft. */
+  clearDraft(): void;
+  /** Ask the Connect_Dialog to open again (Toolbar, menu). */
+  requestConnectDialog(): void;
 }
 
+const LAG_INTERVAL_MS = 30_000;
+const LAG_PREFIX = "seance-lag-";
 const CLOSE_TOO_BIG = 1009;
 const CLOSE_NORMAL = 1000;
 const QUIT_REASON = "Leaving";
@@ -111,10 +142,27 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
 
   const store = createStore<ClientStore>()((set, get) => {
     const update = (fn: (c: ClientState) => ClientState): void => {
-      set((s) => ({ client: fn(s.client) }));
+      set((s) => {
+        const client = fn(s.client);
+        // Minimised keys only ever name open windows (R4.7).
+        const minimised = s.ui.minimised.filter((k) => getOwn(client.windows, k) !== undefined);
+        return minimised.length === s.ui.minimised.length ? { client } : { client, ui: { ...s.ui, minimised } };
+      });
     };
     const status = (kind: LineKind, text: string): void => {
       update((c) => appendStatus(c, { kind, text }, deps.now()));
+    };
+    /** Make a window active and clear its unread and mention flags; does not touch the minimised list. */
+    const activate = (key: string): void => {
+      update((c) => {
+        const win = getOwn(c.windows, key);
+        if (win === undefined) return c;
+        return {
+          ...c,
+          activeKey: key,
+          windows: withEntry(c.windows, key, { ...win, unread: false, mentioned: false }),
+        };
+      });
     };
     const setPhase = (event: Parameters<typeof stepConnection>[1]): void => {
       update((c) => ({ ...c, phase: stepConnection(c.phase, event) }));
@@ -167,9 +215,42 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       if (pasteTimer === null) sendNextQueued();
     };
 
+    // Lag timer: the Store owns the timer, the outstanding token and its send time (Requirement 6.5).
+    let lagTimer: unknown = null;
+    let lagCounter = 0;
+    let lagToken: string | null = null;
+    let lagSentAt = 0;
+
+    const stopLag = (): void => {
+      if (lagTimer !== null) {
+        deps.clearTimeout(lagTimer);
+        lagTimer = null;
+      }
+      lagToken = null;
+    };
+
+    const lagTick = (): void => {
+      lagTimer = null;
+      const s = socket;
+      if (s === null || get().client.phase !== "registered") return;
+      lagCounter += 1;
+      const token = `${LAG_PREFIX}${lagCounter}`;
+      if (sendMessage(s, { command: "PING", params: [token] })) {
+        lagToken = token;
+        lagSentAt = deps.now();
+      }
+      lagTimer = deps.setTimeout(lagTick, LAG_INTERVAL_MS);
+    };
+
+    const startLag = (): void => {
+      stopLag();
+      lagTimer = deps.setTimeout(lagTick, LAG_INTERVAL_MS);
+    };
+
     /** Detach and close the current socket without reacting to its events. */
     const release = (code: number, reason: string): void => {
       clearQueue("connection closed");
+      stopLag();
       const s = socket;
       socket = null;
       framer = new LineFramer();
@@ -198,6 +279,8 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
     const onOpen = (s: WebSocketLike): void => {
       if (socket !== s || last === null) return;
       setPhase({ type: "socket-open" });
+      const endpoint = describeEndpoint(last.serverUrl);
+      status("join", `Connected to ${endpoint.host}${endpoint.tls ? " (TLS)" : ""}`);
       const { nick, password } = last;
       if (password !== undefined && password !== "") sendMessage(s, { command: "PASS", params: [password] });
       sendMessage(s, { command: "NICK", params: [nick] });
@@ -241,9 +324,25 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
           status("error", `error: saving nick and server failed: ${errorMessage(err)}`);
         }
       }
+      if (phase === "registered" && before.phase !== "registered") startLag();
+      if (result.pong !== undefined && result.pong === lagToken) {
+        const seconds = (deps.now() - lagSentAt) / 1000;
+        lagToken = null;
+        set((st) => ({ ui: { ...st.ui, lagSeconds: seconds } }));
+      }
       const s = socket;
       if (s === null) return;
       for (const out of result.send) sendMessage(s, out);
+      // Ask for the channel modes once per own join (Requirement 8.2).
+      if (msg.command.toUpperCase() === "JOIN") {
+        const channel = msg.params[0];
+        if (channel !== undefined) {
+          const key = channelKey(channel);
+          if (getOwn(before.windows, key) === undefined && getOwn(result.state.windows, key) !== undefined) {
+            sendMessage(s, { command: "MODE", params: [channel] });
+          }
+        }
+      }
     };
 
     const onFrame = (s: WebSocketLike, data: unknown): void => {
@@ -280,6 +379,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       framer = new LineFramer();
       const before = get().client.phase;
       clearQueue("connection closed");
+      stopLag();
       setPhase({ type: "socket-closed" });
       if (before === "connecting") {
         setConnectError("origin-or-network", `Could not reach ${url}: ${ORIGIN_HINT}.`);
@@ -292,14 +392,24 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
 
     const startConnection = (params: ConnectParams): void => {
       release(CLOSE_NORMAL, "reconnecting");
+      set((st) => ({ ui: { ...st.ui, lagSeconds: null, serverUrl: params.serverUrl } }));
       last = params;
+      // R5.8: credits belong to one server; drop them when connecting to a different one.
+      const serverChanged = params.serverUrl !== url;
       url = params.serverUrl;
       update((c) => {
         const { connectError: _dropped, ...rest } = c;
         void _dropped;
-        const idle: ClientState = { ...rest, ownNick: params.nick, phase: "disconnected" };
+        const idle: ClientState = {
+          ...rest,
+          ...(serverChanged ? { credits: nullRecord<number>() } : {}),
+          ownNick: params.nick,
+          phase: "disconnected",
+        };
         return { ...idle, phase: stepConnection("disconnected", { type: "connect" }) };
       });
+      const endpoint = describeEndpoint(params.serverUrl);
+      status("local", `* Connecting to ${endpoint.host} (${endpoint.port})`);
       let s: WebSocketLike;
       try {
         s = deps.createSocket(params.serverUrl);
@@ -357,6 +467,10 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         serverUrl: stored.serverUrl ?? deps.defaultServerUrl,
         mentionSound: false,
         history: EMPTY_HISTORY,
+        lagSeconds: null,
+        minimised: [],
+        draft: null,
+        connectRequests: 0,
       },
 
       connect(params) {
@@ -496,15 +610,12 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       },
 
       setActiveWindow(key) {
-        update((c) => {
-          const win = getOwn(c.windows, key);
-          if (win === undefined) return c;
-          return {
-            ...c,
-            activeKey: key,
-            windows: withEntry(c.windows, key, { ...win, unread: false, mentioned: false }),
-          };
-        });
+        if (getOwn(get().client.windows, key) === undefined) return;
+        // Activating a window shows it in the MDI area, so it cannot stay minimised.
+        if (get().ui.minimised.includes(key)) {
+          set((s) => ({ ui: { ...s.ui, minimised: s.ui.minimised.filter((k) => k !== key) } }));
+        }
+        activate(key);
       },
 
       closeWindow(key) {
@@ -543,6 +654,38 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
           pasteTimer = null;
         }
         release(CLOSE_NORMAL, "client closed");
+      },
+
+      minimiseWindow(key) {
+        const c = get().client;
+        if (getOwn(c.windows, key) === undefined || get().ui.minimised.includes(key)) return;
+        const minimised = [...get().ui.minimised, key];
+        set((s) => ({ ui: { ...s.ui, minimised } }));
+        if (c.activeKey !== key) return;
+        // Next non-minimised window in Switchbar order (wrapping), else the Status_Window.
+        const at = c.order.indexOf(key);
+        const ordered = [...c.order.slice(at + 1), ...c.order.slice(0, Math.max(at, 0))];
+        const next = ordered.find((k) => k !== key && !minimised.includes(k)) ?? "status";
+        // Internal switch: the fallback Status_Window may itself be minimised and stays so.
+        activate(next);
+      },
+
+      restoreWindow(key) {
+        if (getOwn(get().client.windows, key) === undefined) return;
+        set((s) => ({ ui: { ...s.ui, minimised: s.ui.minimised.filter((k) => k !== key) } }));
+        get().setActiveWindow(key);
+      },
+
+      insertCommand(prefix) {
+        set((s) => ({ ui: { ...s.ui, draft: prefix } }));
+      },
+
+      requestConnectDialog() {
+        set((s) => ({ ui: { ...s.ui, connectRequests: s.ui.connectRequests + 1 } }));
+      },
+      clearDraft() {
+        if (get().ui.draft === null) return;
+        set((s) => ({ ui: { ...s.ui, draft: null } }));
       },
 
       setMentionSound(enabled) {

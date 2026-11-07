@@ -53,6 +53,19 @@ const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ["nick-researcher", "ghost-bg", BODY, "researcher nick"],
   ["nick-human", "ghost-bg", BODY, "human nick"],
   ["ghost-orange", "ghost-bg", LARGE_OR_UI, "focus ring on ghost surfaces"],
+  // Chat line colours (R16.2, R16.3).
+  ["link-blue", "ghost-bg", BODY, "links in chat"],
+  ["timestamp-dim", "ghost-bg", BODY, "timestamps"],
+  ["action-purple", "ghost-bg", BODY, "action lines"],
+  ["event-green", "ghost-bg", BODY, "event lines"],
+  ["tool-grey", "ghost-bg", BODY, "tool notices"],
+  ["away-grey", "ghost-bg", BODY, "away nicks and lines"],
+  ["mention-bar", "ghost-bg", LARGE_OR_UI, "mention bar (non-text)"],
+  // Inactive title bar and switchbar.
+  ["title-inactive-text", "title-inactive-from", BODY, "inactive title text, left end"],
+  ["title-inactive-text", "title-inactive-to", BODY, "inactive title text, right end"],
+  ["switch-text", "switch-face", BODY, "switchbar button"],
+  ["switch-text", "switch-active", BODY, "active switchbar button"],
   // Chrome surfaces.
   ["chrome-outline", "chrome-face", BODY, "chrome text"],
   ["chrome-outline", "chrome-face", LARGE_OR_UI, "focus ring and bevel on chrome"],

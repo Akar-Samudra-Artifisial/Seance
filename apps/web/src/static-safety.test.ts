@@ -66,6 +66,22 @@ describe("static safety checks", () => {
     expect(offenders(sources.filter((f) => /\.(ts|tsx|css)$/.test(f)), /\bmirc\b/i)).toEqual([]);
   });
 
+  it("sets no font size below 11px in component class lists", () => {
+    const components = codeSources.filter(
+      (f) => f.endsWith(".tsx") && (rel(f).startsWith("src/components/") || rel(f).startsWith("app/")),
+    );
+    const small: string[] = [];
+    for (const f of components) {
+      const text = stripComments(readFileSync(f, "utf8"));
+      for (const m of text.matchAll(/\btext-\[(\d+(?:\.\d+)?)(px|rem|em)\]/g)) {
+        const value = Number(m[1]);
+        const px = m[2] === "px" ? value : value * 16;
+        if (px < 11) small.push(`${rel(f)}: ${m[0]}`);
+      }
+    }
+    expect(small).toEqual([]);
+  });
+
   it("has no app/api directory or route handlers", () => {
     expect(existsSync(join(webRoot, "app", "api"))).toBe(false);
     const routes = [...walk(join(webRoot, "app")), ...walk(join(webRoot, "src"))]

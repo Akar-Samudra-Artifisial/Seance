@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { createClientStore } from "../store/client-store.js";
 import { ClientStoreProvider } from "../store/react.js";
@@ -46,7 +46,7 @@ function setup() {
     </ClientStoreProvider>,
   );
   const input = screen.getByLabelText("Message or command") as HTMLInputElement;
-  return { input, socket };
+  return { input, socket, store };
 }
 
 const type = (input: HTMLInputElement, value: string): void => {
@@ -54,6 +54,16 @@ const type = (input: HTMLInputElement, value: string): void => {
 };
 
 describe("InputLine", () => {
+  it("consumes a draft from insertCommand, clears it and takes focus", () => {
+    const { input, store } = setup();
+    act(() => {
+      store.getState().insertCommand("/join #");
+    });
+    expect(input.value).toBe("/join #");
+    expect(document.activeElement).toBe(input);
+    expect(store.getState().ui.draft).toBeNull();
+  });
+
   it("recalls history with Up and Down and restores the draft", () => {
     const { input, socket } = setup();
     for (const line of ["one", "two"]) {
