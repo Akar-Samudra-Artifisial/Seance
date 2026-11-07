@@ -16,7 +16,7 @@ export interface StatusCounts {
 }
 
 /** IRC codes and control characters removed (same rules as the Formatter). */
-function plain(text: string): string {
+export function plain(text: string): string {
   return formatIrc(text)
     .map((s) => s.text)
     .join("");
@@ -28,6 +28,15 @@ export function modeSuffix(modes: string): string {
   return clean === "" || clean === "+" ? "" : ` (${clean})`;
 }
 
+/** Longest topic part of a title, in characters; longer topics end in an ellipsis. */
+export const TITLE_TOPIC_MAX = 120;
+
+/** At most `max` code points of `text`, the last one replaced by "…" when it was cut. */
+function clip(text: string, max: number): string {
+  const chars = Array.from(text);
+  return chars.length <= max ? text : `${chars.slice(0, max - 1).join("")}…`;
+}
+
 /** Title_Bar and document title text for the Active_Window. Never contains control characters. */
 export function titleOf(state: ClientState, host: string): string {
   const w = getOwn(state.windows, state.activeKey);
@@ -35,7 +44,7 @@ export function titleOf(state: ClientState, host: string): string {
   if (w === undefined || w.kind === "status") {
     inner = `Status: ${state.ownNick}${modeSuffix(state.userModes)} on ${host}`;
   } else if (w.kind === "channel") {
-    const topic = w.topic === undefined ? "" : plain(w.topic);
+    const topic = w.topic === undefined ? "" : clip(plain(w.topic), TITLE_TOPIC_MAX);
     inner = `${w.name}${modeSuffix(w.modes ?? "")}${topic === "" ? "" : `: ${topic}`}`;
   } else {
     inner = w.name;

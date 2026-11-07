@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { statusCounts } from "../irc/index.js";
 import type { ConnectionPhase } from "../irc/index.js";
 import { useClientStore } from "../store/react.js";
@@ -21,9 +22,13 @@ export function StatusBar(): ReactNode {
   const nick = useClientStore((s) => s.client.ownNick);
   const serverUrl = useClientStore((s) => s.ui.serverUrl);
   const lag = useClientStore((s) => s.ui.lagSeconds);
-  const client = useClientStore((s) => s.client);
-  const active = client.windows[client.activeKey];
-  const counts = statusCounts(client, active?.kind === "channel" ? "active" : "all");
+  // Counts are primitives, so a new chat line leaves the selection shallow-equal and skips the render.
+  const counts = useClientStore(
+    useShallow((s) => {
+      const active = s.client.windows[s.client.activeKey];
+      return statusCounts(s.client, active?.kind === "channel" ? "active" : "all");
+    }),
+  );
 
   const connection =
     phase === "registered"

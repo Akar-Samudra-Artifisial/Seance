@@ -21,7 +21,7 @@ type ToolbarItem = ToolbarButton | "sep";
 /** 32px icon toolbar (R3): connect, options, channels, agents, logs, theme and the theme label. */
 export function Toolbar(): ReactNode {
   const phase = useClientStore((s) => s.client.phase);
-  const ownNick = useClientStore((s) => s.client.ownNick);
+  const hasConnected = useClientStore((s) => s.ui.hasConnected);
   const reconnect = useClientStore((s) => s.reconnect);
   const requestConnectDialog = useClientStore((s) => s.requestConnectDialog);
   const setActiveWindow = useClientStore((s) => s.setActiveWindow);
@@ -31,7 +31,8 @@ export function Toolbar(): ReactNode {
   const listRef = useRef<HTMLDivElement>(null);
 
   const registered = phase === "registered";
-  const canReconnect = (phase === "disconnected" || phase === "failed") && ownNick !== "";
+  // Reconnect needs a target: before the first connection the button stays "Connect".
+  const canReconnect = (phase === "disconnected" || phase === "failed") && hasConnected;
 
   const items: readonly ToolbarItem[] = [
     {

@@ -42,7 +42,15 @@ export { KNOWN_AGENTS, classifyLine, isKnownAgent, markersFor } from "./classify
 export type { ReduceResult } from "./reducer.js";
 export { initialState, reduce } from "./reducer.js";
 export type { CreditsLine, StatusCounts } from "./selectors.js";
-export { creditsTotal, exorcismText, modeSuffix, parseCreditsLine, statusCounts, titleOf } from "./selectors.js";
+export {
+  creditsTotal,
+  exorcismText,
+  modeSuffix,
+  parseCreditsLine,
+  plain,
+  statusCounts,
+  titleOf,
+} from "./selectors.js";
 export { resetForReconnect } from "./reset.js";
 export type { Completion, CompletionCycle } from "./complete.js";
 export { completeNick } from "./complete.js";

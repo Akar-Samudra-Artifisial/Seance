@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { plain } from "../irc/index.js";
 import type { Window } from "../irc/index.js";
 import { useClientStore } from "../store/react.js";
 import { Icon } from "./Icon.js";
@@ -13,7 +14,9 @@ const controlClass =
 
 /** Compact bar of a minimised MDI_Child: icon, bold title, restore and close. */
 export function MinimisedBar(props: { readonly window: Window; readonly title: string }): ReactNode {
-  const { window: win, title } = props;
+  const { window: win } = props;
+  // Window names are untrusted; strip bidi and control characters from every attribute text.
+  const title = plain(props.title);
   const restoreWindow = useClientStore((s) => s.restoreWindow);
   const closeWindow = useClientStore((s) => s.closeWindow);
   return (

@@ -82,10 +82,13 @@ export function NickList(props: {
         {ghosts.map((n) => (
           <li
             key={`exorcised:${n}`}
-            className="mb-0.5 flex h-5 items-center leading-5 text-away-grey line-through"
+            className={`mb-0.5 flex h-5 items-center justify-between leading-5 line-through ${nickClass(n, false)}`}
           >
-            <span className="min-w-0 truncate">
+            <span className="min-w-0 truncate opacity-60">
               <IrcText text={n} />
+            </span>
+            <span role="img" aria-label="exorcised" className="size-3 shrink-0">
+              <Icon name="ghost-away" className="size-3" />
             </span>
           </li>
         ))}

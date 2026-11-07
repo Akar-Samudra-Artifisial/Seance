@@ -22,13 +22,12 @@ export function hostOf(serverUrl: string): string {
 
 /** Application title bar. Also keeps `document.title` equal to the displayed text. */
 export function TitleBar(): ReactNode {
-  const client = useClientStore((s) => s.client);
-  const serverUrl = useClientStore((s) => s.ui.serverUrl);
+  // The selector returns a string, so a new chat line leaves the selection equal and skips the render.
+  const title = useClientStore((s) => titleOf(s.client, hostOf(s.ui.serverUrl)));
+  const connected = useClientStore((s) => s.client.phase === "registered");
   const quit = useClientStore((s) => s.quit);
-  const connected = client.phase === "registered";
   // The Connect_Dialog is modal and visible whenever the client is not registered.
   const modalOpen = !connected;
-  const title = titleOf(client, hostOf(serverUrl));
 
   useEffect(() => {
     document.title = title;

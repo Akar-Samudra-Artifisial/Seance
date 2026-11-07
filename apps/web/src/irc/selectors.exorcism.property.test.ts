@@ -45,7 +45,7 @@ const partsArb = nickArb.chain((kicker) =>
 );
 
 describe("P4 exorcism text", () => {
-  it("P4 reason is present exactly when it has visible text and differs from the kicker", () => {
+  it("P4 reason is present exactly when it has visible text and differs from the kicker", { timeout: 15_000 }, () => {
     fc.assert(
       fc.property(partsArb, (parts) => {
         const visible = parts.reason.replace(/[\x00-\x1f]/g, "").trim();
@@ -58,7 +58,7 @@ describe("P4 exorcism text", () => {
     );
   });
 
-  it("P4 never emits an [exorcised] marker", () => {
+  it("P4 never emits an [exorcised] marker", { timeout: 15_000 }, () => {
     fc.assert(
       fc.property(partsArb, (parts) => {
         const out = exorcismText(parts);

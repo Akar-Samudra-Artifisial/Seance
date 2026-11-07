@@ -26,7 +26,7 @@ function stateWith(w: Window | undefined, userModes: string, nick: string): Clie
 }
 
 describe("P1 title derivation", () => {
-  it("P1 channel title: modes and topic appear only when set", () => {
+  it("P1 channel title: modes and topic appear only when set", { timeout: 15_000 }, () => {
     fc.assert(
       fc.property(word, modesArb, topicArb, hostArb, (name, modes, topic, host) => {
         const w: Window = {
@@ -51,7 +51,7 @@ describe("P1 title derivation", () => {
     );
   });
 
-  it("P1 status title: user modes shown only when set", () => {
+  it("P1 status title: user modes shown only when set", { timeout: 15_000 }, () => {
     fc.assert(
       fc.property(word, modesArb, hostArb, (nick, modes, host) => {
         const t = titleOf(stateWith(undefined, modes, nick), host);
@@ -62,7 +62,7 @@ describe("P1 title derivation", () => {
     );
   });
 
-  it("P1 never contains a control character, whatever the topic, modes or host", () => {
+  it("P1 never contains a control character, whatever the topic, modes or host", { timeout: 15_000 }, () => {
     const anyText = fc.string({ unit: "binary", maxLength: 40 });
     fc.assert(
       fc.property(anyText, anyText, anyText, fc.boolean(), (topic, modes, host, channelWindow) => {

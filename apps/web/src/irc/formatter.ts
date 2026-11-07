@@ -78,7 +78,11 @@ export function formatIrc(text: string): readonly Span[] {
       code < 0x20 ||
       (code >= 0x7f && code <= 0x9f) || // DEL and C1 controls
       (code >= 0x202a && code <= 0x202e) || // bidi embeddings and overrides
-      (code >= 0x2066 && code <= 0x2069) // bidi isolates
+      (code >= 0x2066 && code <= 0x2069) || // bidi isolates
+      code === 0x200b || // zero-width space
+      code === 0x200e || // left-to-right mark
+      code === 0x200f || // right-to-left mark
+      code === 0x061c // Arabic letter mark
     ) {
       // Dropped control character.
     } else {

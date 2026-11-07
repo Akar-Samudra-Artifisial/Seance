@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { plain } from "../irc/index.js";
 import { useClientStore } from "../store/react.js";
 import { MenuPopup } from "./MenuPopup.js";
 import type { InitialFocus, MenuEntry } from "./MenuPopup.js";
@@ -23,12 +25,22 @@ const barButtonClass =
 const childButtonClass =
   "bevel-raised flex h-3.5 w-4 items-center justify-center bg-chrome-face font-chrome text-xs leading-none text-chrome-outline focus-visible:outline-2 focus-visible:outline-chrome-outline disabled:text-chrome-shadow";
 
+/** True on macOS and iOS, where Option+letter produces text. */
+function isApplePlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Mac|iPhone|iPad|iPod/.test(navigator.platform) || /Mac OS X|iPhone|iPad/.test(navigator.userAgent);
+}
+
 /** Win95 menu bar (R2): seven menus, roving tabindex, mnemonics, MDI child buttons at the right end. */
 export function MenuBar(): ReactNode {
+  // Narrow subscriptions: a new chat line replaces `windows`, which must not re-render the menu bar.
   const phase = useClientStore((s) => s.client.phase);
-  const order = useClientStore((s) => s.client.order);
-  const windows = useClientStore((s) => s.client.windows);
+  const order = useClientStore(useShallow((s) => s.client.order));
+  const names = useClientStore(useShallow((s) => s.client.order.map((k) => s.client.windows[k]?.name ?? "")));
   const activeKey = useClientStore((s) => s.client.activeKey);
+  const activeKind = useClientStore((s) => s.client.windows[s.client.activeKey]?.kind);
+  const activeName = useClientStore((s) => s.client.windows[s.client.activeKey]?.name);
+  const hasConnected = useClientStore((s) => s.ui.hasConnected);
   const minimised = useClientStore((s) => s.ui.minimised);
   const mentionSound = useClientStore((s) => s.ui.mentionSound);
   const setMentionSound = useClientStore((s) => s.setMentionSound);
@@ -49,7 +61,7 @@ export function MenuBar(): ReactNode {
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const registered = phase === "registered";
-  const active = windows[activeKey];
+  const active = activeKind === undefined ? undefined : { kind: activeKind, name: activeName ?? "" };
   const inChannel = registered && active?.kind === "channel";
   const index = order.indexOf(activeKey);
   const needsArgs = (prefix: string, enabled: boolean, id: string, label: string): MenuEntry => ({
@@ -96,7 +108,7 @@ export function MenuBar(): ReactNode {
           kind: "item",
           id: "reconnect",
           label: "Reconnect",
-          disabled: phase !== "disconnected" && phase !== "failed",
+          disabled: !hasConnected || (phase !== "disconnected" && phase !== "failed"),
           run: reconnect,
         },
         {
@@ -188,14 +200,14 @@ export function MenuBar(): ReactNode {
       mnemonic: 0,
       disabled: false,
       entries: [
-        ...order.flatMap((key): MenuEntry[] => {
-          const win = windows[key];
-          if (win === undefined) return [];
+        ...order.flatMap((key, at): MenuEntry[] => {
+          const name = names[at];
+          if (name === undefined) return [];
           return [
             {
               kind: "item",
               id: `win-${key}`,
-              label: win.name,
+              label: plain(name),
               checked: key === activeKey,
               disabled: false,
               run: () => {
@@ -266,6 +278,8 @@ export function MenuBar(): ReactNode {
       if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       const match = /^Key([A-Z])$/.exec(event.code);
       if (match?.[1] === undefined) return;
+      // On macOS Option+letter types characters (é, ø, …); leave them to the Input_Line.
+      if (isApplePlatform() && event.target instanceof HTMLElement && event.target.id === "input-line") return;
       const at = menus.findIndex((m) => m.label.charAt(m.mnemonic).toUpperCase() === match[1]);
       if (at === -1) return;
       event.preventDefault();

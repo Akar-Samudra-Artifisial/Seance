@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
+import { plain } from "../irc/index.js";
 
 export type MenuEntry =
   | { readonly kind: "separator"; readonly id: string }
@@ -137,7 +138,7 @@ export function MenuPopup(props: MenuPopupProps): ReactNode {
             <span aria-hidden="true" className="w-3 shrink-0">
               {entry.checked === true ? "✓" : ""}
             </span>
-            {entry.label}
+            {plain(entry.label)}
           </button>
         ),
       )}

@@ -132,6 +132,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: `spikes/acp/src/s8-agent-resolution.ts`, `s8` script, and the "S8: agent file resolution" section in `spikes/acp/FINDINGS.md`
 - Notes: agent files resolve from the process cwd only; a missing file silently falls back to `kiro_default`, so the runner should check `modes.currentModeId`.
 
+### 2026-11-08 — web-client-polish review fixes
+- Kiro features: spec (web-client-polish review findings), steering (web-ui, security: untrusted window names), PBT (explicit 15 s timeouts on P1/P4)
+- Produced: bidi/invisible stripping in labels and `formatter.ts`, 120-char topic clip in titles, lag clamp and reset, Reconnect gated on `ui.hasConnected`, macOS Option+letter left to the Input_Line, narrow store subscriptions (`useShallow`), ghost glyph on exorcised nick rows; tests in `review-fixes.test.tsx`, `lag.close.test.ts`, `selectors.review.test.ts`
+- Notes: build, typecheck, lint, `test --force` and Playwright e2e (8 tests) all pass
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.

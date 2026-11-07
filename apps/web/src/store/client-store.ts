@@ -71,6 +71,8 @@ export interface UiState {
   readonly history: History;
   /** Round-trip time of the last answered lag ping in seconds; null = unknown. */
   readonly lagSeconds: number | null;
+  /** True once a connection was started in this session; Reconnect has a target only then. */
+  readonly hasConnected: boolean;
   /** Window keys hidden from the MDI area and shown in the Minimised_Tray (R4.3). */
   readonly minimised: readonly string[];
   /** Text a menu item wants in the Input_Line; null = none. InputLine consumes it. */
@@ -326,7 +328,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       }
       if (phase === "registered" && before.phase !== "registered") startLag();
       if (result.pong !== undefined && result.pong === lagToken) {
-        const seconds = (deps.now() - lagSentAt) / 1000;
+        const seconds = Math.max(0, (deps.now() - lagSentAt) / 1000);
         lagToken = null;
         set((st) => ({ ui: { ...st.ui, lagSeconds: seconds } }));
       }
@@ -380,6 +382,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       const before = get().client.phase;
       clearQueue("connection closed");
       stopLag();
+      set((st) => ({ ui: { ...st.ui, lagSeconds: null } }));
       setPhase({ type: "socket-closed" });
       if (before === "connecting") {
         setConnectError("origin-or-network", `Could not reach ${url}: ${ORIGIN_HINT}.`);
@@ -392,7 +395,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
 
     const startConnection = (params: ConnectParams): void => {
       release(CLOSE_NORMAL, "reconnecting");
-      set((st) => ({ ui: { ...st.ui, lagSeconds: null, serverUrl: params.serverUrl } }));
+      set((st) => ({ ui: { ...st.ui, lagSeconds: null, hasConnected: true, serverUrl: params.serverUrl } }));
       last = params;
       // R5.8: credits belong to one server; drop them when connecting to a different one.
       const serverChanged = params.serverUrl !== url;
@@ -468,6 +471,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         mentionSound: false,
         history: EMPTY_HISTORY,
         lagSeconds: null,
+        hasConnected: false,
         minimised: [],
         draft: null,
         connectRequests: 0,
