@@ -268,7 +268,7 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 - **Tooling:** pnpm + Turborepo, TypeScript.
 - `apps/ircd` — Fastify, `ws`, own parser.
 - `apps/runner` — ACP client.
-- `apps/web` — Next.js 15, Tailwind, Zustand.
+- `apps/web` — Next.js 16, Tailwind, Zustand.
 - `packages/irc-protocol` — parser/serializer + property-based tests.
 - `packages/db` — Prisma, Postgres.
 - `compose.yaml` (Podman): ircd, runner, web, postgres, redis.

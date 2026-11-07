@@ -207,3 +207,57 @@ Include correctness properties (e.g. no write tool call is ever allowed for a no
 - Kiro features: skill acp-runner, steering runner-acp, spec agent-runner Req 8.15 / design P4 (PBT), spike S11 against real kiro-cli 3.1.0 (2 prompts)
 - Produced: kiro-3.1 frame fixture, info log per permission decision, diff paths dropped from decisions, `strReplace` inference, literal-only shell protected-path rule
 - Notes: S11 showed kiro roots the diff path at its process cwd (also in 3.0), which caused the false outside-worktree; new tests confirmed failing with the fixes reverted
+
+### 2026-11-07 — Spec web-client-basic: requirements
+- Kiro features: spec (`web-client-basic` requirements.md, requirements-first workflow), requirement-detailer sub-agents (all 18 requirements refined), steering (web-ui, irc-protocol, security, testing, tech)
+- Produced: `.kiro/specs/web-client-basic/` with `.config.kiro` and `requirements.md` (18 EARS requirements for the M2 browser client); the refined text is not merged yet, so the file holds the first draft
+- Notes: hook guard-shell blocked the merge write (a `~` in the text) and a retry timed out; the refinement also found a CSP-vs-Connect-dialog conflict and that the runner exorcises with PART, not KICK
+
+### 2026-11-07 — Spec web-client-basic: requirements update and design
+- Kiro features: spec (`web-client-basic` requirements.md update, design.md), steering (web-ui, security, tech), MCP (Context7 for Next.js 16 proxy.ts CSP nonce, Tailwind 4, Zustand 5), PBT (properties P1–P20 planned)
+- Produced: requirements for paced multi-line paste with no CR/LF/NUL on the wire, nonce CSP via proxy.ts with connect-src from NEXT_PUBLIC_IRCD_WS_URL, M2 Figma scope; design.md with core/store/UI layers, state types, component tree and Figma mapping
+- Notes: reading the runner showed a human /kick yields KICK, not the "exorcised" PART, so the e2e asserts the KICK line
+
+### 2026-11-07 — Spec web-client-basic: tasks
+- Kiro features: spec (`web-client-basic` tasks.md, requirements-first workflow), PBT (one test task per property P1–P20), Task Dependency Graph
+- Produced: `.kiro/specs/web-client-basic/tasks.md` ordered so the first runnable slice is connect → status window → join → chat against the real ircd, then full core, UI, CSP proxy, docs and the opt-in Playwright e2e
+- Notes: only non-demo polish is optional (mention sound, component tests, extra a11y); the e2e starts with a spike on importing the ircd in-process under Playwright
+
+### 2026-11-07 — web-client-basic: agent kick rendered as exorcism
+- Kiro features: spec (`web-client-basic` requirements R8.14, R8.18, R13.5, R17.12, R17.19; design Open Point 1; tasks 6.3, 6.13, 6.14, 11.1, 16.3), PBT (new property P21)
+- Produced: KICK of a Known_Agent (coder, reviewer, researcher) renders client-side as "*** <agent> has been exorcised by <kicker> (<reason>)" via classifyLine, with one shared KNOWN_AGENTS list
+- Notes: closes the design gap where a human /kick never produced the runner's exorcism PART; no runner change
+
+### 2026-11-07 — web-client-basic: tasks synced with requirements and design
+- Kiro features: spec (`web-client-basic` tasks.md consistency pass against requirements.md and design.md), PBT (P16 nonce uniqueness, P21 ordering)
+- Produced: uncovered criteria added (disallowed server URL in Store tests, Ircd origin accept/refuse in e2e, /query and /msg windows), resetForReconnect wired into the Store, rebuilt dependency waves
+- Notes: the pass found no stale requirement references; same-file tasks no longer share a wave
+
+### 2026-11-07 — web-client-basic: Kiro usage and Figma frame mapping
+- Kiro features: spec (`web-client-basic` requirements.md, design.md, tasks.md via the requirements-first workflow, with requirement-detailer sub-agents), steering (`.kiro/steering/web-ui.md` for the Win95/ghost design system and frame names; `security`, `irc-protocol`, `tech`, `testing` for CSP, protocol and test rules), agents (the task orchestrator dispatching spec-task-execution subagents, one task at a time; `seance-dev`, `seance-reviewer`, `seance-spec` available), hooks (`guard-shell` PreToolUse deny-list, `test-on-save`, `verify-after-task`, `kiro-usage-log`), MCP (Context7 for Next.js 16, Tailwind 4 and Zustand 5 docs; Playwright for the opt-in e2e), PBT (properties P1–P21 with fast-check)
+- Produced: the spec under `.kiro/specs/web-client-basic/`, the M2 browser client in `apps/web`, and an opt-in Playwright e2e that runs against the real ircd
+- Figma: the frame-to-component mapping below is derived from the frame names in `.kiro/steering/web-ui.md` and the requirements, as recorded in the "Figma frame mapping" table in `design.md`. No Figma MCP calls are claimed here, and layout details were not verified against the frames.
+- Notes: only these frames are in M2 scope; the rest of `04 Whois+Options`, `05 Channel list` and `06 Classic` are M3.
+
+| Figma frame | Components | Requirements |
+|---|---|---|
+| `01 Main` | `ClientApp`, `MenuBar`, `Toolbar`, `Mdi`, `WindowFrame`, `ChannelWindow`, `TopicBar`, `ChatBuffer`, `ChatLine`, `NickList`, `Switchbar`, `InputLine`, `StatusBar` | R5, R6, R7, R8, R13 |
+| `02 Connect` | `ConnectDialog` (nick, server URL, optional password, inline errors, Reconnect button) | R3, R4, R14.5, R14.6 |
+| `03 Kick` | `ChatLine` kick and exorcism styles via `classifyLine`, `NickList` after the agent leaves | R8.13, R8.14, R8.18, R13.5 |
+| `04 Whois+Options` (Whois panel only) | `WhoisBlock` rendered inside `ChatBuffer` | R9.2, R9.3, R13.4 |
+
+### 2026-11-07 — web-client-basic: run all tasks to completion
+- Kiro features: spec web-client-basic (run-all-tasks orchestrator, 86 of 89 tasks via spec-task-execution subagents, all required tasks), PBT (P1–P21 fast-check properties), hook guard-shell
+- Produced: apps/web client (IRC core, Store, UI, CSP proxy.ts), vitest suite (358 tests), opt-in Playwright e2e (smoke, chat flow, CSP), docs and README
+- Notes: P6 property test found a crash on `/__proto__` in parseInput (fixed with Object.hasOwn); e2e showed that messages sent before the agent session exists are dropped silently; guard-shell blocked some shell commands; optional tasks 11.7, 11.9, 14.3 skipped
+
+### 2026-11-07 — web-client-basic: remaining tasks 11.7, 11.9, 14.3
+
+- Kiro features: spec web-client-basic (tasks 11.7, 11.9, 14.3 via spec-task-execution sub-agents in parallel)
+- Produced: optional mention sound (Store `setMentionSound`, menu toggle, browser audio adapter), ChatBuffer a11y test, skip link and unread live-region announcer with tests
+- Notes: all 89 tasks now complete; the earlier entry said these three were skipped.
+
+### 2026-11-07 — web-client-basic review fixes
+- Kiro features: spec (`web-client-basic` review findings), steering (security, web-ui, testing), PBT (updated P1/P2/P15/P19 for namespaced keys), hook (guard-shell)
+- Produced: null-prototype records, `c:`/`q:` window keys, 50-item caps, `dispose()`, frame and URL guards, security headers, `formatIrc` rename; new `reducer.keys.test.ts` and `lifecycle.test.ts`
+- Notes: existing property tests caught the key and URL-suffix changes; 398 web tests, build, lint, typecheck and e2e pass.

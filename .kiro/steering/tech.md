@@ -10,7 +10,7 @@ inclusion: always
 - **Monorepo:** pnpm workspaces + Turborepo. Use `pnpm` only — never npm or yarn.
 - **ircd:** Fastify + `ws`, custom IRC parser from `@seance/irc-protocol`.
 - **runner:** Kiro ACP client (`kiro-cli acp --agent <name>`, JSON-RPC over stdio) behind an `AgentHarness` interface.
-- **web:** Next.js 15, Tailwind, Zustand.
+- **web:** Next.js 16, Tailwind, Zustand.
 - **Data:** Postgres via Prisma (`@seance/db`), Redis for pub/sub and rate limiting.
 - **Deploy:** Podman (`compose.yaml`) + Caddy for TLS.
 

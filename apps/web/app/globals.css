@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+/* All colour values live in this file. Components use the generated utilities. */
+@theme {
+  --font-chat: var(--font-plex-mono), monospace;
+  --font-chrome: var(--font-arimo), sans-serif;
+  --font-title: var(--font-vt323), monospace;
+
+  --color-chrome-face: #c0c0c0;
+  --color-chrome-highlight: #ffffff;
+  --color-chrome-shadow: #808080;
+  --color-chrome-outline: #000000;
+  --color-title-from: #000080;
+  --color-title-to: #1084d0;
+
+  --color-ghost-bg: #0b0b0f;
+  --color-ghost-text: #d8d4c8;
+  --color-ghost-orange: #c8761f;
+  --color-ghost-green: #6a9955;
+  --color-ghost-purple: #9a80c2;
+
+  --color-nick-coder: #3b78ff;
+  --color-nick-reviewer: #4caf50;
+  --color-nick-researcher: #9a80c2;
+  --color-nick-human: #c8761f;
+
+  --color-irc-0: #ffffff;
+  --color-irc-1: #000000;
+  --color-irc-2: #00007f;
+  --color-irc-3: #009300;
+  --color-irc-4: #ff0000;
+  --color-irc-5: #7f0000;
+  --color-irc-6: #9c009c;
+  --color-irc-7: #fc7f00;
+  --color-irc-8: #ffff00;
+  --color-irc-9: #00fc00;
+  --color-irc-10: #009393;
+  --color-irc-11: #00ffff;
+  --color-irc-12: #0000fc;
+  --color-irc-13: #ff00ff;
+  --color-irc-14: #7f7f7f;
+  --color-irc-15: #d2d2d2;
+}
+
+/* Win95 bevels: highlight top/left, shadow bottom/right; sunken inverts. */
+@utility bevel-raised {
+  box-shadow:
+    inset 1px 1px 0 var(--color-chrome-highlight),
+    inset -1px -1px 0 var(--color-chrome-shadow),
+    1px 1px 0 var(--color-chrome-outline);
+}
+
+@utility bevel-sunken {
+  box-shadow:
+    inset 1px 1px 0 var(--color-chrome-shadow),
+    inset -1px -1px 0 var(--color-chrome-highlight),
+    -1px -1px 0 var(--color-chrome-outline);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: var(--color-chrome-face);
+  font-family: var(--font-chrome);
+}
+
+/* Baseline focus ring for every focusable element; components may refine the colour.
+   Black on the chrome face (11.5:1); ghost surfaces override with accent orange. */
+:focus-visible {
+  outline: 2px solid var(--color-chrome-outline);
+  outline-offset: 1px;
+}
+
+/* Honour the user's motion preference: no animations or transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

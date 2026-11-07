@@ -55,6 +55,15 @@ Set through environment variables. Limits apply to network connections; in-proce
 | `IRCD_CLOSE_GRACE_MS` | 2000 | Delay before a closing socket is destroyed |
 | `IRCD_WS_ALLOWED_ORIGINS` | empty | Comma-separated origins (`https://host[:port]`) or `*`. Empty rejects browser upgrades; clients without an `Origin` header are always accepted |
 
+## Web client configuration
+
+See [apps/web/README.md](./apps/web/README.md) and `apps/web/.env.example`.
+
+| Variable | Example | Meaning |
+| --- | --- | --- |
+| `NEXT_PUBLIC_IRCD_WS_URL` | `ws://127.0.0.1:6668` | Default Ircd WebSocket URL, inlined at build time. Changing it changes the CSP `connect-src`; its origin is the only non-local WebSocket origin the page accepts |
+| `IRCD_WS_ALLOWED_ORIGINS` | `http://localhost:3000` | Set on the Ircd (see above). Must list the page origin; `localhost` and `127.0.0.1` differ |
+
 ## Runner configuration
 
 The agent runner is configured through environment variables only. They are validated once, in `runner.start()`, before any process, git or file operation. An invalid value stops startup with an error that names the variable and the rejected value (the value of `KIRO_API_KEY` is never included). An empty variable counts as unset.
