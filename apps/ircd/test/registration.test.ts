@@ -79,15 +79,23 @@ describe("welcome burst and MOTD (Req 3.9)", () => {
     a.run("USER", "alice", "0", "*", "Alice");
     const motd = a.sent.filter((m) => m.command === "372").map((m) => m.params[1]);
     expect(motd).toEqual(DEFAULT_MOTD.map((line) => `- ${line}`));
-    expect(motd).toContain("- This server is haunted.");
+    expect(motd).toContain("- \x02This server is haunted.\x02");
     expect(motd).toContain("- /invite <agent> to summon · /kick <agent> to exorcise");
-    expect(motd).toContain("-   /   /_\\ /_\\   \\");
+    expect(motd).toContain("- \x0307  /   /_\\ /_\\   \\");
+  });
+
+  it("colours only the jack-o'-lantern orange (IRC colour 07)", () => {
+    const art = DEFAULT_MOTD.slice(0, 9);
+    expect(art.every((line) => line.startsWith("\x0307"))).toBe(true);
+    expect(DEFAULT_MOTD.slice(9).some((line) => line.includes("\x03"))).toBe(false);
   });
 
   it("keeps every default MOTD line short and free of control characters", () => {
     for (const line of DEFAULT_MOTD) {
       expect(Buffer.byteLength(line, "utf8")).toBeLessThanOrEqual(400);
       expect(line).not.toMatch(/[\r\n\0]/);
+      // A colour digit right after the code would be read as part of it: art lines start with a space.
+      expect(line).not.toMatch(/\x03\d\d\d/);
     }
   });
 

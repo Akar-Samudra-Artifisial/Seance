@@ -10,8 +10,10 @@ import { quitClient } from "./quit.js";
 
 const SERVER_VERSION = "seance-ircd-0.1";
 const DEFAULT_CREATED_AT = new Date();
-/** Default MOTD from mockup frame `02 Status/MOTD`: a jack-o'-lantern and the command cheat-sheet. */
-export const DEFAULT_MOTD: readonly string[] = [
+/** IRC formatting: colour 07 (orange) and bold toggle. Each 372 line starts with default formatting. */
+const ORANGE = "\x0307";
+const BOLD = "\x02";
+const PUMPKIN: readonly string[] = [
   String.raw`          (`,
   String.raw`     .--'-'--.`,
   String.raw`   .'  _   _  '.`,
@@ -21,8 +23,15 @@ export const DEFAULT_MOTD: readonly string[] = [
   String.raw`  \  \/\/\/\/\/ /`,
   String.raw`   '.         .'`,
   String.raw`     '-------'`,
+];
+/**
+ * Default MOTD from mockup frame `02 Status/MOTD`: an orange jack-o'-lantern, a bold headline and the
+ * command cheat-sheet. Colours are IRC codes so any client renders them (web-client-polish R14.3).
+ */
+export const DEFAULT_MOTD: readonly string[] = [
+  ...PUMPKIN.map((line) => `${ORANGE}${line}`),
   "",
-  "This server is haunted.",
+  `${BOLD}This server is haunted.${BOLD}`,
   "Every user here is a ghost in the machine, except you.",
   "/invite <agent> to summon · /kick <agent> to exorcise",
   "/mode +v lets a spirit speak · +o lets it touch your files",
