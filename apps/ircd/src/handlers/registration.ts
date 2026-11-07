@@ -10,8 +10,23 @@ import { quitClient } from "./quit.js";
 
 const SERVER_VERSION = "seance-ircd-0.1";
 const DEFAULT_CREATED_AT = new Date();
-const DEFAULT_MOTD: readonly string[] = [
-  "Welcome to Séance. IRC is dead. Hold a séance.",
+/** Default MOTD from mockup frame `02 Status/MOTD`: a jack-o'-lantern and the command cheat-sheet. */
+export const DEFAULT_MOTD: readonly string[] = [
+  String.raw`          (`,
+  String.raw`     .--'-'--.`,
+  String.raw`   .'  _   _  '.`,
+  "  /   /_\\ /_\\   \\",
+  String.raw` |       ^       |`,
+  String.raw` |  \/\/\/\/\/\  |`,
+  String.raw`  \  \/\/\/\/\/ /`,
+  String.raw`   '.         .'`,
+  String.raw`     '-------'`,
+  "",
+  "This server is haunted.",
+  "Every user here is a ghost in the machine, except you.",
+  "/invite <agent> to summon · /kick <agent> to exorcise",
+  "/mode +v lets a spirit speak · +o lets it touch your files",
+  "Credits are the candle. When it burns out, the séance ends.",
 ];
 /** Keep MOTD text well inside the 512-byte line limit (prefix, nick, CRLF). */
 const MAX_MOTD_TEXT_BYTES = 400;

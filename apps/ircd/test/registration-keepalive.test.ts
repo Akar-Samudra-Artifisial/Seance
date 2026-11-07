@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
+import { DEFAULT_MOTD } from "../src/handlers/registration.js";
 import { DEFAULT_LIMITS } from "../src/limits.js";
 import { ConnectionSession } from "../src/network-client.js";
 import type { Wire } from "../src/network-client.js";
@@ -58,7 +59,16 @@ describe("registration over the wire", () => {
   it("welcome burst 001-005 then 375/372/376", () => {
     const a = world().connect();
     a.session.receive("NICK alice\r\nUSER alice 0 * :Alice\r\n");
-    expect(a.cmds()).toEqual(["001", "002", "003", "004", "005", "375", "372", "376"]);
+    expect(a.cmds()).toEqual([
+      "001",
+      "002",
+      "003",
+      "004",
+      "005",
+      "375",
+      ...DEFAULT_MOTD.map(() => "372"),
+      "376",
+    ]);
   });
 
   it("431, 432 and 433 before registration", () => {

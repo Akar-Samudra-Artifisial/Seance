@@ -1,7 +1,7 @@
 {
   "name": "seance",
   "private": true,
-  "description": "IRC is dead. Hold a séance. A mIRC-inspired IRC client and server for commanding AI agents.",
+  "description": "IRC is dead. Hold a séance. A retro IRC client and server for commanding AI agents.",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@11.7.0",

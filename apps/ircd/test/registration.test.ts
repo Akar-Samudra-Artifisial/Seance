@@ -5,7 +5,7 @@ import type { Client } from "../src/client.js";
 import { CommandRouter } from "../src/command-router.js";
 import type { RouterContext } from "../src/command-router.js";
 import { ConnectionManager } from "../src/connection-manager.js";
-import { registerRegistrationHandlers } from "../src/handlers/registration.js";
+import { DEFAULT_MOTD, registerRegistrationHandlers } from "../src/handlers/registration.js";
 
 function setup(serverPassword?: string) {
   const channels = new ChannelRegistry();
@@ -42,7 +42,7 @@ function setup(serverPassword?: string) {
 const codes = (sent: readonly IrcMessage[]) => sent.map((m) => m.command);
 
 describe("welcome burst and MOTD (Req 3.9)", () => {
-  const BURST = ["001", "002", "003", "004", "005", "375", "372", "376"];
+  const BURST = ["001", "002", "003", "004", "005", "375", ...DEFAULT_MOTD.map(() => "372"), "376"];
 
   it("sends 001-005 then 375/372/376 in order, to the registered nick", () => {
     const a = setup().connect();
@@ -71,6 +71,24 @@ describe("welcome burst and MOTD (Req 3.9)", () => {
     router.dispatch(custom, a.client, { command: "NICK", params: ["alice"] });
     router.dispatch(custom, a.client, { command: "USER", params: ["a", "0", "*", "A"] });
     expect(codes(a.sent).filter((c) => c === "372")).toHaveLength(2);
+  });
+
+  it("sends the haunted default MOTD from frame 02, one 372 per line", () => {
+    const a = setup().connect();
+    a.run("NICK", "alice");
+    a.run("USER", "alice", "0", "*", "Alice");
+    const motd = a.sent.filter((m) => m.command === "372").map((m) => m.params[1]);
+    expect(motd).toEqual(DEFAULT_MOTD.map((line) => `- ${line}`));
+    expect(motd).toContain("- This server is haunted.");
+    expect(motd).toContain("- /invite <agent> to summon · /kick <agent> to exorcise");
+    expect(motd).toContain("-   /   /_\\ /_\\   \\");
+  });
+
+  it("keeps every default MOTD line short and free of control characters", () => {
+    for (const line of DEFAULT_MOTD) {
+      expect(Buffer.byteLength(line, "utf8")).toBeLessThanOrEqual(400);
+      expect(line).not.toMatch(/[\r\n\0]/);
+    }
   });
 
   it("sends no burst when the password is wrong", () => {
@@ -198,7 +216,7 @@ describe("registration handlers", () => {
     a.run("USER", "alice", "0", "*", "Alice");
     a.run("USER", "mallory", "0", "*", "Mallory");
     a.run("PASS", "x");
-    expect(codes(a.sent).slice(8)).toEqual(["462", "462"]);
+    expect(codes(a.sent).slice(7 + DEFAULT_MOTD.length)).toEqual(["462", "462"]);
     expect(a.client.user).toBe("alice");
     expect(a.client.registered).toBe(true);
   });
