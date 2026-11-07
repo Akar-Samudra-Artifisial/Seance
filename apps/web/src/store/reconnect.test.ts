@@ -19,7 +19,7 @@ class FakeSocket implements WebSocketLike {
   }
 }
 
-const ORIGIN = "ws://127.0.0.1:6668";
+const ORIGIN = "ws://127.0.0.1:6680";
 
 describe("store reconnect", () => {
   it("keeps Chat_Buffers, clears members and topics, and enters connecting", () => {

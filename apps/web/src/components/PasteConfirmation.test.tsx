@@ -7,7 +7,7 @@ import { PasteConfirmation } from "./PasteConfirmation.js";
 
 afterEach(cleanup);
 
-const ORIGIN = "ws://127.0.0.1:6668";
+const ORIGIN = "ws://127.0.0.1:6680";
 
 function setup(lineCount: number | null) {
   const store = createClientStore({

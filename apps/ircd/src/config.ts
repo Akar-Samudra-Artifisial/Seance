@@ -57,6 +57,19 @@ function positiveInt(env: Env, name: string, fallback: number): number {
   return value;
 }
 
+/** Ports that browsers refuse to connect to (Fetch "bad port", net::ERR_UNSAFE_PORT) among the IRC ports. */
+export const BROWSER_BLOCKED_WS_PORTS = { from: 6665, to: 6669 } as const;
+
+/** Throws when `wsPort` is a port browsers block, so the web client could never reach it. */
+export function assertBrowserSafeWsPort(wsPort: number): void {
+  if (wsPort >= BROWSER_BLOCKED_WS_PORTS.from && wsPort <= BROWSER_BLOCKED_WS_PORTS.to) {
+    throw new Error(
+      `IRCD_WS_PORT ${wsPort} is blocked by browsers (Fetch "bad port", ERR_UNSAFE_PORT for ports ` +
+        `${BROWSER_BLOCKED_WS_PORTS.from}-${BROWSER_BLOCKED_WS_PORTS.to}); use another port such as 6680`,
+    );
+  }
+}
+
 /** Hostname-like server name: no spaces, colons, CR/LF; at most 63 bytes. */
 const SERVER_NAME = /^[A-Za-z0-9]([A-Za-z0-9.-]{0,61}[A-Za-z0-9])?$/;
 
@@ -75,9 +88,11 @@ export function loadConfig(env: Env): ServerConfig {
     throw new Error("IRCD_SERVER_PASSWORD must not contain spaces, CR, LF or NUL");
   }
   const host = env["IRCD_HOST"];
+  const wsPort = port(env, "IRCD_WS_PORT", DEFAULT_WS_PORT);
+  assertBrowserSafeWsPort(wsPort);
   return {
     tcpPort: port(env, "IRCD_TCP_PORT", DEFAULT_TCP_PORT),
-    wsPort: port(env, "IRCD_WS_PORT", DEFAULT_WS_PORT),
+    wsPort,
     ...(host !== undefined && host !== "" ? { host } : {}),
     serverName,
     ...(password !== undefined && password !== "" ? { serverPassword: password } : {}),

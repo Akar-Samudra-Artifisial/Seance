@@ -3,7 +3,7 @@ export interface ConnectConfig {
   readonly allowedOrigins: readonly string[];
 }
 
-export const DEFAULT_IRCD_WS_URL = "ws://127.0.0.1:6668";
+export const DEFAULT_IRCD_WS_URL = "ws://127.0.0.1:6680";
 
 export type ServerUrlResult =
   | { readonly ok: true; readonly url: string; readonly origin: string }

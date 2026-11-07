@@ -2,7 +2,7 @@
 
 ## Overview
 
-`web-client-basic` is the M2 web client of Séance: a retro, keyboard-first, 1995-style IRC client in `apps/web`. The browser opens a WebSocket straight to the Ircd listener (default `ws://127.0.0.1:6668`, one IRC line per text frame). There is no IRC proxy, no API route and no route handler. The only request-level server code is the Next.js 16 request proxy (`proxy.ts`), which sets a Content-Security-Policy header with a per-request nonce.
+`web-client-basic` is the M2 web client of Séance: a retro, keyboard-first, 1995-style IRC client in `apps/web`. The browser opens a WebSocket straight to the Ircd listener (default `ws://127.0.0.1:6680`, one IRC line per text frame). There is no IRC proxy, no API route and no route handler. The only request-level server code is the Next.js 16 request proxy (`proxy.ts`), which sets a Content-Security-Policy header with a per-request nonce.
 
 The design splits the client in three layers:
 
@@ -28,7 +28,7 @@ The design splits the client in three layers:
 - **Tailwind CSS 4**: tokens are CSS variables declared in an `@theme` block after `@import "tailwindcss"`. A variable `--color-ghost-bg` yields utilities such as `bg-ghost-bg` and `text-ghost-bg`, and also a runtime variable `var(--color-ghost-bg)` ([theme docs](https://github.com/tailwindlabs/tailwindcss.com/blob/main/src/docs/theme.mdx)). There is no `tailwind.config.js`.
 - **Zustand 5**: typed stores use the curried form `create<T>()((set, get) => ...)`. `createStore` from `zustand/vanilla` gives a store with `getState`, `setState`, `getInitialState` and `subscribe` and no React dependency ([Zustand docs](https://github.com/pmndrs/zustand/blob/main/docs/reference/apis/create-store.md)). The design builds the store with `createStore` (testable without React) and binds it to React with `useStore`.
 - **Protocol package browser safety** (read from source): `parse`, `serialize`, `LineFramer`, `Numerics`, `irc_lower`, `isValidNick` and `isValidChannel` use no Node module, no `Buffer`, no `process` and no timers. They use only the global `TextEncoder` and `TextDecoder`, which every browser provides. The package is ESM with `exports["."]` pointing to `dist/index.js` and `dist/index.d.ts`, so `next build` resolves it from the workspace once `build` of the package has run (Turborepo `^build` dependency).
-- **Ircd facts** (read from source): the WebSocket listener defaults to port 6668 and has a `verifyClient` hook that calls `isOriginAllowed(origin, IRCD_WS_ALLOWED_ORIGINS)`; a missing `Origin` header is accepted, a present one must match (case-insensitive, or `*`), otherwise the upgrade is refused with HTTP 403. Binary frames close the socket with code 1003. `maxPayload` is 64 KiB. Text frames go through a per-connection `LineFramer`.
+- **Ircd facts** (read from source): the WebSocket listener defaults to port 6680 and has a `verifyClient` hook that calls `isOriginAllowed(origin, IRCD_WS_ALLOWED_ORIGINS)`; a missing `Origin` header is accepted, a present one must match (case-insensitive, or `*`), otherwise the upgrade is refused with HTTP 403. Binary frames close the socket with code 1003. `maxPayload` is 64 KiB. Text frames go through a per-connection `LineFramer`.
 - **Runner facts** (read from source): the exorcism text `*** <agent> has been exorcised` is sent as the reason of a `PART` by the agent when it leaves for a reason other than a kick; a human `/kick` removes the agent first, so the client sees a `KICK` and no exorcism `PART`. The web client therefore renders the exorcism line itself for a `KICK` of a Known_Agent (R8.18), with no runner change (see Open Points). Tool notices are channel `NOTICE`s with text `using tool: <title>`. Denied operations are `NOTICE`s with text `ops: <agent> denied <label>: <reason>`. Agent chat lines are `PRIVMSG`s whose text is wrapped in a colour code: `\x03` + two digits (`12` for `coder`), the sentence, then `\x0F`.
 
 ## Architecture
@@ -50,7 +50,7 @@ flowchart LR
       FM[Formatter / linkify]
     end
   end
-  WS <-->|"ws://127.0.0.1:6668"| Ircd[(Ircd)]
+  WS <-->|"ws://127.0.0.1:6680"| Ircd[(Ircd)]
   Ircd --- Runner[Runner + agents]
   Browser -. "page request" .-> Next[Next.js server]
   Next -->|proxy.ts: CSP + nonce| Browser
@@ -359,8 +359,8 @@ The Win95 bevel is a small set of utility classes defined once with `@utility` (
 ```ts
 // config/connect-src.ts (pure)
 export interface ConnectConfig {
-  readonly defaultUrl: string;               // NEXT_PUBLIC_IRCD_WS_URL or "ws://127.0.0.1:6668"
-  readonly allowedOrigins: readonly string[]; // [origin(defaultUrl)] (+ ws://127.0.0.1:6668 in development)
+  readonly defaultUrl: string;               // NEXT_PUBLIC_IRCD_WS_URL or "ws://127.0.0.1:6680"
+  readonly allowedOrigins: readonly string[]; // [origin(defaultUrl)] (+ ws://127.0.0.1:6680 in development)
 }
 export function computeConnectConfig(env: { NEXT_PUBLIC_IRCD_WS_URL?: string; NODE_ENV?: string }): ConnectConfig;
 ```
@@ -412,15 +412,15 @@ The proxy sets headers only and never reads or forwards IRC traffic (R15.10). It
 |---|---|---|
 | `default-src` | `'self'` | `'self'` |
 | `script-src` | `'self' 'nonce-<nonce>' 'strict-dynamic'` | adds `'unsafe-eval'` (React dev tooling) |
-| `style-src` | `'self' 'nonce-<nonce>'` | adds `'unsafe-inline'` only if Next.js dev styles require it |
-| `connect-src` | `'self'` + each origin of the Connect_Src | the same plus `ws://127.0.0.1:6668` |
+| `style-src` | `'self' 'nonce-<nonce>'` | `'self' 'unsafe-inline'` with no nonce (webpack dev injects `<style>` tags without a nonce, and a nonce would make browsers ignore `'unsafe-inline'`) |
+| `connect-src` | `'self'` + each origin of the Connect_Src | the same plus `ws://127.0.0.1:6680` |
 | `img-src` | `'self' data:` | same |
 | `font-src` | `'self'` | same |
 | `object-src` | `'none'` | same |
 | `base-uri` / `form-action` | `'self'` | same |
 | `frame-ancestors` | `'none'` | same |
 
-Production output holds neither `'unsafe-inline'` nor `'unsafe-eval'` in `script-src` (R15.8). `connect-src` is exactly `'self'` plus the origin of `NEXT_PUBLIC_IRCD_WS_URL` (which defaults to `ws://127.0.0.1:6668`); in development it also lists `ws://127.0.0.1:6668` (R15.9). The CSP-relevant directive set contains no `upgrade-insecure-requests`, because the documented local default is plain `ws://` and that directive would block it; a TLS deployment sets a `wss://` URL, which satisfies the same `connect-src`.
+Production output holds neither `'unsafe-inline'` nor `'unsafe-eval'` in `script-src` (R15.8). `connect-src` is exactly `'self'` plus the origin of `NEXT_PUBLIC_IRCD_WS_URL` (which defaults to `ws://127.0.0.1:6680`); in development it also lists `ws://127.0.0.1:6680` (R15.9). The CSP-relevant directive set contains no `upgrade-insecure-requests`, because the documented local default is plain `ws://` and that directive would block it; a TLS deployment sets a `wss://` URL, which satisfies the same `connect-src`.
 
 **Dynamic rendering.** A nonce is only usable when the page is rendered per request. `app/layout.tsx` is an async server component that awaits `headers()` (reading `x-nonce`), which opts the route into dynamic rendering and lets Next.js attach the nonce to its own scripts. Consequences: no static optimisation or CDN caching of the HTML, a (small) server render per page load, and `next build` reports the route as dynamic. Static assets under `/_next/static` stay cached. This is acceptable for a single page that is mostly client code.
 
@@ -449,7 +449,7 @@ Production output holds neither `'unsafe-inline'` nor `'unsafe-eval'` in `script
 
 - `DESIGN.md` section 11: replace "Next.js 15" with "Next.js 16" in the `apps/web` line (R1.7). Also `.kiro/steering/tech.md` states Next.js 15; it is updated to 16 in the same change to keep the steering consistent.
 - `apps/web/README.md`: how to run against a local Ircd (`IRCD_WS_ALLOWED_ORIGINS=http://localhost:3000 pnpm --filter @seance/ircd dev`, then `pnpm --filter @seance/web dev`), the required origin setting, unit tests and the e2e command.
-- `apps/web/.env.example` (and a matching line in the root README): `NEXT_PUBLIC_IRCD_WS_URL=ws://127.0.0.1:6668` and `IRCD_WS_ALLOWED_ORIGINS=http://localhost:3000`, no secret values, with a comment that changing `NEXT_PUBLIC_IRCD_WS_URL` changes the CSP `connect-src` and that the origin of that URL is the only non-local WebSocket origin the CSP and the Connect_Dialog accept (R16.1, R16.5). The browser `Origin` of the dev server is `http://localhost:3000` when opened by that name and `http://127.0.0.1:3000` when opened by IP; the README says to list the one in use.
+- `apps/web/.env.example` (and a matching line in the root README): `NEXT_PUBLIC_IRCD_WS_URL=ws://127.0.0.1:6680` and `IRCD_WS_ALLOWED_ORIGINS=http://localhost:3000`, no secret values, with a comment that changing `NEXT_PUBLIC_IRCD_WS_URL` changes the CSP `connect-src` and that the origin of that URL is the only non-local WebSocket origin the CSP and the Connect_Dialog accept (R16.1, R16.5). The browser `Origin` of the dev server is `http://localhost:3000` when opened by that name and `http://127.0.0.1:3000` when opened by IP; the README says to list the one in use.
 - `docs/KIRO_USAGE.md`: entry for this spec (R18.1).
 
 ## Data Models
@@ -707,7 +707,7 @@ For any raw URL string and any list of allowed origins, `validateServerUrl` retu
 
 ### Property 16: CSP header holds the required nonce and origins
 
-For any nonce string and any valid `ws:` or `wss:` server URL, `buildCsp` in production mode returns a header whose `script-src` contains `'nonce-<nonce>'` and neither `'unsafe-inline'` nor `'unsafe-eval'`, and whose `connect-src` equals exactly `'self'` plus the origin of the URL; in development mode `connect-src` additionally lists `ws://127.0.0.1:6668`. For any two calls of the `proxy` function the nonces differ.
+For any nonce string and any valid `ws:` or `wss:` server URL, `buildCsp` in production mode returns a header whose `script-src` contains `'nonce-<nonce>'` and neither `'unsafe-inline'` nor `'unsafe-eval'`, and whose `connect-src` equals exactly `'self'` plus the origin of the URL; in development mode `connect-src` additionally lists `ws://127.0.0.1:6680`. For any two calls of the `proxy` function the nonces differ.
 
 **Validates: Requirements 15.3, 15.8, 15.9, 15.10, 17.17**
 

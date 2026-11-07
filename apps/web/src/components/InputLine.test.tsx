@@ -8,7 +8,7 @@ import { InputLine } from "./InputLine.js";
 
 afterEach(cleanup);
 
-const ORIGIN = "ws://127.0.0.1:6668";
+const ORIGIN = "ws://127.0.0.1:6680";
 
 class FakeSocket implements WebSocketLike {
   sent: string[] = [];

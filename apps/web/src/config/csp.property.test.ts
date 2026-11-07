@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { proxy } from "../../proxy";
 import { buildCsp } from "./csp";
 
-const DEV_ORIGIN = "ws://127.0.0.1:6668";
+const DEV_ORIGIN = "ws://127.0.0.1:6680";
 const TIMEOUT = 30_000;
 
 const nonceArb = fc.stringMatching(/^[A-Za-z0-9+/]{1,64}={0,2}$/);
@@ -45,7 +45,13 @@ describe("csp properties", () => {
           const script = d.get("script-src") ?? [];
           const style = d.get("style-src") ?? [];
           expect(script).toContain(`'nonce-${nonce}'`);
-          expect(style).toContain(`'nonce-${nonce}'`);
+          if (dev) {
+            expect(style).toContain("'unsafe-inline'");
+            expect(style.some((v) => v.startsWith("'nonce-"))).toBe(false);
+          } else {
+            expect(style).toContain(`'nonce-${nonce}'`);
+            expect(style).not.toContain("'unsafe-inline'");
+          }
           if (!dev) {
             expect(script).not.toContain("'unsafe-inline'");
             expect(script).not.toContain("'unsafe-eval'");

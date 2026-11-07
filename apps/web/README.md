@@ -18,7 +18,7 @@ The Séance web client: a retro, keyboard-first IRC client built with Next.js, T
 
 3. Open `http://localhost:3000`, pick a nick, connect, then `/join #test`.
 
-The Ircd listens for WebSocket clients on port 6668 by default, which matches the default `NEXT_PUBLIC_IRCD_WS_URL` of `ws://127.0.0.1:6668`.
+The Ircd listens for WebSocket clients on port 6680 by default, which matches the default `NEXT_PUBLIC_IRCD_WS_URL` of `ws://127.0.0.1:6680`. Browsers refuse ports 6665-6669 (Fetch "bad port", `net::ERR_UNSAFE_PORT`), so the Ircd rejects those values for `IRCD_WS_PORT`; TCP 6667 for classic IRC clients is unaffected.
 
 ### Allowed origins
 
@@ -40,7 +40,7 @@ See [`.env.example`](./.env.example).
 
 | Variable | Used by | Meaning |
 | --- | --- | --- |
-| `NEXT_PUBLIC_IRCD_WS_URL` | web (build time) | Default Ircd WebSocket URL (`ws:` or `wss:`). Default `ws://127.0.0.1:6668` |
+| `NEXT_PUBLIC_IRCD_WS_URL` | web (build time) | Default Ircd WebSocket URL (`ws:` or `wss:`). Default `ws://127.0.0.1:6680` |
 | `IRCD_WS_ALLOWED_ORIGINS` | Ircd | Page origins the Ircd accepts |
 
 `NEXT_PUBLIC_IRCD_WS_URL` is inlined into the bundle at build time. Changing it requires a rebuild; setting it when running `next start` has no effect. The origin of this URL also becomes the CSP `connect-src`, so it is the only non-local WebSocket origin the page may open. An invalid value fails the build with an error.

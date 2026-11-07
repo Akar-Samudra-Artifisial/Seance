@@ -8,7 +8,7 @@ import { createClientStorage } from "./storage.js";
 // the (faked) global timers, so no real timer or wall-clock sleep is involved.
 
 const TIMEOUT_MS = 5_000;
-const ORIGIN = "ws://127.0.0.1:6668";
+const ORIGIN = "ws://127.0.0.1:6680";
 
 class FakeSocket implements WebSocketLike {
   sent: string[] = [];

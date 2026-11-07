@@ -2,7 +2,7 @@
 
 ## Introduction
 
-`web-client-basic` is the M2 web client of Séance: a retro, keyboard-first, 1995-style IRC client that runs entirely in the browser (`apps/web`). The browser connects straight to the ircd WebSocket listener (default `ws://127.0.0.1:6668`, one IRC line per text frame). It has no IRC proxy and no API routes; the only server-side code on requests is the Next.js 16 request proxy (`proxy.ts`), which sets the Content-Security-Policy header with a per-request nonce. Humans and agents are peers on the same protocol, so the client must work against the real ircd and the agent runner.
+`web-client-basic` is the M2 web client of Séance: a retro, keyboard-first, 1995-style IRC client that runs entirely in the browser (`apps/web`). The browser connects straight to the ircd WebSocket listener (default `ws://127.0.0.1:6680`, one IRC line per text frame). It has no IRC proxy and no API routes; the only server-side code on requests is the Next.js 16 request proxy (`proxy.ts`), which sets the Content-Security-Policy header with a per-request nonce. Humans and agents are peers on the same protocol, so the client must work against the real ircd and the agent runner.
 
 The client is built from a pure, framework-free IRC client core (`apps/web/src/irc`) and thin UI components over a Zustand store. Visual source of truth is `.kiro/steering/web-ui.md` and the Figma frames `00 Style guide` (token reference), `01 Main`, `02 Connect`, `03 Kick` and `04 Whois+Options`.
 
@@ -41,7 +41,7 @@ Out of scope for this spec (deferred to M3): CRT scanlines, the Options dialog a
 - **Paste_Confirmation**: the prompt shown in the Status_Window when a paste holds more than 5 lines, which the user answers to send or cancel the paste.
 - **Raw_Command**: a slash command that is not in the list of Requirement 7 criterion 4 and is sent as a raw line.
 - **CSP**: the Content-Security-Policy response header sent with every production response of the Web_Client.
-- **Connect_Src**: the set of origins permitted by the `connect-src` directive of the CSP: `'self'`, the origin of `NEXT_PUBLIC_IRCD_WS_URL`, and in development also `ws://127.0.0.1:6668`.
+- **Connect_Src**: the set of origins permitted by the `connect-src` directive of the CSP: `'self'`, the origin of `NEXT_PUBLIC_IRCD_WS_URL`, and in development also `ws://127.0.0.1:6680`.
 - **Request_Proxy**: the Next.js 16 `proxy.ts` file (the replacement for `middleware.ts`) that sets the CSP and its per-request nonce on responses; it handles headers only and carries no IRC traffic.
 - **Allowed_Origins**: the Ircd setting `IRCD_WS_ALLOWED_ORIGINS` listing the web origins permitted to open a WebSocket.
 - **E2E_Test**: the opt-in Playwright test that drives the Web_Client against an in-process Ircd with the runner and the Fake_Agent.
@@ -84,7 +84,7 @@ Out of scope for this spec (deferred to M3): CRT scanlines, the Options dialog a
 
 #### Acceptance Criteria
 
-1. THE Web_Client SHALL open a connection only to the WebSocket server URL entered in the Connect_Dialog, defaulting to the value of `NEXT_PUBLIC_IRCD_WS_URL` and otherwise to `ws://127.0.0.1:6668`.
+1. THE Web_Client SHALL open a connection only to the WebSocket server URL entered in the Connect_Dialog, defaulting to the value of `NEXT_PUBLIC_IRCD_WS_URL` and otherwise to `ws://127.0.0.1:6680`.
 2. IF the origin of the entered server URL is not in the Connect_Src, THEN THE Connect_Dialog SHALL show an inline error that names the allowed origins and SHALL NOT open a connection.
 3. THE Web_Client SHALL expose the allowed WebSocket origins of the Connect_Src to the Connect_Dialog at runtime in the browser.
 4. WHEN the user submits the Connect_Dialog with a valid nick and server URL, THE Connection_Machine SHALL move from `disconnected` to `connecting` and open the WebSocket.
@@ -304,10 +304,10 @@ Out of scope for this spec (deferred to M3): CRT scanlines, the Options dialog a
 3. THE Web_Client SHALL send a CSP header with every production response of a page.
 4. IF a WebSocket frame exceeds 64 KiB, THEN THE Store SHALL close the connection and show an error line in the Status_Window.
 5. WHILE the Chat_Buffer of a Window holds 1000 lines, THE Web_Client SHALL keep memory use per Window bounded by discarding the oldest line for each new line.
-6. THE Web_Client SHALL read the default server URL from an environment variable prefixed `NEXT_PUBLIC_` and SHALL contain no hardcoded host, secret or credential beyond the documented local default `ws://127.0.0.1:6668`.
+6. THE Web_Client SHALL read the default server URL from an environment variable prefixed `NEXT_PUBLIC_` and SHALL contain no hardcoded host, secret or credential beyond the documented local default `ws://127.0.0.1:6680`.
 7. WHEN an unexpected error occurs while handling a message, THE Store SHALL show an error line naming the failed step and the message command, and SHALL continue to process later messages.
 8. THE `script-src` directive of the CSP SHALL contain a nonce that differs for each response, and SHALL contain neither `'unsafe-inline'` nor `'unsafe-eval'` in production.
-9. THE `connect-src` directive of the CSP SHALL contain exactly the Connect_Src: `'self'`, the origin of `NEXT_PUBLIC_IRCD_WS_URL`, and in development also `ws://127.0.0.1:6668`.
+9. THE `connect-src` directive of the CSP SHALL contain exactly the Connect_Src: `'self'`, the origin of `NEXT_PUBLIC_IRCD_WS_URL`, and in development also `ws://127.0.0.1:6680`.
 10. THE Request_Proxy SHALL set the CSP and its nonce, and SHALL set no other behaviour on IRC traffic.
 
 ### Requirement 16: Ircd WebSocket origin configuration

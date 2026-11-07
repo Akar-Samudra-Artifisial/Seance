@@ -9,6 +9,7 @@ dist/
 
 # Environment
 .env*
+!.env.example
 
 # Per-channel agent worktrees
 workspaces/

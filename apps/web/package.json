@@ -6,7 +6,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.core.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",

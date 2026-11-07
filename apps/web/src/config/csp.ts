@@ -1,5 +1,5 @@
 /** Default dev-only Ircd WebSocket origin, always allowed in development (R15.9). */
-const DEV_IRCD_ORIGIN = "ws://127.0.0.1:6668";
+const DEV_IRCD_ORIGIN = "ws://127.0.0.1:6680";
 
 export interface BuildCspOptions {
   /** Fresh per-request nonce (base64-ish, no whitespace, quotes or semicolons). */
@@ -27,12 +27,14 @@ export function buildCsp({ nonce, connectOrigins, dev }: BuildCspOptions): strin
   }
 
   const scriptSrc = ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"];
-  const styleSrc = ["'self'", `'nonce-${nonce}'`];
+  let styleSrc = ["'self'", `'nonce-${nonce}'`];
   const connectSrc = ["'self'", ...connectOrigins];
 
   if (dev) {
     scriptSrc.push("'unsafe-eval'");
-    styleSrc.push("'unsafe-inline'");
+    // webpack dev injects <style> tags without a nonce. A nonce in style-src would make browsers
+    // ignore 'unsafe-inline', so development uses 'unsafe-inline' alone (no nonce).
+    styleSrc = ["'self'", "'unsafe-inline'"];
     if (!connectSrc.includes(DEV_IRCD_ORIGIN)) connectSrc.push(DEV_IRCD_ORIGIN);
   }
 

@@ -118,7 +118,7 @@ Multi-server, SASL, netsplits, federation, mobile.
 
 ## 4. Architecture
 
-We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TCP 6667 (TLS 6697 in production) and WebSocket. Agents are **virtual clients in-process**.
+We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TCP 6667 (TLS 6697 in production) and WebSocket 6680 (browsers block ports 6665-6669 as unsafe, so the WebSocket port must stay outside that range). Agents are **virtual clients in-process**.
 
 **Why our own ircd:** roughly 20 commands and a single source of truth for state. A third-party ircd (e.g. ergo) would mean duplicated state and race conditions between the ircd and the agent runner.
 

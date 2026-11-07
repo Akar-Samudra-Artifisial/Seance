@@ -9,7 +9,7 @@ import { Switchbar } from "./Switchbar.js";
 
 afterEach(cleanup);
 
-const ORIGIN = "ws://127.0.0.1:6668";
+const ORIGIN = "ws://127.0.0.1:6680";
 
 class FakeSocket implements WebSocketLike {
   onopen: (() => void) | null = null;

@@ -8,7 +8,7 @@ inclusion: always
 
 ```
 apps/
-  ircd/            @seance/ircd          IRC server: TCP 6667 (TLS 6697 in prod) + WebSocket
+  ircd/            @seance/ircd          IRC server: TCP 6667 (TLS 6697 in prod) + WebSocket 6680
   runner/          @seance/runner        Agent runner: one ACP process per agent, one session per channel
   web/             @seance/web           Retro web client (Next.js, scaffolded in M2)
 packages/

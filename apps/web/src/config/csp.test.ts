@@ -8,7 +8,7 @@ function directive(csp: string, name: string): string[] {
 }
 
 describe("buildCsp", () => {
-  const base = { nonce: "abc123==", connectOrigins: ["ws://irc.example:6668"] } as const;
+  const base = { nonce: "abc123==", connectOrigins: ["ws://irc.example:6680"] } as const;
 
   it("production script-src has nonce and strict-dynamic, no unsafe keywords", () => {
     const csp = buildCsp({ ...base, dev: false });
@@ -21,7 +21,7 @@ describe("buildCsp", () => {
 
   it("production connect-src is 'self' plus the given origins only", () => {
     const csp = buildCsp({ ...base, dev: false });
-    expect(directive(csp, "connect-src")).toEqual(["'self'", "ws://irc.example:6668"]);
+    expect(directive(csp, "connect-src")).toEqual(["'self'", "ws://irc.example:6680"]);
   });
 
   it("sets object-src and frame-ancestors to none, no upgrade-insecure-requests", () => {
@@ -35,12 +35,24 @@ describe("buildCsp", () => {
   it("development adds unsafe-eval and the default local Ircd origin", () => {
     const csp = buildCsp({ ...base, dev: true });
     expect(directive(csp, "script-src")).toContain("'unsafe-eval'");
-    expect(directive(csp, "connect-src")).toContain("ws://127.0.0.1:6668");
+    expect(directive(csp, "connect-src")).toContain("ws://127.0.0.1:6680");
+  });
+
+  it("development style-src allows inline styles without a nonce", () => {
+    const style = directive(buildCsp({ ...base, dev: true }), "style-src");
+    expect(style).toEqual(["'self'", "'unsafe-inline'"]);
+    expect(style.some((v) => v.startsWith("'nonce-"))).toBe(false);
+  });
+
+  it("production style-src keeps the nonce and has no unsafe-inline", () => {
+    const style = directive(buildCsp({ ...base, dev: false }), "style-src");
+    expect(style).toEqual(["'self'", "'nonce-abc123=='"]);
+    expect(style).not.toContain("'unsafe-inline'");
   });
 
   it("does not duplicate the dev origin", () => {
-    const csp = buildCsp({ nonce: "n", connectOrigins: ["ws://127.0.0.1:6668"], dev: true });
-    expect(directive(csp, "connect-src").filter((v) => v === "ws://127.0.0.1:6668")).toHaveLength(1);
+    const csp = buildCsp({ nonce: "n", connectOrigins: ["ws://127.0.0.1:6680"], dev: true });
+    expect(directive(csp, "connect-src").filter((v) => v === "ws://127.0.0.1:6680")).toHaveLength(1);
   });
 
   it("rejects nonces and origins that could inject directives", () => {

@@ -9,6 +9,19 @@ function directive(csp: string, name: string): string {
   return found;
 }
 
+describe("proxy CSP (development)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("allows inline styles without a nonce in style-src and still nonces scripts", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const csp = proxy(new NextRequest("http://localhost:3000/")).headers.get("Content-Security-Policy") ?? "";
+    expect(directive(csp, "style-src")).toBe("style-src 'self' 'unsafe-inline'");
+    expect(directive(csp, "script-src")).toMatch(/'nonce-[^']+'/);
+  });
+});
+
 describe("proxy CSP (production)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -34,6 +47,14 @@ describe("proxy CSP (production)", () => {
       );
     }
     expect(nonces[0]).not.toBe(nonces[1]);
+  });
+
+  it("production style-src has the nonce and no unsafe-inline", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const csp = proxy(new NextRequest("http://localhost:3000/")).headers.get("Content-Security-Policy") ?? "";
+    const style = directive(csp, "style-src");
+    expect(style).toMatch(/'nonce-[^']+'/);
+    expect(style).not.toContain("'unsafe-inline'");
   });
 
   it("adds nosniff, no-referrer and a restrictive Permissions-Policy", () => {

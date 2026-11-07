@@ -254,6 +254,20 @@ describe("loadConfig", () => {
     expect(loadConfig({})).toMatchObject({ tcpPort: 6667, serverName: "seance.local" });
   });
 
+  it("defaults the WebSocket port to 6680, which browsers allow", () => {
+    expect(loadConfig({}).wsPort).toBe(6680);
+  });
+
+  it("refuses WebSocket ports 6665-6669 with a clear error but keeps TCP 6667", () => {
+    for (const p of ["6665", "6666", "6667", "6668", "6669"]) {
+      expect(() => loadConfig({ IRCD_WS_PORT: p })).toThrow(/IRCD_WS_PORT .*blocked by browsers/);
+    }
+    expect(loadConfig({ IRCD_WS_PORT: "6664" }).wsPort).toBe(6664);
+    expect(loadConfig({ IRCD_WS_PORT: "6670" }).wsPort).toBe(6670);
+    expect(loadConfig({ IRCD_WS_PORT: "0" }).wsPort).toBe(0);
+    expect(loadConfig({ IRCD_TCP_PORT: "6667" }).tcpPort).toBe(6667);
+  });
+
   it("rejects bad ports without echoing the password", () => {
     expect(() => loadConfig({ IRCD_TCP_PORT: "99999" })).toThrow(/IRCD_TCP_PORT/);
     let message = "";

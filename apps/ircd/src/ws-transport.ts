@@ -11,7 +11,7 @@ import { ConnectionSession } from "./network-client.js";
 import { isOriginAllowed } from "./origin.js";
 import { logSocketError } from "./socket-errors.js";
 
-export const DEFAULT_WS_PORT = 6668;
+export const DEFAULT_WS_PORT = 6680;
 
 /** Upper bound on one WebSocket frame; far above any legal IRC line. */
 const MAX_FRAME_BYTES = 64 * 1024;

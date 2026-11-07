@@ -43,7 +43,7 @@ Set through environment variables. Limits apply to network connections; in-proce
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `IRCD_TCP_PORT` / `IRCD_WS_PORT` | 6667 / 6668 | Listening ports (TCP for classic clients, WebSocket for the web client) |
+| `IRCD_TCP_PORT` / `IRCD_WS_PORT` | 6667 / 6680 | Listening ports (TCP for classic clients, WebSocket for the web client) |
 | `IRCD_HOST` | all interfaces | Bind address |
 | `IRCD_SERVER_NAME` | `seance.local` | Server name in prefixes and numerics (hostname-like) |
 | `IRCD_SERVER_PASSWORD` | unset | Required `PASS`; unset disables it. No spaces, CR, LF or NUL |
@@ -61,7 +61,7 @@ See [apps/web/README.md](./apps/web/README.md) and `apps/web/.env.example`.
 
 | Variable | Example | Meaning |
 | --- | --- | --- |
-| `NEXT_PUBLIC_IRCD_WS_URL` | `ws://127.0.0.1:6668` | Default Ircd WebSocket URL, inlined at build time. Changing it changes the CSP `connect-src`; its origin is the only non-local WebSocket origin the page accepts |
+| `NEXT_PUBLIC_IRCD_WS_URL` | `ws://127.0.0.1:6680` | Default Ircd WebSocket URL, inlined at build time. Changing it changes the CSP `connect-src`; its origin is the only non-local WebSocket origin the page accepts |
 | `IRCD_WS_ALLOWED_ORIGINS` | `http://localhost:3000` | Set on the Ircd (see above). Must list the page origin; `localhost` and `127.0.0.1` differ |
 
 ## Runner configuration

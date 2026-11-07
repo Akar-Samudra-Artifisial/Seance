@@ -32,7 +32,7 @@ class FakeSocket implements WebSocketLike {
   }
 }
 
-const ORIGIN = "ws://127.0.0.1:6668";
+const ORIGIN = "ws://127.0.0.1:6680";
 
 function setup(initial: Record<string, string> = {}) {
   const sockets: FakeSocket[] = [];

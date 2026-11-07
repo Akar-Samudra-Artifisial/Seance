@@ -68,7 +68,7 @@ All code is TypeScript (strict, ESM). The IRC_Core in `apps/web/src/irc` imports
 
 - [x] 3. Connect config and Store with socket
   - [x] 3.1 Implement connect configuration and URL validation
-    - Create `src/config/connect-src.ts` with `computeConnectConfig(env)` (throws a descriptive error on a non-`ws:`/`wss:` `NEXT_PUBLIC_IRCD_WS_URL`; default `ws://127.0.0.1:6668`; development adds `ws://127.0.0.1:6668`) and `validateServerUrl(raw, allowedOrigins)` whose error names every allowed origin
+    - Create `src/config/connect-src.ts` with `computeConnectConfig(env)` (throws a descriptive error on a non-`ws:`/`wss:` `NEXT_PUBLIC_IRCD_WS_URL`; default `ws://127.0.0.1:6680`; development adds `ws://127.0.0.1:6680`) and `validateServerUrl(raw, allowedOrigins)` whose error names every allowed origin
     - Add unit tests
     - _Requirements: 3.1, 3.2, 3.3, 4.4, 15.6, 15.9_
 
