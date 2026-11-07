@@ -17,3 +17,8 @@ workspaces/
 .DS_Store
 
 # NOTE: .kiro/ is intentionally tracked (hackathon requirement). Do not ignore it.
+
+# test/tool output
+*-out.json
+.vitest-out.json
+.perm-out.txt

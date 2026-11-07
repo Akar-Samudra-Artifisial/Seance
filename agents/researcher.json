@@ -1,0 +1,1 @@
+{ "nick": "researcher", "kiroAgent": "researcher", "model": "haiku-5.5", "tools": "fs(read)", "color": 9 }

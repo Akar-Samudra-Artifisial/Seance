@@ -64,6 +64,8 @@ export function deliverMessage(
       ctx.connections.get(id)?.send(msg);
     }
     client.lastActivityAt = nowSeconds(ctx);
+    // Design D1: the runner reads channel traffic from this single event.
+    ctx.events?.publish("irc.message", { channel: channel.name, from: client.nick ?? "*", message: msg });
     return "delivered";
   }
 

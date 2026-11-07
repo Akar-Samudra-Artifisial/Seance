@@ -1,0 +1,514 @@
+import { irc_lower } from "@seance/irc-protocol";
+import type { IrcMessage } from "@seance/irc-protocol";
+
+import type { Clock, TimerSet } from "../clock.js";
+import { createResetCreditsHandler, isResetCreditsCommand } from "../credits/reset-command.js";
+import type { CreditLedger } from "../credits/ledger.js";
+import type { AgentHarness, HarnessSession } from "../harness/harness.js";
+import type { RunnerLogger } from "../log.js";
+import type { AgentOutput } from "../output/agent-output.js";
+import { attachSessionOutput } from "../output/session-output.js";
+import { handlePermissionRequest } from "../permissions/handler.js";
+import { buildChannelPrompt, buildPrivatePrompt } from "../prompt/builder.js";
+import type { ChannelLog } from "../prompt/channel-log.js";
+import type { AgentProfile } from "../registry/agent-profile.js";
+import type { AgentRegistry } from "../registry/agent-registry.js";
+import type { HostEvents, HostVirtualClient, IrcHost, Unsubscribe } from "../ports.js";
+import type { AllowList } from "../invite/allow-list.js";
+import { WhoisSnapshot } from "../whois/snapshot.js";
+import type { WorktreeManager } from "../worktree/worktree-manager.js";
+import type { Prompt } from "./machine.js";
+import { Session } from "./session.js";
+import type { PromptGate, PromptSink } from "./session.js";
+
+/** Invite_Key: `irc_lower(target) + "\0" + irc_lower(channel)` (Req 3.13). */
+export function inviteKey(nick: string, channel: string): string {
+  return `${irc_lower(nick)}\0${irc_lower(channel)}`;
+}
+
+const privateKey = (agent: string, human: string): string =>
+  `${irc_lower(agent)}\0${irc_lower(human)}`;
+
+/** Sender nick of a message prefix (`nick!user@host`), or undefined for a server prefix or none. */
+function senderOf(prefix: string | undefined): string | undefined {
+  if (prefix === undefined) return undefined;
+  const bang = prefix.indexOf("!");
+  return bang > 0 ? prefix.slice(0, bang) : undefined;
+}
+
+const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** The Private_Session has no worktree and no config to guard. */
+const OPEN_GATE: PromptGate = { check: () => Promise.resolve({ ok: true }) };
+
+export type SessionManagerDeps = {
+  readonly host: Pick<IrcHost, "modeOf" | "channel" | "noticeTo">;
+  readonly registry: AgentRegistry;
+  readonly harness: AgentHarness;
+  readonly worktrees: Pick<WorktreeManager, "privateDir">;
+  readonly channelLog: ChannelLog;
+  readonly ledger: CreditLedger;
+  readonly clock: Clock;
+  readonly timers: TimerSet;
+  readonly logger: RunnerLogger;
+  /**
+   * Respawns the Agent process if needed and opens a NEW Session for the
+   * channel (`ensure` worktree, `openSession` with the permission handler, gate
+   * and output wiring the InviteController uses). Used for revival after a
+   * process exit (Req 9.15). Rejects when the Agent could not be started.
+   * Without it, a prompt for a `closed` Session is dropped by that Session.
+   */
+  readonly reviveSession?: (reg: AgentRegistration, channel: string) => Promise<Session>;
+  /** Who may start a Private_Session (the SEANCE_INVITERS gate); defaults to everyone. */
+  readonly inviters?: AllowList;
+};
+
+/** At most this many Private_Sessions per human nick (across agents). */
+export const MAX_PRIVATE_PER_HUMAN = 1;
+/** At most this many Private_Sessions in total. */
+export const MAX_PRIVATE_TOTAL = 4;
+
+export type AgentRegistration = {
+  readonly profile: AgentProfile;
+  /** The Agent's own virtual client; private messages arrive on its listener. */
+  readonly client: HostVirtualClient;
+  readonly output: AgentOutput;
+};
+
+type PrivateEntry = {
+  readonly session: Session;
+  readonly harnessSession: HarnessSession;
+  readonly agent: string;
+  readonly detach: Unsubscribe;
+};
+
+/**
+ * Owns Invite_Key → Session and (agent, human nick) → Private_Session, and
+ * routes chat to prompts (Requirement 5). A prompt reaches an Agent only
+ * through its Session; nothing here ever dispatches an IRC command.
+ */
+export class SessionManager {
+  readonly #d: SessionManagerDeps;
+  readonly #channelSessions = new Map<string, Session>();
+  readonly #agents = new Map<string, AgentRegistration>();
+  readonly #listeners = new Map<string, Unsubscribe>();
+  readonly #privates = new Map<string, Promise<PrivateEntry | undefined>>();
+  readonly #resetCredits: (sender: string, agent: string) => unknown;
+  readonly #reviving = new Map<string, Promise<Session | undefined>>();
+  #nextPromptId = 1;
+
+  constructor(deps: SessionManagerDeps) {
+    this.#d = deps;
+    this.#resetCredits = createResetCreditsHandler({
+      ledger: deps.ledger,
+      modeOf: (channel, nick) => deps.host.modeOf(channel, nick),
+      noticeTo: (nick, text) => deps.host.noticeTo(nick, text),
+      isAgentNick: (nick) => deps.registry.lookup(nick) !== undefined,
+      logger: deps.logger,
+    });
+  }
+
+  /** Subscribes to harness process events so an exit closes the Agent's Sessions (Req 9.14). */
+  attach(): Unsubscribe {
+    return this.#d.harness.onProcessEvent((e) => {
+      if (e.kind === "exited") this.onProcessExited(e.agent);
+    });
+  }
+
+  /**
+   * Moves every Session of the exited process to `closed` (queued prompts are
+   * reported dropped by the Session) and forgets its Private_Sessions. The
+   * Agents stay in their channels (Req 9.14).
+   */
+  onProcessExited(agent: string): void {
+    for (const session of this.sessionsOfAgent(agent)) {
+      if (session.state === "closed") continue;
+      try {
+        session.close("process-exit");
+      } catch (err) {
+        this.#d.logger.error("session close after process exit failed", {
+          agent,
+          channel: session.channel,
+          reason: messageOf(err),
+        });
+      }
+    }
+    this.closePrivateSessions("process-exit", agent).catch((err: unknown) => {
+      this.#d.logger.error("private session close after process exit failed", {
+        agent,
+        reason: messageOf(err),
+      });
+    });
+  }
+
+  /**
+   * Replaces a `closed` Session with a new one (Req 9.15). Single-flight per
+   * Invite_Key. On failure the Agent stays in the channel, a channel NOTICE
+   * says it could not be started and `undefined` is returned (Req 9.16).
+   */
+  #revive(closed: Session): Promise<Session | undefined> {
+    const key = inviteKey(closed.agent, closed.channel);
+    const inFlight = this.#reviving.get(key);
+    if (inFlight !== undefined) return inFlight;
+    const reg = this.#agents.get(irc_lower(closed.agent));
+    const factory = this.#d.reviveSession;
+    if (reg === undefined || factory === undefined) return Promise.resolve(undefined);
+
+    const attempt = (async (): Promise<Session | undefined> => {
+      try {
+        const fresh = await factory(reg, closed.channel);
+        this.addChannelSession(fresh);
+        this.#d.logger.info("session revived after process exit", {
+          agent: closed.agent,
+          channel: closed.channel,
+        });
+        return fresh;
+      } catch (err) {
+        this.#d.logger.error("session revival failed", {
+          agent: closed.agent,
+          channel: closed.channel,
+          reason: messageOf(err),
+        });
+        try {
+          reg.output.channelNotice(closed.channel, `${closed.agent}: could not be started`);
+        } catch (noticeErr) {
+          this.#d.logger.error("revival failure notice failed", { reason: messageOf(noticeErr) });
+        }
+        return undefined;
+      } finally {
+        this.#reviving.delete(key);
+      }
+    })();
+    this.#reviving.set(key, attempt);
+    return attempt;
+  }
+
+  // ---- channel Sessions (by Invite_Key) -------------------------------------------------
+
+  /** Registers a channel Session. Throws when a Session that is not `closed` already holds the key. */
+  addChannelSession(session: Session): void {
+    const key = inviteKey(session.agent, session.channel);
+    const existing = this.#channelSessions.get(key);
+    if (existing !== undefined && existing !== session && existing.state !== "closed") {
+      throw new Error(
+        `A Session for ${session.agent} in ${session.channel} already exists in state ${existing.state}`,
+      );
+    }
+    this.#channelSessions.set(key, session);
+  }
+
+  removeChannelSession(agent: string, channel: string): void {
+    this.#channelSessions.delete(inviteKey(agent, channel));
+  }
+
+  channelSession(agent: string, channel: string): Session | undefined {
+    return this.#channelSessions.get(inviteKey(agent, channel));
+  }
+
+  /** All channel Sessions of `channel` (any agent, any state). */
+  sessionsOf(channel: string): readonly Session[] {
+    const c = irc_lower(channel);
+    return [...this.#channelSessions.values()].filter((s) => irc_lower(s.channel) === c);
+  }
+
+  /** All channel Sessions of `agent` (any channel, any state). */
+  sessionsOfAgent(agent: string): readonly Session[] {
+    const a = irc_lower(agent);
+    return [...this.#channelSessions.values()].filter((s) => irc_lower(s.agent) === a);
+  }
+
+  // ---- agents and private messages -------------------------------------------------------
+
+  /** Listens on the Agent's own virtual client for private messages. */
+  registerAgent(reg: AgentRegistration): Unsubscribe {
+    const nick = irc_lower(reg.profile.nick);
+    this.#listeners.get(nick)?.();
+    this.#agents.set(nick, reg);
+    const off = reg.client.onMessage((msg) => {
+      this.#onAgentClientMessage(reg, msg);
+    });
+    this.#listeners.set(nick, off);
+    return () => {
+      off();
+      if (this.#listeners.get(nick) === off) {
+        this.#listeners.delete(nick);
+        this.#agents.delete(nick);
+      }
+    };
+  }
+
+  /** Closes every Private_Session (of one Agent, or all) and forgets its harness session. */
+  async closePrivateSessions(
+    reason: "process-exit" | "shutdown",
+    agent?: string,
+  ): Promise<void> {
+    const a = agent === undefined ? undefined : irc_lower(agent);
+    const closing: Promise<void>[] = [];
+    for (const [key, pending] of [...this.#privates]) {
+      if (a !== undefined && !key.startsWith(`${a}\0`)) continue;
+      this.#privates.delete(key);
+      closing.push(
+        pending.then(async (entry) => {
+          if (entry === undefined) return;
+          entry.detach();
+          entry.session.close(reason);
+          try {
+            await entry.harnessSession.close();
+          } catch (err) {
+            this.#d.logger.error("private session close failed", {
+              agent: entry.agent,
+              reason: messageOf(err),
+            });
+          }
+        }),
+      );
+    }
+    await Promise.all(closing);
+  }
+
+  // ---- routing ---------------------------------------------------------------------------
+
+  /** Handler for the `irc.message` host event (Req 5.1, 5.7, 5.8, 5.14). */
+  onChannelMessage(e: HostEvents["irc.message"]): void {
+    const { channel, from, message } = e;
+    if (message.command !== "PRIVMSG") {
+      this.#ignored("channel message", `command ${message.command} is not PRIVMSG`, { channel, from });
+      return;
+    }
+    const text = message.params[1];
+    if (typeof text !== "string") {
+      this.#ignored("channel message", "PRIVMSG has no text parameter", { channel, from });
+      return;
+    }
+    this.#d.channelLog.add(channel, { nick: from, text, ts: this.#d.clock.now() });
+
+    const sessions = this.sessionsOf(channel);
+    if (sessions.length === 0) {
+      this.#ignored("channel message", "no Session in the channel", { channel, from });
+      return;
+    }
+
+    const sender = this.#d.host.modeOf(channel, from);
+    const senderIsAgent = this.#d.registry.lookup(from) !== undefined;
+    const built = buildChannelPrompt({
+      channel,
+      nick: from,
+      senderIsOp: sender?.op === true,
+      senderIsHumanOp: !senderIsAgent && sender?.op === true,
+      text,
+    });
+    const moderated = this.#d.host.channel(channel)?.modes.moderated === true;
+    const fromKey = irc_lower(from);
+
+    for (const session of sessions) {
+      if (irc_lower(session.agent) === fromKey) continue; // never prompt the sender
+      const mode = this.#d.host.modeOf(channel, session.agent); // read now, never cached
+      const hasMode = mode !== undefined && (mode.op || mode.voice);
+      // No mode: listen only (Req 5.8). Under +m only +v/+o may act (Req 5.7).
+      const canSpeak = hasMode && (!moderated || mode.op || mode.voice);
+      if (!canSpeak) {
+        this.#d.logger.debug("no prompt: agent has no mode", {
+          agent: session.agent,
+          channel,
+          moderated,
+        });
+        continue;
+      }
+      const prompt = this.#prompt(built.text);
+      if (session.state === "closed" && this.#canRevive(session)) {
+        // The Session keeps rejecting (Req 6.12); a new one takes the prompt (Req 9.15).
+        void this.#revive(session).then((fresh) => {
+          if (fresh !== undefined) fresh.enqueue(prompt);
+          else {
+            this.#d.logger.warn("prompt dropped: agent could not be started", {
+              agent: session.agent,
+              channel,
+              id: prompt.id,
+            });
+          }
+        });
+        continue;
+      }
+      session.enqueue(prompt);
+    }
+  }
+
+  /** A closed Session is revived only while the Agent is still a member and can be respawned. */
+  #canRevive(session: Session): boolean {
+    return (
+      this.#d.reviveSession !== undefined &&
+      this.#agents.has(irc_lower(session.agent)) &&
+      this.#d.host.modeOf(session.channel, session.agent) !== undefined
+    );
+  }
+
+  #onAgentClientMessage(reg: AgentRegistration, msg: IrcMessage): void {
+    if (msg.command !== "PRIVMSG" && msg.command !== "NOTICE") return;
+    const target = msg.params[0];
+    if (target === undefined || irc_lower(target) !== irc_lower(reg.profile.nick)) {
+      return; // a channel message: handled through onChannelMessage
+    }
+    const sender = senderOf(msg.prefix);
+    if (msg.command === "NOTICE") {
+      this.#ignored("private message", "NOTICE is never a prompt", {
+        agent: reg.profile.nick,
+        ...(sender !== undefined ? { from: sender } : {}),
+      });
+      return;
+    }
+    if (sender === undefined) {
+      this.#ignored("private message", "sender has no nick prefix", { agent: reg.profile.nick });
+      return;
+    }
+    const text = msg.params[1];
+    if (typeof text !== "string") {
+      this.#ignored("private message", "PRIVMSG has no text parameter", {
+        agent: reg.profile.nick,
+        from: sender,
+      });
+      return;
+    }
+
+    // Req 10.14: intercepted before any prompt is built; never reaches a Session.
+    if (isResetCreditsCommand(text)) {
+      this.#resetCredits(sender, reg.profile.nick);
+      return;
+    }
+    if (this.#d.registry.lookup(sender) !== undefined) {
+      this.#ignored("private message", "sender is an Agent", {
+        agent: reg.profile.nick,
+        from: sender,
+      });
+      return;
+    }
+
+    if (this.#d.inviters !== undefined && !this.#d.inviters.allows(sender)) {
+      this.#refusePrivate(sender, reg.profile.nick, "you may not start a private session");
+      return;
+    }
+
+    const built = buildPrivatePrompt({
+      nick: sender,
+      senderIsHumanOp: this.#isHumanOpFor(reg.profile.nick, sender),
+      text,
+    });
+    const prompt = this.#prompt(built.text);
+    void this.#privateSession(reg, sender).then((entry) => {
+      entry?.session.enqueue(prompt);
+    });
+  }
+
+  /**
+   * Human_Op for a private message: `+o` in at least one channel where the
+   * Agent has a Session that is not `closed`, and not an Agent nick.
+   */
+  #isHumanOpFor(agent: string, sender: string): boolean {
+    if (this.#d.registry.lookup(sender) !== undefined) return false;
+    return this.sessionsOfAgent(agent).some(
+      (s) => s.state !== "closed" && this.#d.host.modeOf(s.channel, sender)?.op === true,
+    );
+  }
+
+  #privateSession(reg: AgentRegistration, human: string): Promise<PrivateEntry | undefined> {
+    const key = privateKey(reg.profile.nick, human);
+    const existing = this.#privates.get(key);
+    if (existing !== undefined) {
+      return existing.then((entry) => {
+        if (entry !== undefined && entry.session.state === "closed") {
+          if (this.#privates.get(key) === existing) this.#privates.delete(key);
+          return this.#privateSession(reg, human);
+        }
+        return entry;
+      });
+    }
+    const humanKey = irc_lower(human);
+    const keys = [...this.#privates.keys()];
+    const ofHuman = keys.filter((k) => k.slice(k.indexOf("\0") + 1) === humanKey).length;
+    if (ofHuman >= MAX_PRIVATE_PER_HUMAN) {
+      this.#refusePrivate(human, reg.profile.nick, "you already have a private session");
+      return Promise.resolve(undefined);
+    }
+    if (keys.length >= MAX_PRIVATE_TOTAL) {
+      this.#refusePrivate(human, reg.profile.nick, "too many private sessions are open");
+      return Promise.resolve(undefined);
+    }
+    const created = this.#openPrivate(reg, human).then((entry) => {
+      if (entry === undefined && this.#privates.get(key) === created) this.#privates.delete(key);
+      return entry;
+    });
+    this.#privates.set(key, created);
+    return created;
+  }
+
+  async #openPrivate(reg: AgentRegistration, human: string): Promise<PrivateEntry | undefined> {
+    const { profile } = reg;
+    const logger = this.#d.logger;
+    try {
+      const cwd = await this.#d.worktrees.privateDir(profile.nick);
+      const harnessSession = await this.#d.harness.openSession(profile, {
+        cwd,
+        onPermission: (req) =>
+          handlePermissionRequest(
+            {
+              agent: profile.nick,
+              worktree: cwd,
+              isPrivate: true, // voice-level reads only; write and shell are rejected
+              currentMembership: () => undefined,
+              logger,
+            },
+            req,
+          ),
+      });
+      const sink: PromptSink = {
+        dropped: (prompt, why) => {
+          logger.warn("private prompt dropped", { agent: profile.nick, human, id: prompt.id, why });
+        },
+      };
+      const session = new Session({
+        agent: profile.nick,
+        channel: human, // output target; a Private_Session is addressed to the human nick
+        harnessSession,
+        snapshot: new WhoisSnapshot(), // isolated: a private session is not a channel in WHOIS
+        timers: this.#d.timers,
+        gate: OPEN_GATE,
+        sink,
+        opNotice: (_channel, text) => {
+          logger.info("private session notice", { agent: profile.nick, human, text });
+        },
+        isBlocked: () => false,
+        logger,
+      });
+      const detach = attachSessionOutput({ session, output: reg.output, clock: this.#d.clock });
+      return { session, harnessSession, agent: profile.nick, detach };
+    } catch (err) {
+      logger.error("private session could not be opened", {
+        agent: profile.nick,
+        human,
+        reason: messageOf(err),
+      });
+      try {
+        this.#d.host.noticeTo(human, `${profile.nick}: could not start a private session`);
+      } catch (noticeErr) {
+        logger.error("private session failure notice failed", { reason: messageOf(noticeErr) });
+      }
+      return undefined;
+    }
+  }
+
+  #refusePrivate(human: string, agent: string, why: string): void {
+    this.#d.logger.warn("private session refused", { agent, human, why });
+    try {
+      this.#d.host.noticeTo(human, `${agent}: ${why}`);
+    } catch (err) {
+      this.#d.logger.error("private session refusal notice failed", { reason: messageOf(err) });
+    }
+  }
+
+  #prompt(text: string): Prompt {
+    return { id: this.#nextPromptId++, text };
+  }
+
+  #ignored(event: string, reason: string, fields: Readonly<Record<string, unknown>>): void {
+    this.#d.logger.info("event ignored", { event, reason, ...fields });
+  }
+}
