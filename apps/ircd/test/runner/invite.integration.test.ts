@@ -96,6 +96,33 @@ describe("invite and join (integration)", () => {
   );
 
   it(
+    "two agents invited back-to-back to one channel both join and share one worktree (no `worktree add` race)",
+    async () => {
+      const fx = await start();
+      const op = await opIn(fx, "alice", "#a");
+
+      op.send("INVITE coder #a");
+      op.send("INVITE reviewer #a");
+      await op.waitFor(agentJoin("coder"));
+      await op.waitFor(agentJoin("reviewer"));
+      await waitSession(fx, "#a", 2);
+
+      expect(fx.logs.some((l) => l.msg === "invite pipeline failed")).toBe(false);
+      expect(await op.expectNone(/^:\S+ NOTICE alice :/)).toBe(true);
+
+      const cwds = frames(fx, "session/new").map(
+        (f) => (JSON.parse(f) as { params?: { cwd?: unknown } }).params?.cwd,
+      );
+      expect(cwds).toHaveLength(2);
+      expect(typeof cwds[0]).toBe("string");
+      expect(cwds[0]).toBe(cwds[1]);
+      const list = await run("git", ["-C", fx.repo.path, "worktree", "list", "--porcelain"]);
+      expect(list.stdout.split("\n").filter((l) => l.startsWith("worktree "))).toHaveLength(2); // repo + one channel
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
     "gives the inviter a NOTICE and creates no state when a non-agent holds the nick",
     async () => {
       const fx = await start();

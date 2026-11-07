@@ -9,10 +9,12 @@ import { truncateBytes } from "../output/agent-output.js";
 import type { HostMembership } from "../ports.js";
 import { canonicalise, realWorktree } from "./canonicalise.js";
 import { classifyKind, decide, isProtectedPath } from "./policy.js";
-import type { PermissionReason, PermissionResult, PolicyMode } from "./policy.js";
+import type { PermissionReason, PermissionResult, PolicyMode, ResolvedPath } from "./policy.js";
 
 export type PermissionContext = {
   readonly agent: string;
+  /** Channel of the Session, for the decision log; absent for a Private_Session. */
+  readonly channel?: string;
   /** Realpath-able Worktree, or the private directory for a Private_Session. */
   readonly worktree: string;
   /** Private_Session: voice with the private directory, any write or shell rejected. */
@@ -91,23 +93,27 @@ export async function handlePermissionRequest(
 
     const toolClass = classifyKind(tool.kind);
     let result: PermissionResult;
+    let worktree: string | undefined;
+    let canonical: readonly ResolvedPath[] = [];
     if (ctx.isPrivate && (toolClass === "write" || toolClass === "shell")) {
       result = { decision: "reject_once", reason: "private-session" };
     } else {
-      const worktree = await realWorktree(ctx.worktree);
+      worktree = await realWorktree(ctx.worktree);
       if (worktree === undefined) {
         result = { decision: "reject_once", reason: "outside-worktree" };
       } else {
-        const paths = await canonicalise(tool.paths, worktree);
+        canonical = await canonicalise(tool.paths, worktree);
         result = decide({
           mode,
           tool: tool.command === undefined
-            ? { kind: tool.kind, paths }
-            : { kind: tool.kind, paths, command: tool.command },
+            ? { kind: tool.kind, paths: canonical }
+            : { kind: tool.kind, paths: canonical, command: tool.command },
           worktree,
         });
       }
     }
+
+    logDecision(ctx, { mode, tool, toolClass, worktree, canonical, result });
 
     if (result.decision === "reject_once" && result.reason !== "no-mode") {
       notify(ctx, tool, result.reason);
@@ -130,6 +136,39 @@ export async function handlePermissionRequest(
     });
     return cancelled;
   }
+}
+
+/**
+ * One info record per decision, so a surprising rejection can be explained from the log alone.
+ * Only metadata: kind, title, paths, worktree, decision and reason; never file contents (the
+ * request's `rawInput` content fields are not part of ToolInfo and are not logged).
+ */
+function logDecision(
+  ctx: PermissionContext,
+  d: {
+    readonly mode: PolicyMode;
+    readonly tool: ToolInfo;
+    readonly toolClass: string;
+    readonly worktree: string | undefined;
+    readonly canonical: readonly ResolvedPath[];
+    readonly result: PermissionResult;
+  },
+): void {
+  ctx.logger.info("permission decision", {
+    agent: ctx.agent,
+    channel: ctx.channel ?? (ctx.isPrivate ? "(private)" : "(unknown)"),
+    mode: d.mode,
+    kind: d.tool.kind,
+    class: d.toolClass,
+    title: clean(d.tool.title, LABEL_MAX_BYTES),
+    rawPaths: d.tool.paths.map((p) => clean(p, PATH_MAX_BYTES)),
+    canonicalPaths: d.canonical.map((p) => (p.resolved === undefined ? null : clean(p.resolved, PATH_MAX_BYTES))),
+    ...(d.tool.command !== undefined ? { command: clean(d.tool.command, LABEL_MAX_BYTES) } : {}),
+    worktree: d.worktree ?? null,
+    configuredWorktree: ctx.worktree,
+    decision: d.result.decision,
+    reason: d.result.decision === "reject_once" ? d.result.reason : null,
+  });
 }
 
 function notify(ctx: PermissionContext, tool: ToolInfo, reason: PermissionReason): void {

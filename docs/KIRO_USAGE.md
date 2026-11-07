@@ -197,3 +197,13 @@ Include correctness properties (e.g. no write tool call is ever allowed for a no
 - Kiro features: direct edit of apps/runner/vitest.config.ts and apps/ircd/vitest.config.ts, verified with two `pnpm test --force` runs
 - Produced: runner testTimeout/hookTimeout 30 s, ircd testTimeout 20 s; no test logic changed
 - Notes: both forced runs passed (runner 380, ircd 536 + 2 skipped); machine was not heavily loaded, so the timeouts were not stress-tested
+
+### 2026-11-07 — real kiro-cli permission shape + worktree race
+- Kiro features: skill acp-runner, steering runner-acp; real ACP frames from spikes/acp/out/S10-H as test fixtures
+- Produced: per-session tool_call cache + rawInput inference (harness/tool-info.ts), kiro-shaped Fake_Agent (legacy option), single-flight WorktreeManager.ensure, back-to-back invite integration test
+- Notes: the real-kiro demo found both bugs that the Fake_Agent hid; every new test was confirmed failing with its fix reverted
+
+### 2026-11-07 — kiro 3.1 permission fixes (spike S11)
+- Kiro features: skill acp-runner, steering runner-acp, spec agent-runner Req 8.15 / design P4 (PBT), spike S11 against real kiro-cli 3.1.0 (2 prompts)
+- Produced: kiro-3.1 frame fixture, info log per permission decision, diff paths dropped from decisions, `strReplace` inference, literal-only shell protected-path rule
+- Notes: S11 showed kiro roots the diff path at its process cwd (also in 3.0), which caused the false outside-worktree; new tests confirmed failing with the fixes reverted

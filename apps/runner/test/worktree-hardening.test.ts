@@ -97,6 +97,43 @@ describe("committed agent config", () => {
   });
 });
 
+describe("ensure is single-flight per channel", () => {
+  it("concurrent ensures share one creation and one worktree instead of racing on `git worktree add`", async () => {
+    await withEnv(undefined, async ({ repo, manager }) => {
+      const results = await Promise.all([manager.ensure("#dev"), manager.ensure("#DEV"), manager.ensure("#dev")]);
+      expect(new Set(results.map((r) => r.realPath)).size).toBe(1);
+      expect(results.every((r) => r.created)).toBe(true); // one shared creation
+      const trees = (await git(repo.path, "worktree", "list", "--porcelain"))
+        .split("\n")
+        .filter((l) => l.startsWith("worktree "));
+      expect(trees).toHaveLength(2);
+      // Afterwards the entry is gone: the next ensure reuses the existing worktree.
+      expect((await manager.ensure("#dev")).created).toBe(false);
+    });
+  });
+
+  it("a failed ensure is not cached: the next call tries again", async () => {
+    await withEnv(undefined, async ({ manager }) => {
+      const broken = new WorktreeManager({ repo: "/nonexistent-seance-repo", root: "/nonexistent-seance-root/ws", git: createGitRunner("/nonexistent-seance-repo") });
+      const first = broken.ensure("#dev");
+      const second = broken.ensure("#dev");
+      expect(second).toBe(first);
+      await expect(first).rejects.toBeInstanceOf(WorktreeError);
+      const again = broken.ensure("#dev");
+      expect(again).not.toBe(first);
+      await expect(again).rejects.toBeInstanceOf(WorktreeError);
+      expect((await manager.ensure("#dev")).created).toBe(true);
+    });
+  });
+
+  it("different channels run independently", async () => {
+    await withEnv(undefined, async ({ manager }) => {
+      const [a, b] = await Promise.all([manager.ensure("#a"), manager.ensure("#b")]);
+      expect(a.realPath).not.toBe(b.realPath);
+    });
+  });
+});
+
 describe("sparse-checkout patterns", () => {
   it("are case-insensitive", () => {
     expect(SPARSE_PATTERNS).toContain("![Aa][Gg][Ee][Nn][Tt][Ss].md");

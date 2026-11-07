@@ -281,8 +281,8 @@ describe("P4 permission purity, worktree confinement and protected paths", () =>
     );
   });
 
-  it(`${TAG} (e2) a shell reference to AGENTS.md or .kiro is rejected in every mode, including op`, () => {
-    const globs = fc.constantFrom(".ki*", ".k?ro", ".kiro*", "AGENTS.*", "AGENTS.m?", "[.]kiro", ".k[a-z]ro");
+  it(`${TAG} (e2) a literal shell reference to AGENTS.md or .kiro is rejected in every mode, including op; a glob is not a reference`, () => {
+    const globs = fc.constantFrom(".ki*", ".k?ro", ".kiro*", "AGENTS.*", "AGENTS.m?", "[.]kiro", ".k[a-z]ro", "*", "*.md");
     const templates: readonly ((p: string, n: string) => string)[] = [
       (p) => `cat ${p}`,
       (p) => `echo x > ${p}`,
@@ -307,10 +307,15 @@ describe("P4 permission purity, worktree confinement and protected paths", () =>
       }),
       RUNS,
     );
+    // Req 8.15 (relaxed): a glob segment is not a protected reference; the decision falls to the mode
+    // and the rest of the deny list (`rm -r <glob>` inside the worktree is not deny-listed either).
     fc.assert(
       fc.property(modeArb, templateArb, dirsArb, globs, (mode, template, dirs, glob) => {
-        const path = [...dirs, glob].join("/");
-        return decide(deepFreeze(shellInput(mode, template(path, glob)))).decision === "reject_once";
+        const command = template([...dirs, glob].join("/"), glob);
+        const result = decide(deepFreeze(shellInput(mode, command)));
+        expect(referencesProtectedPath(command)).toBe(false);
+        expect(result).not.toEqual({ decision: "reject_once", reason: "protected-path" });
+        return mode === "op" ? result.decision === "allow_once" : result.decision === "reject_once";
       }),
       RUNS,
     );

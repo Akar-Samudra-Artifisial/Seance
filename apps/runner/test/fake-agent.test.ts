@@ -72,12 +72,36 @@ describe("FakeAgentCore response shapes", () => {
     const tc = { kind: "edit", title: "Write", path: "a.txt" };
     const core = make({ turns: [{ steps: [{ permission: { toolCall: tc } }, { permission: { toolCall: tc, ids: "number" } }] }] });
     const sid = newSession(core);
+    const isRequest = (f: Frame): boolean => f["method"] === "session/request_permission";
     const first = prompt(core, sid);
-    expect(typeof first[0]?.["id"]).toBe("string");
-    expect(first[0]?.["method"]).toBe("session/request_permission");
-    const second = send(core, { jsonrpc: "2.0", id: first[0]?.["id"], result: { outcome: { outcome: "selected", optionId: "allow_once" } } });
-    expect(typeof second[0]?.["id"]).toBe("number");
+    const req1 = first.find(isRequest);
+    expect(typeof req1?.["id"]).toBe("string");
+    const second = send(core, { jsonrpc: "2.0", id: req1?.["id"], result: { outcome: { outcome: "selected", optionId: "allow_once" } } });
+    expect(typeof second.find(isRequest)?.["id"]).toBe("number");
     expect(core.dump().permissionAnswers[0]?.optionId).toBe("allow_once");
+  });
+
+  it("by default mirrors kiro: a tool_call update with kind first, then a request without kind", () => {
+    const tc = { kind: "edit", title: "Write", path: "a.txt" };
+    const core = make({ turns: [{ steps: [{ permission: { toolCall: tc } }] }] });
+    const frames = prompt(core, newSession(core));
+    expect(frames.map((f) => f["method"])).toEqual(["session/update", "session/request_permission"]);
+    const update = frames[0]?.["params"].update;
+    expect(update.sessionUpdate).toBe("tool_call");
+    expect(update.kind).toBe("edit");
+    expect(update.locations).toEqual([{ path: "a.txt", line: 1 }]);
+    const toolCall = frames[1]?.["params"].toolCall;
+    expect(toolCall.kind).toBeUndefined();
+    expect(toolCall.toolCallId).toBe(update.toolCallId);
+    expect(toolCall.rawInput).toEqual({ command: "create", path: "a.txt" });
+  });
+
+  it("permissionShape legacy sends kind inside the request and no earlier update", () => {
+    const tc = { kind: "edit", title: "Write", path: "a.txt" };
+    const core = make({ permissionShape: "legacy", turns: [{ steps: [{ permission: { toolCall: tc } }] }] });
+    const frames = prompt(core, newSession(core));
+    expect(frames.map((f) => f["method"])).toEqual(["session/request_permission"]);
+    expect(frames[0]?.["params"].toolCall.kind).toBe("edit");
   });
 
   it("emits metadata with credits", () => {

@@ -41,6 +41,7 @@ export function channelPermissionHandler(
     handlePermissionRequest(
       {
         agent: profile.nick,
+        channel,
         worktree: cwd,
         isPrivate: false,
         currentMembership: () => d.host.modeOf(channel, profile.nick),
