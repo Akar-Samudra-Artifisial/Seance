@@ -1,0 +1,75 @@
+import type { IrcMessage } from "@seance/irc-protocol";
+
+/**
+ * Structural ports of the ircd. The runner never imports `@seance/ircd`;
+ * `apps/ircd/src/runner-wiring.ts` adapts an `IrcServer` to `IrcHost`.
+ */
+
+export type Unsubscribe = () => void;
+export type HostMembership = { readonly op: boolean; readonly voice: boolean };
+
+export interface HostClient {
+  readonly id: string;
+  readonly nick?: string;
+  readonly virtual?: boolean;
+  /** Used only for server-prefixed NOTICE (D8). */
+  send(msg: IrcMessage): void;
+}
+
+export interface HostVirtualClient extends HostClient {
+  /** Throws on malformed, overlong or closed clients. */
+  dispatch(msg: IrcMessage): unknown;
+  onMessage(listener: (msg: IrcMessage) => void): Unsubscribe;
+  setAway(text?: string): void;
+  close(reason: string): void;
+}
+
+export interface HostChannel {
+  readonly name: string;
+  readonly topic?: string;
+  readonly modes: { readonly moderated: boolean };
+  /** Keyed by client id. */
+  readonly members: ReadonlyMap<string, HostMembership>;
+}
+
+export interface HostEvents {
+  "irc.invite": {
+    channel: string;
+    inviter: string;
+    target: string;
+    targetKey: string;
+    targetOnline: boolean;
+    ts: number;
+  };
+  "irc.message": { channel: string; from: string; message: IrcMessage };
+  "irc.mode": {
+    channel: string;
+    by: string;
+    mode: "o" | "v" | "m";
+    adding: boolean;
+    target?: string;
+  };
+  "irc.kick": { channel: string; by: string; target: string; reason: string };
+}
+
+export interface IrcHost {
+  readonly serverName: string;
+  createVirtualClient(o: {
+    id: string;
+    host?: string;
+    whoisExtra?: () => readonly string[];
+  }): HostVirtualClient;
+  subscribe<K extends keyof HostEvents>(
+    name: K,
+    l: (e: HostEvents[K]) => void,
+  ): Unsubscribe;
+  /** Registered clients only. */
+  clientByNick(nick: string): HostClient | undefined;
+  /** Registered clients by `HostClient.id`; maps `HostChannel.members` keys to nicks. */
+  clientById(id: string): HostClient | undefined;
+  channel(name: string): HostChannel | undefined;
+  /** Mode of `nick` in `channel` read now; undefined when not a member. */
+  modeOf(channel: string, nick: string): HostMembership | undefined;
+  /** Server-prefixed NOTICE to one client (D8); false when the nick is not connected. */
+  noticeTo(nick: string, text: string): boolean;
+}

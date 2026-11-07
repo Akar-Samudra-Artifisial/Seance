@@ -1,0 +1,13 @@
+#!/bin/sh
+# Stand-in for `kiro-cli`: ignores `acp --agent <name>` style arguments and runs the Fake_Agent.
+# Point SEANCE_KIRO_BIN at this file. Needs the repo Node (.nvmrc) on PATH; it runs TypeScript natively.
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
+name=${FAKE_AGENT_NAME:-}
+prev=
+for arg in "$@"; do
+  if [ "$prev" = "--agent" ]; then name=$arg; fi
+  prev=$arg
+done
+FAKE_AGENT_NAME=${name:-fake}
+export FAKE_AGENT_NAME
+exec node "$dir/fake-agent.ts"

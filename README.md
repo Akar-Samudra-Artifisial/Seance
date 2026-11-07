@@ -55,6 +55,25 @@ Set through environment variables. Limits apply to network connections; in-proce
 | `IRCD_CLOSE_GRACE_MS` | 2000 | Delay before a closing socket is destroyed |
 | `IRCD_WS_ALLOWED_ORIGINS` | empty | Comma-separated origins (`https://host[:port]`) or `*`. Empty rejects browser upgrades; clients without an `Origin` header are always accepted |
 
+## Runner configuration
+
+The agent runner is configured through environment variables only. They are validated once, in `runner.start()`, before any process, git or file operation. An invalid value stops startup with an error that names the variable and the rejected value (the value of `KIRO_API_KEY` is never included). An empty variable counts as unset.
+
+| Variable | Default | Validation |
+| --- | --- | --- |
+| `SEANCE_RUNNER` | unset | `1` enables the runner inside the ircd process (`apps/ircd`). Anything else leaves it off |
+| `SEANCE_HARNESS` | `acp` | `acp` or `headless`. Any other value is an error |
+| `SEANCE_TARGET_REPO` | none, required | Not blank, an existing directory, and a git repository. Agents work in per-channel worktrees of this repository |
+| `SEANCE_WORKSPACES` | none, required | Not blank. Created if missing; its real path becomes the worktree root |
+| `SEANCE_PROMPT_TIMEOUT_MS` | `120000` | Positive integer (digits only). Maximum time a single prompt may run |
+| `SEANCE_CHANNEL_CREDIT_CAP` | unset (no cap) | Finite number greater than 0. Per-channel credit limit |
+| `KIRO_API_KEY` | unset | Optional. Read from the environment only; never taken from a file or flag, never logged, and passed only to the agent child process |
+| `SEANCE_INVITE_RATE` | `5` | Positive integer (digits only). Rate limit applied to invitations of agents |
+| `SEANCE_INVITERS` | unset (everyone may invite, loopback only) | Comma-separated nicks, each valid as an IRC nick after trimming. A blank value counts as unset. The same list gates private `/msg` sessions with agents (at most 1 per human and 4 in total). When unset, the runner starts only if `IRCD_HOST` is a loopback address (`127.0.0.1`, `::1`, `localhost`); otherwise startup fails with a `ConfigError` naming `SEANCE_INVITERS`. An unset `IRCD_HOST` binds all interfaces and counts as non-loopback |
+| `SEANCE_AGENTS_DIR` | `<cwd>/agents` | Not blank, and must be an existing directory. The agent processes start with this directory as their working directory |
+| `SEANCE_KIRO_BIN` | `kiro-cli` | Not blank. Path or name of the Kiro CLI executable |
+| `SEANCE_E2E_KIRO` | unset | `1` enables the end-to-end test against the real `kiro-cli`. Used by the test suite only |
+
 ## Supported commands and numerics
 
 The ircd implements a documented subset of RFC 2812. Commands are case-insensitive on input.

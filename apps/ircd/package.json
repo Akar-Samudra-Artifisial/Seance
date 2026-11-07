@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@seance/irc-protocol": "workspace:*",
+    "@seance/runner": "workspace:*",
     "fastify": "5.12.8",
     "ws": "8.22.1"
   },

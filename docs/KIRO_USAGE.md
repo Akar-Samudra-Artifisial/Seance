@@ -183,3 +183,17 @@ Include correctness properties (e.g. no write tool call is ever allowed for a no
 - Kiro features: spec agent-runner (requirements 4.12–4.14 and 8.14–8.16, design Worktrees steps 4–5 and P4, tasks 0.3, 7.3, 7.4, 9.3, 9.5, 12.1–12.4), hook guard-shell
 - Produced: `spikes/acp/src/s10-nested-config.ts` (`s10` script) and FINDINGS section S10; security tests 7.4, 9.5, 12.3, 12.4 made required
 - Notes: S10's mid-session AGENTS.md result is confounded (code present in the turn 1 prompt); guard-shell blocked a command reading the OS temp directory
+### 2026-11-06 — agent-runner: remaining test tasks via run-all-tasks
+- Kiro features: spec agent-runner (run-all-tasks orchestrator, tasks 1.4, 2.3, 2.5, 3.6, 4.3, 5.6, 9.4, 10.4, 11.5, 15.2, 17.5, 17.6, 18.2), PBT (P5, P6, P8, P9), agent (spec-task-execution)
+- Produced: unit and property tests in `apps/runner/test` (config, registry, verify-agent-files, acp-client, fake-agent, harness, session, prompt, output, session-manager, exorcism, hung-and-exit, shutdown, P5/P8/P9); all 118 tasks complete
+- Notes: sandbox shell was flaky so each test file ran on its own; a type error in output.test.ts was caught and fixed; no full-monorepo `pnpm test` run yet
+
+### 2026-11-07 — agent-runner hardening after security review
+- Kiro features: direct implementation turn (no workflow), regression tests per fix
+- Produced: allow-listed child env (agents, git), redaction and C0 stripping on all agent output, SEANCE_INVITERS loopback gate and private-session gate/limits, SIGTERM->SIGKILL escalation on detached process groups, committed AGENTS.md/.kiro detection with reset to base, case-insensitive sparse patterns, generic invite-failure NOTICE, unpaced permissions integration test
+- Notes: none
+
+### 2026-11-07 — vitest timeouts for loaded machines
+- Kiro features: direct edit of apps/runner/vitest.config.ts and apps/ircd/vitest.config.ts, verified with two `pnpm test --force` runs
+- Produced: runner testTimeout/hookTimeout 30 s, ircd testTimeout 20 s; no test logic changed
+- Notes: both forced runs passed (runner 380, ircd 536 + 2 skipped); machine was not heavily loaded, so the timeouts were not stress-tested
