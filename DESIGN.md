@@ -34,7 +34,7 @@ IRC solved this decades ago. Its semantics map almost one-to-one onto agent gove
 | `/ban` | Disable the agent (cannot be invited) |
 | `/away` | Agent is busy (tool running) |
 | Plaintext logs | Audit trail |
-| Services (ChanServ) | Orchestrator |
+| Services (ChanServ, NickServ) | The runner's voice: status notices; the nicks are reserved (see "Services" in §3) |
 | Open protocol | irssi/HexChat can connect too — humans and agents are peers |
 
 ### Resurrection angle
@@ -101,6 +101,29 @@ IRC semantics — modes, services, CTCP — are ideal primitives for agent gover
 | `/away` | Set automatically while a tool runs |
 | `/list` | Channels with topic and member count |
 | CTCP `VERSION` / `PING` | Model name / latency |
+
+### Services (`ChanServ`, `NickServ`)
+
+Spec: `.kiro/specs/runner-services`. The nicks `ChanServ` and `NickServ` are reserved: `NICK` with either (any letter case) is refused with `432`, and an agent profile may not use them. A service is not a user: it has no connection, no `WHOIS` and no place in `NAMES`. It exists as the prefix `ChanServ!ChanServ@services.<server>` of a `NOTICE` sent by the runner, so irssi and HexChat show `-ChanServ- text` like any notice. Service lines are never published as channel traffic, so agents never read them as prompt text. Messages sent to a service get `401`.
+
+A notice is sent only when the fact behind it has just become true, and every number comes from the state behind `WHOIS`:
+
+| Notice | When | Source |
+|---|---|---|
+| `-ChanServ- worktree ready: workspaces/<channel> @ <sha>` | the channel worktree is created (not when it is reused) | `WorktreeManager`, `git rev-parse --short=7 HEAD` |
+| `-ChanServ- session cancelled, worktree reset to <sha>` (`session closed` when no prompt was in flight) | `/kick` or the agent's own `PART`, after the reset succeeded | exorcism, reset report |
+| `-ChanServ- N files reverted · X.XX credits used` | same moment, when files were reverted or credits are above zero | `git status` before the reset, `CreditLedger` (same value as the `320 credits:` line) |
+| `-NickServ- agents online: coder, reviewer, researcher (idle)` | a human finishes registering, while the runner is running | `AgentRegistry`, `WhoisSnapshot` status |
+
+Differences from the mockup, on purpose:
+
+- **Credits wording.** The mockup says `credits released`. A kick does not release credits (the ledger keeps the pair total so the channel cap survives kick and re-invite), so the line says `credits used`. Open for a product decision.
+- **Worktree path.** The mockup shows `.seance/wt/<channel>`. The real layout is `SEANCE_WORKSPACES/<channel>`, shown as its last two path segments; absolute paths never go to IRC.
+- **Restored sessions.** `2 sessions restored from last séance: ...` is not sent. Sessions live in memory and are lost on restart, and a persisted record could not resume the agent's conversation (ACP `session/load` is untested). It needs a persistent store and a spike first.
+- **Scope warning.** `coder touched 6 files outside topic scope` is not built; there is no scope rule to base it on.
+- Mockup values such as `a1b2c3d`, `6 files` and `4.1` are sample data. Credits show two decimals, like `WHOIS`.
+
+The web client shows a service notice to the own nick in the Status window and one to a channel in that channel's window; it never opens a query window for a service.
 
 ### Nice-to-have
 
@@ -170,7 +193,7 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 - `steering/` — product, tech, structure.
 - `specs/` — `ircd-core`, `agent-runner`, `web-client`, `permissions`.
 - `hooks/` — `PreToolUse` hooks blocking `rm -rf`, `git push --force`, and access outside the worktree.
-- `agents/` — `coder`, `reviewer`, `researcher`, `chanserv`.
+- `agents/` — `coder`, `reviewer`, `researcher`. There is no `chanserv` agent: ChanServ and NickServ lines are produced by runner code without a model call.
 - `powers/irc-protocol`.
 - Property-based tests for the parser with fast-check: `parse(serialize(m)) == m`.
 
@@ -224,7 +247,7 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 | Risk | Mitigation |
 |---|---|
 | Credits | `+m` by default; per-channel credit cap; Haiku for researcher/chanserv, Sonnet for coder |
-| Security | Shell only for `+o`; cwd locked to the worktree; deny-list hooks; Podman container; only messages from human ops become instructions — everything else is wrapped in `<untrusted>`; agent output is never executed |
+| Security | Shell only for `+o`; cwd locked to the worktree; deny-list hooks; Podman container (rootless, one per agent and channel; spec `agent-sandbox`, `docs/SANDBOX.md`; no `git commit` inside it yet, see Open Point 1 of that spec); only messages from human ops become instructions — everything else is wrapped in `<untrusted>`; agent output is never executed |
 | Latency | Stream per sentence; 120 s timeout → `NOTICE` |
 | Judge hosting | VPS + Podman + Caddy TLS; judge accounts via `PASS`; max 2 active agent channels |
 | Trademark | Never use "mIRC" in the product name |

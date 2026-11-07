@@ -1,0 +1,14 @@
+<svg width="160" height="22" viewBox="0 0 160 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M160 0H0V22H160V0Z" fill="#C0C0C0"/>
+<path d="M159 0H0V1H159V0Z" fill="#808080"/>
+<path d="M1 0H0V21H1V0Z" fill="#808080"/>
+<path d="M158 1H1V2H158V1Z" fill="black"/>
+<path d="M2 1H1V20H2V1Z" fill="black"/>
+<path d="M159 20H1V21H159V20Z" fill="#DFDFDF"/>
+<path d="M159 1H158V21H159V1Z" fill="#DFDFDF"/>
+<path d="M160 21H0V22H160V21Z" fill="white"/>
+<path d="M160 0H159V22H160V0Z" fill="white"/>
+<path d="M12 16C14.7614 16 17 13.7614 17 11C17 8.23858 14.7614 6 12 6C9.23858 6 7 8.23858 7 11C7 13.7614 9.23858 16 12 16Z" fill="#C8761F" stroke="black"/>
+<text fill="black" style="white-space: pre" xml:space="preserve" font-family="IBM Plex Mono" font-size="13" font-weight="bold" letter-spacing="0em"><tspan x="92.1543" y="16.375">42.7</tspan></text>
+<text fill="black" style="white-space: pre" xml:space="preserve" font-family="IBM Plex Mono" font-size="13" letter-spacing="0em"><tspan x="22" y="16.375">credits: </tspan></text>
+</svg>

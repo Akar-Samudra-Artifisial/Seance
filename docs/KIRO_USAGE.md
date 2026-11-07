@@ -137,6 +137,46 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: bidi/invisible stripping in labels and `formatter.ts`, 120-char topic clip in titles, lag clamp and reset, Reconnect gated on `ui.hasConnected`, macOS Option+letter left to the Input_Line, narrow store subscriptions (`useShallow`), ghost glyph on exorcised nick rows; tests in `review-fixes.test.tsx`, `lag.close.test.ts`, `selectors.review.test.ts`
 - Notes: build, typecheck, lint, `test --force` and Playwright e2e (8 tests) all pass
 
+### 2026-11-08 — runner-services spec
+- Kiro features: spec runner-services (requirements, design, tasks), MCP Talk-to-Figma (notice texts read from frames 01, 02, 03), steering (product, security)
+- Produced: `.kiro/specs/runner-services/*`, Services section in `DESIGN.md`
+- Notes: two of the requested texts live in frame 03, not 01; "credits released" and "sessions restored" would be false with today's ledger and in-memory store, so the spec deviates and records open points
+
+### 2026-11-08 — agent-sandbox spec
+- Kiro features: spec agent-sandbox (requirements, design, tasks), steering (security, runner-acp), web research (passt manual, Kiro auth paths)
+- Produced: `.kiro/specs/agent-sandbox/*`, `docs/SANDBOX.md` (marked not yet implemented), pointer in `DESIGN.md` §8
+- Notes: reading the code showed that one process serves all channels of an agent and that the worktree `.git` file becomes agent-writable, so the spec changes the process model and hardens host git
+
+### 2026-11-08 — web-client-pixel-match spec
+- Kiro features: spec web-client-pixel-match (requirements, design, tasks), Figma power (`get_design_context` for 1:1093, once), MCP Talk-to-Figma (frames 00 to 04, components, export), steering (web-ui, security)
+- Produced: `.kiro/specs/web-client-pixel-match/*`, the 23 Figma icon SVGs in `apps/web/design/figma-icons/`
+- Notes: the `[hh:mm] -` lines are the WHOIS separators that frame 04 draws; the e2e stack builds production, so the fixture is gated at build time, not by NODE_ENV
+
+### 2026-11-08 — runner-services tasks update
+- Kiro features: spec runner-services (tasks.md), agent seance-spec (edits), spec format validator
+- Produced: refined tasks (integration helpers, invite and exorcism unit tests, Notes, dependency graph)
+- Notes: the validator flagged the missing Task Dependency Graph, and file-write tools were unavailable in the main session, so edits went through the seance-spec agent
+
+### 2026-11-08 — agent-sandbox tasks update
+- Kiro features: spec agent-sandbox (tasks.md), agent seance-spec (edits), spec format validator
+- Produced: coding-only tasks with spike scripts and pinned flags file, added coverage, Notes, dependency graph
+- Notes: host-only steps (Linux Podman runs, nftables rule, VPS check) moved from tasks to operator notes
+
+### 2026-11-08 — agent-sandbox design update
+- Kiro features: spec agent-sandbox (design.md), agent seance-spec (edits), spec format validator
+- Produced: design aligned with the updated tasks, plus Architecture and Data Models sections and Property N headings
+- Notes: the validator rejected the first design (no Architecture, Data Models or Property headings); the same gap exists in the runner-services design
+
+### 2026-11-08 — runner-services design update
+- Kiro features: spec runner-services (design.md), agent seance-spec (edits), spec format validator
+- Produced: design aligned with the updated tasks, plus Architecture and Data Models sections and Property N headings
+- Notes: same validator gap as agent-sandbox (no Architecture, Data Models or Property headings), fixed the same way
+
+### 2026-11-08 — web-client-pixel-match design update
+- Kiro features: spec web-client-pixel-match (design.md), agent seance-spec (edits), spec format validator
+- Produced: design with Architecture, Components and Interfaces, Data Models and Property N headings
+- Notes: the validator rejected the first design (three required sections missing); its tasks.md still lacks a dependency graph
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.
