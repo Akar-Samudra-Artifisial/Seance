@@ -15,10 +15,10 @@ import type {
   PermissionHandler,
   ProcessEvent,
   SessionEvent,
-  ToolInfo,
   TurnResult,
 } from "./harness.js";
 import { buildSpawnSpec } from "./spawn.js";
+import { resolveTool, ToolCache } from "./tool-info.js";
 
 export type AcpHarnessConfig = Pick<RunnerConfig, "kiroBin" | "kiroApiKey" | "agentsDir">;
 
@@ -64,24 +64,6 @@ const asObj = (v: Json | undefined): JsonObject | undefined =>
 const asStr = (v: Json | undefined): string | undefined => (typeof v === "string" ? v : undefined);
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-function extractTool(raw: Json | undefined): ToolInfo {
-  const o = asObj(raw) ?? {};
-  const rawInput = asObj(o["rawInput"]) ?? {};
-  const paths: string[] = [];
-  const p = asStr(rawInput["path"]);
-  if (p !== undefined) paths.push(p);
-  const locations = o["locations"];
-  if (Array.isArray(locations)) {
-    for (const loc of locations as readonly Json[]) {
-      const lp = asStr(asObj(loc)?.["path"]);
-      if (lp !== undefined) paths.push(lp);
-    }
-  }
-  const base = { kind: asStr(o["kind"]) ?? "other", title: asStr(o["title"]) ?? "", paths };
-  const command = asStr(rawInput["command"]);
-  return command === undefined ? base : { ...base, command };
-}
-
 /** Per-process state: the client and the sessions living in it. */
 export interface Proc {
   readonly profile: AgentProfile;
@@ -101,6 +83,8 @@ class AcpSession implements HarnessSession {
   private readonly proc: Proc;
   private readonly harness: AcpHarness;
   private closed = false;
+  /** Tool metadata by toolCallId for the current turn. */
+  readonly tools = new ToolCache();
 
   constructor(id: string, proc: Proc, harness: AcpHarness, onPermission: PermissionHandler) {
     this.id = id;
@@ -121,6 +105,7 @@ class AcpSession implements HarnessSession {
       if (typeof stopReason !== "string") throw new Error("session/prompt result has no string stopReason");
       return { stopReason };
     } finally {
+      this.tools.clear();
       this.harness.turnEnded(this.proc);
     }
   }
@@ -361,9 +346,20 @@ export class AcpHarness implements AgentHarness {
       case "agent_thought_chunk":
         session.emit({ kind: "thought-chunk", text });
         return;
-      case "tool_call":
-        session.emit({ kind: "tool-call", tool: extractTool(update) });
+      case "tool_call": {
+        const id = asStr(update["toolCallId"]);
+        const tool = resolveTool(update, id === undefined ? undefined : session.tools.get(id));
+        if (id !== undefined) session.tools.record(id, update);
+        session.emit({ kind: "tool-call", tool });
         return;
+      }
+      case "tool_call_update": {
+        // Real kiro sends kind and paths here and in `tool_call`, not in the permission request.
+        const id = asStr(update["toolCallId"]);
+        if (id !== undefined) session.tools.record(id, update);
+        session.emit({ kind: "unknown", sessionUpdate: type });
+        return;
+      }
       default:
         session.emit({ kind: "unknown", sessionUpdate: type });
     }
@@ -383,7 +379,10 @@ export class AcpHarness implements AgentHarness {
       const kind = asStr(asObj(o)?.["kind"]);
       if (id !== undefined && kind !== undefined) options.push({ id, kind });
     }
-    const answer = await session.onPermission({ tool: extractTool(params["toolCall"]), options });
+    const toolCall = asObj(params["toolCall"]) ?? {};
+    const toolCallId = asStr(toolCall["toolCallId"]);
+    const tool = resolveTool(toolCall, toolCallId === undefined ? undefined : session.tools.get(toolCallId));
+    const answer = await session.onPermission({ tool, options });
     if ("cancelled" in answer) return CANCELLED;
     const chosen = options.find((o) => o.kind === answer.decision);
     if (chosen === undefined) {

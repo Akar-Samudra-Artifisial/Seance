@@ -2,10 +2,11 @@
  * Pure deny list for shell tool calls (Requirement 8.7, 8.15).
  *
  * The list is a textual floor, not a sandbox. It never performs I/O and depends only on its
- * arguments. Anything it cannot parse in a way it understands is handled conservatively where
- * that is cheap (glob segments, quote and backslash tricks); constructed names such as
- * `$(printf '.ki%s' ro)` are not recognised and rely on the other layers (sparse-checkout,
- * pre-prompt scan, container).
+ * arguments. The protected-path reference check matches literal names only (after removing
+ * quotes and backslashes, so `.k""iro` still counts); globs such as `.ki*` and constructed names
+ * such as `$(printf '.ki%s' ro)` are not recognised and rely on the other layers (sparse-checkout,
+ * pre-prompt scan, commit-diff check, container). The `rm -rf` escape check still treats a glob
+ * that can match `..` conservatively.
  */
 import { posix } from "node:path";
 
@@ -59,12 +60,13 @@ function globMatches(segment: string, name: string): boolean {
   }
 }
 
+/**
+ * Literal match only (Req 8.15): a segment equal to `AGENTS.md` or `.kiro`, any letter case. A glob
+ * segment (`*`, `.ki*`, `[Aa]GENTS.md`) is NOT treated as a reference: `find -not -path "./node_modules/*"`
+ * is ordinary, and the pre-prompt scan plus the commit-diff check catch any file such a command creates.
+ */
 function segmentIsProtected(segment: string): boolean {
-  const lower = segment.toLowerCase();
-  if (lower.length === 0) return false;
-  if (PROTECTED_NAMES.includes(lower)) return true;
-  if (GLOB_CHARS.test(segment)) return PROTECTED_NAMES.some((name) => globMatches(segment, name));
-  return false;
+  return PROTECTED_NAMES.includes(segment.toLowerCase());
 }
 
 function hasProtectedReference(text: string): boolean {
@@ -78,8 +80,8 @@ function hasProtectedReference(text: string): boolean {
 }
 
 /**
- * True when the command mentions `AGENTS.md` or `.kiro` (any letter case) as a token or path
- * segment, or a glob segment that can match either name.
+ * True when the command mentions `AGENTS.md` or `.kiro` (any letter case) literally as a token or
+ * path segment. Glob segments never count.
  */
 export function referencesProtectedPath(command: string): boolean {
   // Second view with quotes and backslashes removed catches `.k""iro` and `.k\iro`.

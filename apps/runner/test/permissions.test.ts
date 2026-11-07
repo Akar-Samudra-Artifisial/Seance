@@ -111,12 +111,26 @@ describe("deny list", () => {
     ["cat AGENTS.md", "protected-path"],
     ["rm -rf .kiro", "protected-path"],
     ["echo x >> docs/AGENTS.md", "protected-path"],
-    ["ls .ki*", "protected-path"],
+    ["cat Agents.MD", "protected-path"],
+    ["ls sub/.KIRO/hooks", "protected-path"],
   ] as const)("denies %s", (command, reason) => {
     expect(matchDenyList(command, wt)).toEqual({ reason });
   });
 
-  it.each(["ls -la", "rm -rf build", "git push origin main", "cat MY-AGENTS.md", "ls kiro", "cat AGENTS.md.bak"])(
+  // Req 8.15 (relaxed): only literal names count; globs are left to the pre-prompt scan and commit-diff check.
+  it.each([
+    "ls -la",
+    "rm -rf build",
+    "git push origin main",
+    "cat MY-AGENTS.md",
+    "ls kiro",
+    "cat AGENTS.md.bak",
+    "ls .ki*",
+    "cat AGENTS.*",
+    'find . -name login.js -not -path "./node_modules/*"',
+    'find . -name "*.md"',
+    "grep -r TODO src/*",
+  ])(
     "passes %s",
     (command) => {
       expect(matchDenyList(command, wt)).toBeUndefined();

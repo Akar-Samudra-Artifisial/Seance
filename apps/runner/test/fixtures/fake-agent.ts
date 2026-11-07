@@ -49,6 +49,12 @@ export interface FakeScript {
   readonly initExitCode?: number;
   readonly metadataAfterCancel?: boolean;
   readonly modeId?: string;
+  /**
+   * `kiro` (default) mirrors kiro-cli 3.x: a `session/update` `tool_call` (kind, locations, rawInput)
+   * is sent first and `session/request_permission` carries only toolCallId, title and rawInput.
+   * `legacy` sends the old shape: kind and rawInput directly in the request, no earlier update.
+   */
+  readonly permissionShape?: "kiro" | "legacy";
 }
 
 export const MAX_DELAY_MS = 600_000;
@@ -162,7 +168,13 @@ export const parseScript = (raw: unknown): FakeScript => {
     initExitCode?: number;
     metadataAfterCancel?: boolean;
     modeId?: string;
+    permissionShape?: "kiro" | "legacy";
   } = { turns };
+  const shape = raw["permissionShape"];
+  if (shape !== undefined) {
+    if (shape !== "kiro" && shape !== "legacy") return fail("$.permissionShape", 'expected "kiro" or "legacy"');
+    out.permissionShape = shape;
+  }
   const settleMs = raw["settleMs"];
   if (settleMs !== undefined) {
     if (typeof settleMs !== "number" || !Number.isInteger(settleMs) || settleMs < 0 || settleMs > MAX_DELAY_MS) {
@@ -566,13 +578,17 @@ export class FakeAgentCore {
         const n = this.permissionCounter;
         const id: RpcId = step.permission.ids === "number" ? n : `fake-perm-${n}`;
         turn.permissionId = id;
+        const legacy = this.script.permissionShape === "legacy";
+        if (!legacy) {
+          out.push(this.update(turn.sessionId, { sessionUpdate: "tool_call", ...this.kiroToolCallBody(step.permission.toolCall, n) }));
+        }
         out.push(JSON.stringify({
           jsonrpc: "2.0",
           id,
           method: "session/request_permission",
           params: {
             sessionId: turn.sessionId,
-            toolCall: this.toolCallBody(step.permission.toolCall, n),
+            toolCall: legacy ? this.toolCallBody(step.permission.toolCall, n) : this.kiroPermissionBody(step.permission.toolCall, n),
             options: [
               { optionId: "allow_once", name: "Allow once", kind: "allow_once" },
               { optionId: "allow_always", name: "Always allow", kind: "allow_always" },
@@ -613,6 +629,37 @@ export class FakeAgentCore {
     if (spec.path !== undefined) rawInput["path"] = spec.path;
     if (spec.command !== undefined) rawInput["command"] = spec.command;
     return { toolCallId: `fake-tool-${n}`, title: spec.title, kind: spec.kind, status: "pending", rawInput };
+  }
+
+  /** What kiro puts in `rawInput`: the edit tool's verb and path, the shell command, or a read verb and path. */
+  private kiroRawInput(spec: ToolCallSpec): Record<string, string> {
+    const rawInput: Record<string, string> = {};
+    if (spec.kind === "execute") {
+      if (spec.command !== undefined) rawInput["command"] = spec.command;
+      return rawInput;
+    }
+    if (spec.kind === "edit") rawInput["command"] = "create";
+    else if (spec.kind === "read") rawInput["command"] = "read";
+    else if (spec.command !== undefined) rawInput["command"] = spec.command;
+    if (spec.path !== undefined) rawInput["path"] = spec.path;
+    return rawInput;
+  }
+
+  /** Kiro's `tool_call` update: carries the kind and the locations. */
+  private kiroToolCallBody(spec: ToolCallSpec, n: number): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      toolCallId: `fake-tool-${n}`,
+      title: spec.title,
+      kind: spec.kind,
+      rawInput: this.kiroRawInput(spec),
+    };
+    if (spec.path !== undefined) body["locations"] = [{ path: spec.path, line: 1 }];
+    return body;
+  }
+
+  /** Kiro's `session/request_permission` toolCall: no `kind`, no `locations`. */
+  private kiroPermissionBody(spec: ToolCallSpec, n: number): Record<string, unknown> {
+    return { toolCallId: `fake-tool-${n}`, title: spec.title, rawInput: this.kiroRawInput(spec) };
   }
 
   // ---- virtual time -------------------------------------------------------------------------

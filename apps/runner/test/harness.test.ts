@@ -362,3 +362,71 @@ describe("HeadlessHarness", () => {
     expect(harness.hasProcess(profile("coder"))).toBe(false);
   });
 });
+
+describe("AcpHarness permission tool resolution (kiro shape)", () => {
+  const steps = (): object[] => [
+    { permission: { toolCall: { kind: "edit", title: "write a", path: "src/a.txt" } } },
+    { permission: { toolCall: { kind: "execute", title: "run ls", command: "ls" } } },
+    { permission: { toolCall: { kind: "read", title: "read b", path: "docs/b.md" } } },
+    // rawInput is only { path }: nothing to infer from, so only the cached tool_call can classify it.
+    { permission: { toolCall: { kind: "delete", title: "rm c", path: "old/c.txt" } } },
+  ];
+
+  const collect = async (script: object): Promise<{ tools: unknown[] }> => {
+    const rig = await makeRig(script);
+    const tools: unknown[] = [];
+    const session = await rig.harness.openSession(profile("coder"), {
+      cwd: rig.cwd,
+      onPermission: (req) => {
+        tools.push(req.tool);
+        return Promise.resolve({ decision: "reject_once" });
+      },
+    });
+    await session.prompt("go");
+    return { tools };
+  };
+
+  it("by default the fake sends tool_call first and no kind in the request; the harness still gets kind, paths, command", async () => {
+    const { tools } = await collect({ turns: [{ steps: steps() }] });
+    expect(tools).toEqual([
+      { kind: "edit", title: "write a", paths: ["src/a.txt"] },
+      { kind: "execute", title: "run ls", paths: [], command: "ls" },
+      { kind: "read", title: "read b", paths: ["docs/b.md"] },
+      { kind: "delete", title: "rm c", paths: ["old/c.txt"] },
+    ]);
+  });
+
+  it("the legacy shape (kind inside the request) resolves the same way", async () => {
+    const { tools } = await collect({ permissionShape: "legacy", turns: [{ steps: steps() }] });
+    expect(tools).toEqual([
+      { kind: "edit", title: "write a", paths: ["src/a.txt"] },
+      { kind: "execute", title: "run ls", paths: [], command: "ls" },
+      { kind: "read", title: "read b", paths: ["docs/b.md"] },
+      { kind: "delete", title: "rm c", paths: ["old/c.txt"] },
+    ]);
+  });
+
+  it("cached tool metadata does not leak into the next turn", async () => {
+    const rig = await makeRig({
+      turns: [
+        { steps: [{ permission: { toolCall: { kind: "edit", title: "w", path: "a.txt" } } }] },
+        { steps: [{ permission: { toolCall: { kind: "edit", title: "w", path: "a.txt" } } }] },
+      ],
+    });
+    const tools: unknown[] = [];
+    const session = await rig.harness.openSession(profile("coder"), {
+      cwd: rig.cwd,
+      onPermission: (req) => {
+        tools.push(req.tool);
+        return Promise.resolve({ decision: "reject_once" });
+      },
+    });
+    await session.prompt("one");
+    await session.prompt("two");
+    // The fake reuses toolCallId counters per process; a stale cache entry would merge paths twice.
+    expect(tools).toEqual([
+      { kind: "edit", title: "w", paths: ["a.txt"] },
+      { kind: "edit", title: "w", paths: ["a.txt"] },
+    ]);
+  });
+});

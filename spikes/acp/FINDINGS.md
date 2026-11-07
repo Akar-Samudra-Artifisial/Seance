@@ -139,3 +139,27 @@ For every scenario: `session/new` succeeded with `currentModeId` equal to the pr
 - Creating a file through the write tool needs a `session/request_permission` round trip, with `rawInput.path` relative (`AGENTS.md`). The runner's permission handler therefore sees such a write and can reject it (Requirement 8, criteria 14–16).
 - H turn 2 repeated the code, but the code was also written in turn 1's user prompt, so the conversation history alone explains it. The result does **not** prove that a mid-session `AGENTS.md` is reloaded. A clean test needs the instruction to reach the file without appearing in the user prompt (for example an `AGENTS.md` copied from a file the agent only reads). It would cost two more prompts and was outside the 4-prompt budget.
 - Design consequence (regardless of H): the sparse-checkout excludes both names at every depth, the whole tree is scanned on `ensure` and before every prompt, and writes or shell references to `AGENTS.md` and `.kiro` are rejected even for `+o`, so no new copy can reach a later turn through the runner's own enforcement points.
+
+## S11: permission frames of kiro-cli 3.1
+
+**Date:** 2026-11-07 · **kiro-cli:** 3.1.0 (`agentInfo.version`) · **Model:** `claude-haiku-5.5` · **Prompts:** 2
+
+**Question:** a real demo rejected a `+o` edit of `login.js` at the worktree root as `outside-worktree`. What do the `session/update` `tool_call` / `tool_call_update` frames and `session/request_permission` contain for an edit of an existing file and for a shell `ls`, when the session cwd is reached through a symlinked parent (macOS `/tmp` → `/private/tmp`)?
+
+**Command:** `pnpm --filter @seance/spike-acp s11` (runs `node src/s11-permission-frames.ts`; raw redacted log in `out/S11-permission-frames.jsonl.log`, gitignored). One `kiro-cli acp --agent s11-probe --model claude-haiku-5.5` process (process cwd = a temp agents directory, profile `tools: ["read", "write", "shell"]`, never `--trust-all-tools`). `session/new` gets the **unresolved** worktree path under `/tmp`; the worktree holds `login.js` and a `git init`. Prompt 1 asks to replace `// bug` with `// fixed` in `login.js`, prompt 2 asks to run `ls`. Every permission request was answered `allow_once` (temp dir only). The 15 frames that matter are normalised (`__WT__` = real worktree path, `__WT_LINK__` = the symlinked form, `__AGENTS__` = the process cwd) and saved as `apps/runner/test/fixtures/kiro-3.1-permission-frames.jsonl`.
+
+| Request | `tool_call` update (before the request) | `session/request_permission.toolCall` |
+|---|---|---|
+| `find . -name login.js -not -path "*/node_modules/*" …` | `kind: "execute"`, `rawInput.command` = the command line, no `locations` | `toolCallId`, `title`, `rawInput` only |
+| edit `login.js` | `kind: "edit"`, `locations: [{path: "./login.js"}]`, `rawInput: {command: "strReplace", path: "./login.js", oldStr, newStr}`, **`content[0].path: "__AGENTS__/login.js"`** | `toolCallId`, `title`, `rawInput` only; `_meta.trustOptions` patterns name `__WT__/login.js` |
+| `pwd; grep …; ls -l login.js` | `kind: "execute"` | `toolCallId`, `title`, `rawInput` only |
+| `ls` | `kind: "execute"`, `rawInput.command: "ls"` | `toolCallId`, `title`, `rawInput` only |
+
+**Conclusions**
+
+- **The diff path is wrong.** For a relative `rawInput.path`, kiro builds the diff `content[].path` against its **process cwd** (the agents directory), not the session cwd. The file actually written is `__WT__/login.js` (`rawOutput`: "Successfully replaced 1 occurrence(s) in __WT__/login.js"; the file changed in the worktree). The same was true in 3.0: S10-H's diff path pointed into `seance-s10-agents-*`. Merging the diff path into the permission paths caused the `outside-worktree` rejection. The runner now uses only `rawInput.path` and `locations[].path`, resolved against the worktree.
+- **No symlink form appears.** kiro reports the worktree only by its real path (`/private/tmp/...`) in `trustOptions`, `rawOutput` and `pwd`, even though `session/new` got `/tmp/...`. The runner already passes and compares real paths; `realWorktree` also realpaths a symlinked `ctx.worktree`.
+- **3.1 renamed the edit verb** from `str_replace` (3.0) to `strReplace`; the `rawInput` inference compares verbs case- and underscore-insensitively.
+- **The request still has no `kind`** (as in 3.0); `kind` comes only from the earlier `tool_call` update. Requests also carry a `__tool_use_purpose` field in `rawInput`.
+- **Haiku's first tool call for an edit was a `find … -not -path "*/node_modules/*"`.** The old glob rule of Req 8.15 rejected it as `protected-path`; Req 8.15 now matches literal `AGENTS.md` / `.kiro` names only.
+- Not tested: absolute `rawInput.path`, `create` of a new file in 3.1, rename/move, a session cwd that is not a git repository.

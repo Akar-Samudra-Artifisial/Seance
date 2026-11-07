@@ -91,6 +91,7 @@ export class WorktreeManager {
   readonly #repo: string;
   readonly #root: string;
   readonly #git: GitRunner;
+  readonly #ensuring = new Map<string, Promise<WorktreeInfo>>();
 
   constructor(opts: WorktreeManagerOptions) {
     this.#repo = opts.repo;
@@ -99,7 +100,20 @@ export class WorktreeManager {
   }
 
   /** Creates or reuses the channel's worktree; confined and free of agent config. */
-  async ensure(channel: string): Promise<WorktreeInfo> {
+  ensure(channel: string): Promise<WorktreeInfo> {
+    // Single-flight per worktree: two agents invited to one channel at once share one creation
+    // instead of racing on `git worktree add` ("already exists").
+    const key = sanitizeChannel(channel);
+    const running = this.#ensuring.get(key);
+    if (running !== undefined) return running;
+    const attempt = this.#ensureOnce(channel).finally(() => {
+      if (this.#ensuring.get(key) === attempt) this.#ensuring.delete(key);
+    });
+    this.#ensuring.set(key, attempt);
+    return attempt;
+  }
+
+  async #ensureOnce(channel: string): Promise<WorktreeInfo> {
     const name = sanitizeChannel(channel);
     const path = join(this.#root, name);
     const branch = `seance/${name}`;
