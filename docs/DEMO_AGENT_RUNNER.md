@@ -239,6 +239,14 @@ Expected:
 The agent rejoins with no mode again, so re-grant `+v` / `+o` as in steps A4–A5 to
 let it continue.
 
+## Scripted run (before every release)
+
+`scripts/demo-journey.py` plays Journeys A and B as `op` against real `kiro-cli` and
+exits non-zero unless all 11 checks pass (join, silent without a mode, `+o` fix + test +
+commit with no permission denied, WHOIS 320 lines, kick, resume). Costs ~0.3 credits.
+Run `python3 scripts/demo-journey.py --help` for the three steps (make target repo,
+start the ircd on loopback, run with a fresh `--channel`).
+
 ## 6. Cleanup
 
 - Part the channel in irssi: `/part #fix-bug-123`, then `/quit`.
