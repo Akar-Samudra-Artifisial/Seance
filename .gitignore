@@ -23,3 +23,6 @@ workspaces/
 .vitest-out.json
 .perm-out.txt
 __pycache__/
+apps/web/test-results/
+apps/web/playwright-report/
+playwright-report/

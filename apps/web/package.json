@@ -1,0 +1,41 @@
+{
+  "name": "@seance/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Séance retro web client.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.core.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@seance/irc-protocol": "workspace:*",
+    "@tailwindcss/postcss": "4.3.4",
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tailwindcss": "4.3.4",
+    "zustand": "5.0.16"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint": "10.14.0",
+    "eslint-config-next": "16.4.5",
+    "fast-check": "4.10.2",
+    "jsdom": "31.0.0",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "5.1.0"
+  }
+}
