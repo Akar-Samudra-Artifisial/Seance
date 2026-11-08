@@ -38,11 +38,48 @@ describe("image pinning (12.8, decision 5)", () => {
     expect(text).toMatch(/\/usr\/local\/bin\/kiro-cli/);
   });
 
-  it("the image keeps /home/agent exec-able until noexec is verified with kiro-cli (documented, task 0.4)", () => {
-    expect(read("apps/runner/src/sandbox/flags.ts")).toMatch(/TMPFS_HOME = "\/home\/agent:rw,nosuid,nodev,size=256m"/);
+  // Review item 1 (replaces the finding 5 test that kept $HOME exec-able until verified): noexec
+  // is applied to both tmpfs mounts, and every program the container starts lives in the image.
+  it("both tmpfs mounts are noexec, and kiro-cli, the entrypoint and the probe sit in /usr/local/bin of the image", () => {
+    const flags = read("apps/runner/src/sandbox/flags.ts");
+    expect(flags).toMatch(/TMPFS_HOME = "\/home\/agent:rw,nosuid,nodev,noexec,size=256m"/);
+    expect(flags).toMatch(/TMPFS_TMP = "\/tmp:rw,nosuid,nodev,noexec,size=256m"/);
+    for (const file of DOCKERFILES) {
+      const text = read(file);
+      expect(text).toContain('ENTRYPOINT ["/usr/local/bin/seance-entry"]');
+      expect(text).toMatch(/\/usr\/local\/bin\/(?:kiro-cli|seance-entry)/);
+      expect(text).not.toMatch(/\/home\/agent\/\S*(?:kiro-cli|seance)/);
+    }
+    expect(read("sandbox/Dockerfile")).toMatch(/COPY .*kiro-cli \/usr\/local\/bin\/kiro-cli/);
+    expect(read("sandbox/Dockerfile")).toMatch(/COPY .*seance-entry seance-probe \/usr\/local\/bin\//);
+    // seance-entry starts the command by name (PATH) or by the image path SEANCE_KIRO_BIN names.
+    expect(read("sandbox/seance-entry")).toContain('exec "${SEANCE_KIRO_BIN:-kiro-cli}"');
+  });
+
+  it("README and docs/SANDBOX.md state that .gitmodules and nested .git are refused by design (review item 4)", () => {
+    for (const file of ["README.md", "docs/SANDBOX.md"]) {
+      const text = read(file);
+      expect(text, file).toMatch(/\.gitmodules/);
+      expect(text, file).toMatch(/nested `\.git`/);
+      expect(text, file).toMatch(/by design|deliberate/);
+    }
+  });
+
+  it("docs/SANDBOX.md and README require SEANCE_SANDBOX_BLOCKED_CIDRS for a public host and call the probe best effort (review item 2)", () => {
+    for (const file of ["README.md", "docs/SANDBOX.md"]) {
+      const text = read(file);
+      expect(text, file).toMatch(/SEANCE_SANDBOX_BLOCKED_CIDRS/);
+      expect(text, file).toMatch(/IRCD_PUBLIC=1/);
+      expect(text, file).toMatch(/best effort/i);
+    }
     const doc = read("docs/SANDBOX.md");
-    expect(doc).toMatch(/noexec/);
-    expect(doc).toMatch(/\/home\/agent/);
+    expect(doc).toMatch(/looks exactly like one the rule drops/);
+  });
+
+  it("docs/SANDBOX.md states noexec as applied and lists DNS tunnelling as a residual risk", () => {
+    const doc = read("docs/SANDBOX.md");
+    expect(doc).toMatch(/--tmpfs=\/home\/agent:rw,nosuid,nodev,noexec/);
+    expect(doc).not.toMatch(/mounted without `noexec`/);
     expect(doc).toMatch(/DNS tunnell?ing/i);
   });
 

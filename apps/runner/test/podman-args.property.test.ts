@@ -35,7 +35,7 @@ const validInput: fc.Arbitrary<PodmanRunInput> = fc
   .map((r) => {
     const worktreeRoot = `/srv/${r.root}/ws`;
     return {
-      config: { image: `localhost/seance@${DIGEST}`, authDir: `/srv/${r.auth}/auth`, memory: "2g", cpus: "1.5", pids: 128, timeoutS: 3600 },
+      config: { image: `localhost/seance@${DIGEST}`, authDir: `/srv/${r.auth}/auth`, memory: "2g", cpus: "1.5", pids: 128, timeoutS: 3600, kiroBin: "kiro-cli" },
       agentsDir: `/srv/${r.agents}/agents`,
       sessionCwd: r.privateSession ? `${worktreeRoot}/_private/${r.channel}` : `${worktreeRoot}/${r.channel}`,
       worktreeRoot,
@@ -100,6 +100,10 @@ describe("agent-sandbox properties", () => {
         }
         expect(mounts[0]?.endsWith(input.privateSession ? F.MOUNT_RELABEL_PRIVATE : F.MOUNT_RELABEL_SHARED)).toBe(true);
         for (const a of flags) for (const bad of FORBIDDEN) expect(flagName(a)).not.toBe(bad);
+        // Review item 1: every tmpfs is noexec, whatever the input.
+        const tmpfs = flags.filter((a) => a.startsWith("--tmpfs="));
+        expect(tmpfs).toHaveLength(2);
+        for (const t of tmpfs) expect((t.split(":")[1] ?? "").split(",")).toContain("noexec");
         expect(argv.some((a) => a.includes("\0"))).toBe(false);
       }),
       RUNS,
@@ -140,7 +144,11 @@ describe("agent-sandbox properties", () => {
           if (a === "-e") env.push(argv[i + 1] ?? "");
         });
         for (const e of env) {
-          const ok = e === `HOME=${F.CONTAINER_HOME}` || e === `TMPDIR=${F.CONTAINER_TMP}` || input.forwardEnv.includes(e);
+          const ok =
+            e === `HOME=${F.CONTAINER_HOME}` ||
+            e === `TMPDIR=${F.CONTAINER_TMP}` ||
+            e === `SEANCE_KIRO_BIN=${input.config.kiroBin}` ||
+            input.forwardEnv.includes(e);
           expect(ok).toBe(true);
           expect(e.startsWith("KIRO_API_KEY")).toBe(false);
         }

@@ -156,3 +156,10 @@ Spike scripts and pinned flag spellings first, then pure code (config, guard, ar
 - [x] 14. Probe runs in every podman start; `SEANCE_SANDBOX_BLOCKED_CIDRS` and `sandbox/cidr.ts`
 - [x] 15. `sha256` build arg in `sandbox/Dockerfile`; `noexec` on `$HOME` documented and added to the S12 auth spike; DNS tunnelling in `docs/SANDBOX.md`
 - [x] 16. Cleanups: stacked JSDoc in `spawn.ts`, unused `forget()`, sweep lists names and forgets them
+
+## Closing review items (2026-11-08, Requirement 15.7, 15.8)
+
+- [x] 17. `noexec` on `/home/agent` in `flags.ts`; `SEANCE_SANDBOX_KIRO_BIN` validated (`sandbox/kiro-bin.ts`) and passed as `SEANCE_KIRO_BIN`; podman-args, config and file tests
+- [x] 18. `PublicEgressError`: public podman requires `SEANCE_SANDBOX_BLOCKED_CIDRS`, in `apps/ircd` and `runner.start()`; probe documented as best effort
+- [x] 19. Second concurrent `openSession` for one (agent, cwd) is rejected, never shares the first session; concurrency tests
+- [x] 20. README and `docs/SANDBOX.md`: `.gitmodules` and nested `.git` refused by design; `ensure` test

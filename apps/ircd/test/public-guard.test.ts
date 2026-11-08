@@ -28,8 +28,25 @@ describe("checkPublicStartup (2.2, 2.3)", () => {
     }
   });
 
-  it("accepts a public server with the sandbox, or without the runner", () => {
-    expect(checkPublicStartup({ IRCD_PUBLIC: "1", SEANCE_RUNNER: "1", SEANCE_SANDBOX: "podman" })).toEqual({ publicDeployment: true });
+  // Review item 2: fail closed when the VPC range is not named.
+  it("refuses a public podman server without SEANCE_SANDBOX_BLOCKED_CIDRS, naming the variable", () => {
+    for (const cidrs of [undefined, "", "  ", ",", " , "]) {
+      const env = { IRCD_PUBLIC: "1", SEANCE_RUNNER: "1", SEANCE_SANDBOX: "podman", SEANCE_SANDBOX_BLOCKED_CIDRS: cidrs };
+      expect(() => checkPublicStartup(env)).toThrow(/SEANCE_SANDBOX_BLOCKED_CIDRS/);
+    }
+  });
+
+  it("accepts a public podman server with at least one blocked CIDR; a private one needs none", () => {
+    expect(
+      checkPublicStartup({ IRCD_PUBLIC: "1", SEANCE_RUNNER: "1", SEANCE_SANDBOX: "podman", SEANCE_SANDBOX_BLOCKED_CIDRS: "10.0.0.0/16" }),
+    ).toEqual({ publicDeployment: true });
+    expect(checkPublicStartup({ SEANCE_RUNNER: "1", SEANCE_SANDBOX: "podman" })).toEqual({ publicDeployment: false });
+  });
+
+  it("accepts a public server with the sandbox and CIDRs, or without the runner", () => {
+    expect(
+      checkPublicStartup({ IRCD_PUBLIC: "1", SEANCE_RUNNER: "1", SEANCE_SANDBOX: "podman", SEANCE_SANDBOX_BLOCKED_CIDRS: "10.0.0.0/16" }),
+    ).toEqual({ publicDeployment: true });
     expect(checkPublicStartup({ IRCD_PUBLIC: "1" })).toEqual({ publicDeployment: true });
     expect(checkPublicStartup({ SEANCE_RUNNER: "1" })).toEqual({ publicDeployment: false });
   });

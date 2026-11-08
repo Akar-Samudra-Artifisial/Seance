@@ -126,6 +126,30 @@ describe("credentials (1.4, decision 2)", () => {
   });
 });
 
+// Review item 1: /tmp and /home/agent are noexec, so kiro-cli must come from the image.
+describe("SEANCE_SANDBOX_KIRO_BIN stays runnable (noexec mounts)", () => {
+  it.each(["kiro-cli", "kiro.v3", "/usr/local/bin/kiro-cli", "/opt/kiro/bin/kiro-cli", "/home/agentx/kiro", "/tmpfiles/kiro"])("accepts %j", (v) => {
+    expect(podman({ SEANCE_SANDBOX_KIRO_BIN: v }).kiroBin).toBe(v);
+  });
+
+  it.each([
+    "/home/agent/bin/kiro-cli",
+    "/home/agent",
+    "/tmp/kiro-cli",
+    "/tmp",
+    "/run/seance/auth/kiro-cli",
+    "/usr/../home/agent/kiro",
+    "/usr/local//bin/kiro",
+    "bin/kiro-cli",
+    "./kiro-cli",
+    "../kiro-cli",
+    "kiro cli",
+    "/usr/local/bin/kiro,cli",
+  ])("refuses %j and names the variable", (v) => {
+    expect(errorOf({ SEANCE_SANDBOX_KIRO_BIN: v }).variable).toBe("SEANCE_SANDBOX_KIRO_BIN");
+  });
+});
+
 describe("unsafe characters (1.5)", () => {
   it.each([
     ["SEANCE_SANDBOX_AUTH_DIR", "/a,ro=false"],

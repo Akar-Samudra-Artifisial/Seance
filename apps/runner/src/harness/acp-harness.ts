@@ -185,11 +185,16 @@ export class AcpHarness implements AgentHarness {
     if (this.disposing) return Promise.reject(this.refusedAfterDispose());
     const launcher = this.opts.sandbox;
     if (launcher === undefined) return this.openHostSession(profile, opts);
-    // Review finding 2: one open per (agent, cwd) at a time. A concurrent open of the same pair
-    // shares the in-flight one (one container, one session); the map entry is set before any await.
+    // Review finding 2: one open per (agent, cwd) at a time; the map entry is set before any await.
     const key = `${irc_lower(profile.nick)}\0${opts.cwd}`;
-    const inFlight = this.opening.get(key);
-    if (inFlight !== undefined) return inFlight;
+    if (this.opening.has(key)) {
+      // Review item 3: a second caller must not silently get the first caller's HarnessSession (and
+      // its onPermission), and closing one must not close the other. The pair has one container,
+      // so the second open is refused; its caller reports the failure and stops.
+      return Promise.reject(
+        new SandboxError("invalid-input", `a session for ${profile.nick} in this session directory is already being opened`),
+      );
+    }
     const attempt = this.openSandboxSession(launcher, key, profile, opts).finally(() => {
       if (this.opening.get(key) === attempt) this.opening.delete(key);
     });

@@ -13,7 +13,7 @@ export { realClock, TimerSet } from "./clock.js";
 export type { Clock, TimerHandle } from "./clock.js";
 export { assertInvitersConfigured, ConfigError, isLoopbackHost, loadRunnerConfig, validateRunnerPaths } from "./config.js";
 export type { EnvSource, HarnessKind, PodmanSandboxConfig, RunnerConfig, SandboxConfig, SandboxMode } from "./config.js";
-export { assertSandboxForPublic, PublicSandboxError } from "./sandbox/guard.js";
+export { assertSandboxForPublic, PublicEgressError, PublicSandboxError } from "./sandbox/guard.js";
 export { SandboxError } from "./sandbox/errors.js";
 export type { SandboxErrorKind } from "./sandbox/errors.js";
 export { redactFields } from "./log.js";

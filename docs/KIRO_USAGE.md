@@ -212,6 +212,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: nested `.git` and `.gitmodules` refusal with hardened git overrides, per-(agent, cwd) open serialization, dispose that retires in-flight containers, egress probe on every podman start plus `SEANCE_SANDBOX_BLOCKED_CIDRS`, `KIRO_CLI_SHA256` build arg, name-based sweep
 - Notes: the two-turn PoC failed red first (the nested repo was committed as a gitlink); `git add` has no `--ignore-submodules`, checked against git 2.56; prompt-gate `vi.waitFor` timeouts failed 2 of 3 root runs, so only the wait time was raised
 
+### 2026-11-08 — agent-sandbox closing review items
+- Kiro features: spec agent-sandbox (Requirement 15.7 and 15.8, tasks 17 to 20), PBT (P1 and P3 extended for noexec and `SEANCE_KIRO_BIN`, P6 fixed), steering (security, testing)
+- Produced: `noexec` on `/home/agent` with a validated `SEANCE_SANDBOX_KIRO_BIN` (`sandbox/kiro-bin.ts`), `PublicEgressError` for public podman without `SEANCE_SANDBOX_BLOCKED_CIDRS`, rejection of a second concurrent open per (agent, cwd), docs and tests for refused `.gitmodules` and nested `.git`
+- Notes: `SEANCE_SANDBOX_KIRO_BIN` was parsed but never passed to the container, found while pinning kiro-cli to the image path; the P6 property test hung under load until it waited for the start timer instead of a fixed tick count
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.

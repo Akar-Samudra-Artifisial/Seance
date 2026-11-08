@@ -38,9 +38,10 @@ writeFileSync(
   JSON.stringify({ name: "s12-probe", description: "S12 sandbox probe", prompt: "Reply with exactly: OK", mcpServers: {}, tools: ["read"], allowedTools: [], resources: [], includeMcpJson: false, model: MODEL }),
 );
 
-// S12_HOME_NOEXEC=1 mounts /home/agent with noexec, to learn whether kiro-cli needs it executable
-// (review finding 5); the answer decides TMPFS_HOME in apps/runner/src/sandbox/flags.ts.
-const homeTmpfs = process.env["S12_HOME_NOEXEC"] === "1" ? F.TMPFS_HOME.replace(":rw,", ":rw,noexec,") : F.TMPFS_HOME;
+// The production flags mount /home/agent with noexec (flags.ts TMPFS_HOME). kiro-cli runs from
+// /usr/local/bin of the image, so it should start; this run proves it. S12_HOME_EXEC=1 drops noexec
+// for a comparison run if it does not.
+const homeTmpfs = process.env["S12_HOME_EXEC"] === "1" ? F.TMPFS_HOME.replace(",noexec", "") : F.TMPFS_HOME;
 const mount = (src: string, dst: string, ro: boolean): string =>
   `--mount=type=bind,src=${src},dst=${dst},${ro ? F.MOUNT_RO : F.MOUNT_RW},${F.MOUNT_PROPAGATION},${F.MOUNT_NOSUID},${F.MOUNT_NODEV},${F.MOUNT_RELABEL_SHARED}`;
 // The production flag set of apps/runner/src/sandbox/podman-args.ts, without KIRO_API_KEY.

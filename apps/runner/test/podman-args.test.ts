@@ -13,6 +13,7 @@ const INPUT: PodmanRunInput = {
     cpus: "2",
     pids: 256,
     timeoutS: 86_400,
+    kiroBin: "kiro-cli",
   },
   agentsDir: "/srv/seance/agents",
   sessionCwd: "/srv/seance/workspaces/dev",
@@ -53,7 +54,7 @@ describe("buildPodmanRunArgs golden argv (4.1, 5.1, 5.7, 6.1)", () => {
       "--workdir=/srv/seance/agents",
       "--network=pasta:--no-map-gw,--ipv4-only",
       "--tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m",
-      "--tmpfs=/home/agent:rw,nosuid,nodev,size=256m",
+      "--tmpfs=/home/agent:rw,nosuid,nodev,noexec,size=256m",
       "--mount=type=bind,src=/srv/seance/workspaces/dev,dst=/srv/seance/workspaces/dev,rw,bind-propagation=rprivate,nosuid,nodev,relabel=shared",
       "--mount=type=bind,src=/srv/seance/agents,dst=/srv/seance/agents,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared",
       "--mount=type=bind,src=/srv/seance/auth,dst=/run/seance/auth,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared",
@@ -61,6 +62,8 @@ describe("buildPodmanRunArgs golden argv (4.1, 5.1, 5.7, 6.1)", () => {
       "HOME=/home/agent",
       "-e",
       "TMPDIR=/tmp",
+      "-e",
+      "SEANCE_KIRO_BIN=kiro-cli",
       "-e",
       "LANG",
       "-e",
@@ -70,6 +73,19 @@ describe("buildPodmanRunArgs golden argv (4.1, 5.1, 5.7, 6.1)", () => {
       "--agent",
       "coder",
     ]);
+  });
+
+  // Review item 1: noexec is applied, not only documented.
+  it("mounts both /tmp and /home/agent as tmpfs with noexec, nosuid and nodev (4.3)", () => {
+    const tmpfs = buildPodmanRunArgs(INPUT).filter((a) => a.startsWith("--tmpfs="));
+    expect(tmpfs.map((t) => t.split(":")[0])).toEqual(["--tmpfs=/tmp", "--tmpfs=/home/agent"]);
+    for (const t of tmpfs) {
+      const options = (t.split(":")[1] ?? "").split(",");
+      expect(options).toEqual(expect.arrayContaining(["rw", "noexec", "nosuid", "nodev"]));
+      expect(options.some((o) => /^size=\d+m$/.test(o))).toBe(true);
+    }
+    expect(F.TMPFS_HOME).toContain(",noexec,");
+    expect(F.TMPFS_TMP).toContain(",noexec,");
   });
 
   it("labels a private session directory :Z and everything else :z (5.7, D21)", () => {
@@ -102,6 +118,18 @@ describe("refusals (1.5, 4.5, 5.3, 6.4)", () => {
     refuses({ sessionCwd: "/srv/seance/workspaces/a,ro" });
     refuses({ sessionCwd: "/srv/other" });
     refuses({ sessionCwd: "/srv/seance/workspaces" });
+  });
+
+  it.each(["/home/agent/kiro-cli", "/tmp/kiro-cli", "/run/seance/auth/kiro-cli", "bin/kiro-cli", "kiro cli"])(
+    "a kiro-cli command that could not run from a noexec mount: %j",
+    (kiroBin) => {
+      refuses({ config: { ...INPUT.config, kiroBin } });
+    },
+  );
+
+  it("passes an absolute image path through as SEANCE_KIRO_BIN", () => {
+    const argv = buildPodmanRunArgs({ ...INPUT, config: { ...INPUT.config, kiroBin: "/usr/local/bin/kiro-cli" } });
+    expect(argv).toContain("SEANCE_KIRO_BIN=/usr/local/bin/kiro-cli");
   });
 
   it("an image that is not pinned by digest", () => {

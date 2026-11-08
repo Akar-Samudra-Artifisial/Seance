@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { isValidNick } from "@seance/irc-protocol";
 import { isCidr } from "./sandbox/cidr.js";
+import { isSandboxKiroBin } from "./sandbox/kiro-bin.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -258,8 +259,11 @@ function parseSandbox(env: EnvSource, harness: HarnessKind): SandboxConfig {
     throw new ConfigError("SEANCE_SANDBOX_CPUS", `SEANCE_SANDBOX_CPUS must be a decimal greater than 0 and at most 64 (got ${describe(cpus)})`);
   }
   const kiroBin = requireNonEmpty(env, "SEANCE_SANDBOX_KIRO_BIN", "kiro-cli");
-  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(kiroBin)) {
-    throw new ConfigError("SEANCE_SANDBOX_KIRO_BIN", `SEANCE_SANDBOX_KIRO_BIN must be a plain command name or path (got ${describe(kiroBin)})`);
+  if (!isSandboxKiroBin(kiroBin)) {
+    throw new ConfigError(
+      "SEANCE_SANDBOX_KIRO_BIN",
+      `SEANCE_SANDBOX_KIRO_BIN must be a bare command name or an absolute path in the image, not under /home/agent, /tmp or /run, which are noexec or credential mounts (got ${describe(kiroBin)})`,
+    );
   }
 
   const ignored: ("SEANCE_KIRO_BIN" | "KIRO_API_KEY")[] = [];

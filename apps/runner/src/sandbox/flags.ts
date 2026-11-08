@@ -24,9 +24,15 @@ export const CONTAINER_UID = 10001;
 export const USER = `${CONTAINER_UID}:${CONTAINER_UID}`;
 export const USERNS = `keep-id:uid=${CONTAINER_UID},gid=${CONTAINER_UID}`;
 
-/** tmpfs mounts (Requirement 4.3): `/tmp` is also `noexec`. */
+/**
+ * tmpfs mounts (Requirement 4.3): both are `noexec`, so nothing an agent downloads or writes into
+ * `/tmp` or `$HOME` can be run from there. `kiro-cli`, `seance-entry` and `seance-probe` live in
+ * `/usr/local/bin` of the read-only image, outside both mounts (`SEANCE_SANDBOX_KIRO_BIN` is
+ * refused under them, see config.ts). Tools that execute from `$HOME` (`npx`, `uvx` caches) do not
+ * work in the sandbox by design.
+ */
 export const TMPFS_TMP = "/tmp:rw,nosuid,nodev,noexec,size=256m";
-export const TMPFS_HOME = "/home/agent:rw,nosuid,nodev,size=256m";
+export const TMPFS_HOME = "/home/agent:rw,nosuid,nodev,noexec,size=256m";
 export const CONTAINER_HOME = "/home/agent";
 export const CONTAINER_TMP = "/tmp";
 

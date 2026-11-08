@@ -3,10 +3,10 @@
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PodmanSandboxConfig } from "../src/config.js";
 import { AcpHarness } from "../src/harness/acp-harness.js";
-import type { PermissionHandler, ProcessEvent, SessionEvent } from "../src/harness/harness.js";
+import type { HarnessSession, PermissionHandler, ProcessEvent, SessionEvent } from "../src/harness/harness.js";
 import type { RunnerLogger } from "../src/log.js";
 import type { AgentProfile } from "../src/registry/agent-profile.js";
 import { SandboxError } from "../src/sandbox/errors.js";
@@ -234,17 +234,54 @@ describe("fail closed (3.5, 3.6, 11.1 to 11.3)", () => {
 });
 
 // Review finding 2 (MAJOR): concurrent opens for one (agent, cwd) must not start two containers.
-describe("one open per (agent, cwd) (review finding 2)", () => {
-  it("two concurrent opens share one container and one session", async () => {
+describe("one open per (agent, cwd) (review finding 2, item 3)", () => {
+  // Item 3 replaces "two concurrent opens share one session": a caller must never be handed the
+  // first caller's HarnessSession (and its onPermission) without knowing. The second is rejected.
+  it("a second concurrent open is rejected with a clear error; the first one succeeds, alone", async () => {
     const rig = makeRig();
-    const [a, b] = await Promise.all([
-      rig.harness.openSession(coder, { cwd: rig.dir("dev"), onPermission: deny }),
-      rig.harness.openSession(coder, { cwd: rig.dir("dev"), onPermission: deny }),
+    const permissionA = vi.fn(deny);
+    const permissionB = vi.fn(deny);
+    const [a, b] = await Promise.allSettled([
+      rig.harness.openSession(coder, { cwd: rig.dir("dev"), onPermission: permissionA }),
+      rig.harness.openSession(coder, { cwd: rig.dir("dev"), onPermission: permissionB }),
     ]);
-    expect(b).toBe(a);
+    expect(a.status).toBe("fulfilled");
+    expect(b.status).toBe("rejected");
+    const err = (b as PromiseRejectedResult).reason as unknown;
+    expect(err).toBeInstanceOf(SandboxError);
+    expect((err as SandboxError).kind).toBe("invalid-input");
+    expect((err as SandboxError).message).toMatch(/already being opened/);
+    expect((err as SandboxError).message).toContain("coder");
     expect(await runCalls(fake)).toHaveLength(1);
     expect(await fake.live()).toHaveLength(1);
-    expect(await a.prompt("ping")).toEqual({ stopReason: "end_turn" });
+    const session = (a as PromiseFulfilledResult<HarnessSession>).value;
+    expect(await session.prompt("ping")).toEqual({ stopReason: "end_turn" });
+    expect(permissionB).not.toHaveBeenCalled();
+  });
+
+  it("the rejected caller's failure does not touch the first caller's session or container", async () => {
+    const rig = makeRig();
+    const first = rig.harness.openSession(coder, { cwd: rig.dir("dev"), onPermission: deny });
+    const second = rig.harness.openSession(coder, { cwd: rig.dir("dev"), onPermission: deny }).catch((e: unknown) => e);
+    expect(await second).toBeInstanceOf(SandboxError);
+    const session = await first;
+    expect(await fake.live()).toHaveLength(1);
+    expect(await session.prompt("still alive")).toEqual({ stopReason: "end_turn" });
+    await session.close(); // only the first caller's close retires the container
+    await until(async () => (await fake.live()).length === 0, "the container removed by the first caller's close");
+  });
+
+  it("many concurrent opens of one pair: exactly one wins, the rest are rejected, one container", async () => {
+    const rig = makeRig();
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () => rig.harness.openSession(coder, { cwd: rig.dir("dev"), onPermission: deny })),
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    for (const r of results.filter((x) => x.status === "rejected")) {
+      expect((r as PromiseRejectedResult).reason).toBeInstanceOf(SandboxError);
+    }
+    expect(await runCalls(fake)).toHaveLength(1);
+    expect(await fake.live()).toHaveLength(1);
   });
 
   it("a later open of a (agent, cwd) whose container is not retired is refused, and starts nothing", async () => {
@@ -276,13 +313,15 @@ describe("one open per (agent, cwd) (review finding 2)", () => {
     expect(await fake.live()).toHaveLength(3);
   });
 
-  it("a failed shared open fails both callers and leaves the key usable", async () => {
+  it("a failed first open and a concurrent second one both reject; the key is usable afterwards", async () => {
     await fake.setMode(["run-exit=125"]);
     const rig = makeRig();
     const results = await Promise.all(
       [0, 1].map(() => rig.harness.openSession(coder, { cwd: rig.dir("dev"), onPermission: deny }).catch((e: unknown) => e)),
     );
     for (const r of results) expect(r).toBeInstanceOf(SandboxError);
+    expect((results[0] as SandboxError).kind).toBe("start-failed");
+    expect((results[1] as SandboxError).message).toMatch(/already being opened/);
     expect(await runCalls(fake)).toHaveLength(1);
     await fake.setMode([]);
     const ok = await rig.harness.openSession(coder, { cwd: rig.dir("dev"), onPermission: deny });

@@ -119,6 +119,7 @@ export function createRunner(opts: RunnerOptions): Runner {
       public: opts.publicDeployment === true,
       runnerEnabled: true,
       sandbox: opts.config.sandbox.mode,
+      blockedCidrs: opts.config.sandbox.mode === "podman" ? opts.config.sandbox.blockedCidrs.length : 0,
     });
     assertInvitersConfigured(opts.config, opts.bindHost);
     const config = await validateRunnerPaths(opts.config);

@@ -36,7 +36,7 @@ The sandbox is one layer. The permission rules (`+o` to write, paths confined to
 | `none` (default) | Agents run on the host. For local development |
 | `podman` | Agents run in containers as described here |
 
-With `IRCD_PUBLIC=1` and `SEANCE_RUNNER=1`, the server refuses to start unless `SEANCE_SANDBOX=podman`. The check runs in `apps/ircd` before any port is opened and again in `runner.start()`. `IRCD_PUBLIC` accepts unset, empty, `0` and `1` only.
+With `IRCD_PUBLIC=1` and `SEANCE_RUNNER=1`, the server refuses to start unless `SEANCE_SANDBOX=podman`, and in podman mode it refuses to start when `SEANCE_SANDBOX_BLOCKED_CIDRS` is empty (the error names that variable): a public host must say which private ranges its host rule blocks, so the start-up probe can try them. The checks run in `apps/ircd` before any port is opened and again in `runner.start()`. `IRCD_PUBLIC` accepts unset, empty, `0` and `1` only.
 
 macOS and Windows are not supported in podman mode. Develop with `none`; run `podman` on a Linux server.
 
@@ -52,9 +52,9 @@ macOS and Windows are not supported in podman mode. Develop with `none`; run `po
 | `SEANCE_SANDBOX_CPUS` | `2` | Decimal greater than 0, at most 64 |
 | `SEANCE_SANDBOX_PIDS` | `256` | Integer 16 to 4096 |
 | `SEANCE_SANDBOX_TIMEOUT_S` | `86400` | Integer 60 to 604800. Hard lifetime of a container |
-| `SEANCE_SANDBOX_KIRO_BIN` | `kiro-cli` | Command name inside the image. `SEANCE_KIRO_BIN` is ignored in this mode |
+| `SEANCE_SANDBOX_KIRO_BIN` | `kiro-cli` | A bare command name found on the image's PATH (`/usr/local/bin`) or an absolute path in the image. Refused under `/home/agent`, `/tmp` and `/run`, which are `noexec` or credential mounts. Passed to the container as `SEANCE_KIRO_BIN`. The host's `SEANCE_KIRO_BIN` is ignored in this mode |
 | `SEANCE_SANDBOX_EGRESS_PROBES` | `1.1.1.1:443` | 1 to 8 `<IPv4>:<port>` targets outside the allow-list; the start-up probe fails when one is reachable, in every podman start |
-| `SEANCE_SANDBOX_BLOCKED_CIDRS` | unset | 1 to 8 IPv4 CIDRs your host rule blocks (the VPC, other private ranges), same values as `@VPC_CIDR@`. The probe tries the first address after the network address of each on port 443 and fails when it connects |
+| `SEANCE_SANDBOX_BLOCKED_CIDRS` | unset; required with `IRCD_PUBLIC=1` | 1 to 8 IPv4 CIDRs your host rule blocks (the VPC, other private ranges), same values as `@VPC_CIDR@`. The probe tries the first address after the network address of each on port 443 and fails when it connects. Best effort, see "Verify at every start" |
 | `IRCD_PUBLIC` | unset | `1` marks a public deployment |
 
 `KIRO_API_KEY` is never forwarded in podman mode; when it is set, the runner logs a warning once. `SEANCE_HARNESS=headless` is refused in podman mode.
@@ -74,7 +74,7 @@ podman run -i --rm --name=seance-coder-1a2b3c4d-9f8e7d6c
   --pull=never --http-proxy=false --no-hosts --log-driver=none
   --timeout=86400 --stop-timeout=2 --hostname=seance-agent --workdir=<agents>
   --network=pasta:--no-map-gw,--ipv4-only
-  --tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m --tmpfs=/home/agent:rw,nosuid,nodev,size=256m
+  --tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m --tmpfs=/home/agent:rw,nosuid,nodev,noexec,size=256m
   --mount=type=bind,src=<worktree>,dst=<worktree>,rw,bind-propagation=rprivate,nosuid,nodev,relabel=shared
   --mount=type=bind,src=<agents>,dst=<agents>,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared
   --mount=type=bind,src=<auth>,dst=/run/seance/auth,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared
@@ -97,9 +97,15 @@ Why not `:Z` everywhere: a `:Z` label is private to one container, so the second
 
 The agents directory is mounted because Kiro looks up `--agent <name>` in its working directory. It holds profiles, not secrets. The image entrypoint copies the auth directory into the container's tmpfs `$HOME` before `kiro-cli` starts; nothing is written back.
 
-Environment: `HOME=/home/agent`, `TMPDIR=/tmp`, `LANG`, `LC_*`, `TERM`, forwarded by name so values never show up in `ps`. The host `PATH`, `HOME`, `TMPDIR` and `KIRO_API_KEY` are not forwarded. Proxy variables are not forwarded (`--http-proxy=false`). The `podman` process itself gets the allow-listed environment plus `XDG_RUNTIME_DIR`, never `KIRO_API_KEY`.
+Both tmpfs mounts (`/tmp` and `/home/agent`) are `noexec,nosuid,nodev`, so nothing an agent downloads or writes there can be run from there. Everything the container starts lives in the read-only image: `kiro-cli`, `seance-entry` and `seance-probe` are in `/usr/local/bin`. Tools that execute programs from `$HOME` (`npx` and `uvx` caches, for example) do not work in the sandbox by design; run them with `SEANCE_SANDBOX=none` or bake what you need into the image.
+
+Environment: `HOME=/home/agent`, `TMPDIR=/tmp`, `SEANCE_KIRO_BIN` (the validated command, not a secret), `LANG`, `LC_*`, `TERM`, forwarded by name so values never show up in `ps`. The host `PATH`, `HOME`, `TMPDIR` and `KIRO_API_KEY` are not forwarded. Proxy variables are not forwarded (`--http-proxy=false`). The `podman` process itself gets the allow-listed environment plus `XDG_RUNTIME_DIR`, never `KIRO_API_KEY`.
 
 ACP stays newline-delimited JSON-RPC on stdio, carried by `podman run -i`.
+
+## Repositories that are refused by design
+
+A target repository (`SEANCE_TARGET_REPO`) that commits a `.gitmodules` file is refused: `ensure` fails with a `config-exclusion` error naming the path, and no agent starts in that channel. A nested `.git` (a directory, or a `gitdir:` file) is refused wherever it appears in a worktree. Git cannot commit a `.git` path, so in practice it is something an agent creates (`git init sub`, a `git clone`): the scan reports it, nothing is committed, and the next prompt guard removes it and resets the worktree. All of this is deliberate. A nested repository carries its own git config (`core.fsmonitor`, hooks) that is written by whoever controls the files, and the host runs git over the worktree. It holds in `none` mode as well. To use a repository with submodules, remove the submodules (and `.gitmodules`) first, or vendor their contents as plain files.
 
 ## Git and host-side commits
 
@@ -154,7 +160,7 @@ Host names, one per line: the Kiro service endpoints of your region (`runtime`, 
 
 ### Verify at every start
 
-At startup the runner starts a short container from your image and runs `seance-probe`. It fails the start when the container can reach a throw-away listener on the host's `127.0.0.1` through the gateway (exit 10), `169.254.169.254:80` (exit 11), or any `SEANCE_SANDBOX_EGRESS_PROBES` target or an address inside a `SEANCE_SANDBOX_BLOCKED_CIDRS` range (exit 13; default target `1.1.1.1:443`, outside the allow-list). These run on every podman start, not only with `IRCD_PUBLIC=1`, so a Linux development host that lacks the default-deny rule fails the start too: load the rule there, or use a throw-away `SEANCE_SANDBOX_EGRESS_PROBES` you know is unreachable. A pass means "not reachable now", not "blocked by a rule": the CIDR probe tries `<network>+1:443`, usually a router that never answers, so for a meaningful VPC check add a host you know is live to `SEANCE_SANDBOX_EGRESS_PROBES` as well.
+At startup the runner starts a short container from your image and runs `seance-probe`. It fails the start when the container can reach a throw-away listener on the host's `127.0.0.1` through the gateway (exit 10), `169.254.169.254:80` (exit 11), or any `SEANCE_SANDBOX_EGRESS_PROBES` target or an address inside a `SEANCE_SANDBOX_BLOCKED_CIDRS` range (exit 13; default target `1.1.1.1:443`, outside the allow-list). These run on every podman start, not only with `IRCD_PUBLIC=1`, so a Linux development host that lacks the default-deny rule fails the start too: load the rule there, or use a throw-away `SEANCE_SANDBOX_EGRESS_PROBES` you know is unreachable. **The probe is best effort.** A pass means "not reachable now", not "blocked by a rule": a host that does not exist, or does not listen on that port, looks exactly like one the rule drops, and so does a connect that times out for any other reason. The CIDR probe tries `<network>+1:443`, usually a router that never answers, so it passes even without the rule. For a meaningful VPC check add an address you know is live and listening to `SEANCE_SANDBOX_EGRESS_PROBES` (a host you run in the VPC); the probe then fails exactly when the rule is missing. Requiring `SEANCE_SANDBOX_BLOCKED_CIDRS` on a public host makes the operator state the ranges; it does not prove the rule works. After loading the rule, test it by hand from inside a container (`podman run --rm ... nc -z -w 2 <live VPC host> <port>` must fail).
 
 ## Image contract
 
@@ -221,7 +227,8 @@ Then start the runner with `SEANCE_SANDBOX=podman` (and `IRCD_PUBLIC=1` on the p
 
 ## Known limits
 
-- `/home/agent` (the tmpfs `$HOME`) is mounted without `noexec`. `/tmp` has it. Whether `kiro-cli` runs with `noexec` on `$HOME` is not known: it stages its login there, and tools an agent starts (`npx`, `uvx` caches under `$HOME`) execute downloaded programs from it. Spike S12 (`S12_HOME_NOEXEC=1 pnpm --filter @seance/spike-acp s12-auth`, task 0.4) tests it; if `kiro-cli` works and your agents do not need `npx` or `uvx`, add `noexec` to `TMPFS_HOME` in `flags.ts`.
+- `/home/agent` and `/tmp` are `noexec`. That `kiro-cli` starts with it (it runs from `/usr/local/bin` of the image and only reads its login from `$HOME`) is expected, not yet observed on Linux: spike S12 (`pnpm --filter @seance/spike-acp s12-auth`, task 0.4) runs it in the production flag set; `S12_HOME_EXEC=1` drops `noexec` for a comparison if it fails. Tools that execute from `$HOME` (`npx`, `uvx` caches) do not work.
+- A second `openSession` for an agent and session directory whose open is still in flight is rejected (`a session for <agent> in this session directory is already being opened`); it never receives the first caller's session.
 - DNS tunnelling is not prevented (see the table at the top).
 - The worktree has no disk quota.
 - Podman-in-Podman (running the runner itself in a container) is not supported.

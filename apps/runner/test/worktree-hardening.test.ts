@@ -285,6 +285,42 @@ describe("hardened host git (agent-sandbox Requirement 9)", () => {
     }
   });
 
+  // Review item 4: documented as refused by design, so it is pinned by tests as well.
+  it.each([{ hardened: true }, { hardened: false }])(
+    "a target repository that commits .gitmodules is refused at ensure with config-exclusion (hardened=$hardened)",
+    async ({ hardened }) => {
+      const repo = await createTempRepo({ "README.md": "# r\n", ".gitmodules": '[submodule "x"]\n\tpath = x\n\turl = https://example.invalid/x.git\n' });
+      const base = await realpath(await mkdtemp(join(tmpdir(), "seance-wt-gm-")));
+      try {
+        const manager = new WorktreeManager({
+          repo: repo.path,
+          root: join(base, "ws"),
+          git: createGitRunner(repo.path, { hardened }),
+          hardened,
+        });
+        const err = await manager.ensure("#dev").catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(WorktreeError);
+        expect((err as WorktreeError).operation).toBe("config-exclusion");
+        expect((err as WorktreeError).detail).toContain(".gitmodules");
+      } finally {
+        await rm(base, { recursive: true, force: true });
+        await repo.dispose();
+      }
+    },
+  );
+
+  it("a nested .git an agent creates is reported by the guard, removed, and the worktree reset", async () => {
+    await withHardened(async ({ manager }) => {
+      const info = await manager.ensure("#dev");
+      await mkdir(join(info.realPath, "vendor", "lib"), { recursive: true });
+      await exec("git", ["init", "-q", join(info.realPath, "vendor", "lib")]);
+      const result = await manager.guardBeforePrompt("#dev");
+      expect(result).toEqual({ ok: false, paths: [join("vendor", "lib", ".git")] });
+      expect(await scanConfig(info.realPath)).toEqual([]);
+      expect(await manager.guardBeforePrompt("#dev")).toEqual({ ok: true });
+    });
+  });
+
   it("keeps working on a reused worktree after a restart (the git dir is recorded again)", async () => {
     await withHardened(async ({ repo, manager, base }) => {
       await manager.ensure("#dev");

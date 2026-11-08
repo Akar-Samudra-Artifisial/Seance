@@ -6,10 +6,11 @@
 import type { PodmanSandboxConfig } from "../config.js";
 import { SandboxError } from "./errors.js";
 import * as F from "./flags.js";
+import { isSandboxKiroBin } from "./kiro-bin.js";
 import { assertMountPaths } from "./paths.js";
 
 export interface PodmanRunInput {
-  readonly config: Pick<PodmanSandboxConfig, "image" | "authDir" | "memory" | "cpus" | "pids" | "timeoutS">;
+  readonly config: Pick<PodmanSandboxConfig, "image" | "authDir" | "memory" | "cpus" | "pids" | "timeoutS" | "kiroBin">;
   /** Realpath of SEANCE_AGENTS_DIR. */
   readonly agentsDir: string;
   /** Realpath of the session directory, inside the worktree root. */
@@ -110,6 +111,7 @@ export function buildPodmanRunArgs(i: PodmanRunInput): readonly string[] {
     agentsDir: i.agentsDir,
     authDir: i.config.authDir,
   });
+  if (!isSandboxKiroBin(i.config.kiroBin)) fail("the kiro-cli command must be a bare name or an image path outside the noexec mounts");
   if (!KIRO_AGENT_PATTERN.test(i.kiroAgent)) fail(`kiroAgent ${JSON.stringify(i.kiroAgent)} is not allowed in podman mode`);
   if (!CONTAINER_NAME_PATTERN.test(i.containerName)) fail("invalid container name");
   if (!LABEL_HEX.test(i.labels.workspaces)) fail("invalid workspaces label");
@@ -166,6 +168,9 @@ export function buildPodmanRunArgs(i: PodmanRunInput): readonly string[] {
     `HOME=${F.CONTAINER_HOME}`,
     "-e",
     `TMPDIR=${F.CONTAINER_TMP}`,
+    // seance-entry runs this command; it is a validated constant, not a host value or a secret.
+    "-e",
+    `SEANCE_KIRO_BIN=${i.config.kiroBin}`,
     ...i.forwardEnv.flatMap((name) => ["-e", name]),
     i.config.image,
     "acp",

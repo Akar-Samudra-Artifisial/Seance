@@ -180,7 +180,13 @@ describe("agent-sandbox lifecycle properties", () => {
             (e: unknown) => e,
           );
         await settle();
-        if (failure === "timeout") clock.advance(1000);
+        if (failure === "timeout") {
+          // The start timer is only set after the open's real file-system work (realpath) is done;
+          // under load a fixed number of ticks is not enough, so wait for the timer itself.
+          const deadline = Date.now() + 10_000;
+          while (clock.pending === 0 && Date.now() < deadline) await new Promise<void>((r) => setTimeout(r, 2));
+          clock.advance(1000);
+        }
         const err = await pending;
         expect(err).toBeInstanceOf(SandboxError);
         await settle();

@@ -19,14 +19,18 @@ export function parsePublic(raw: string | undefined): boolean {
 
 /**
  * The startup check (Requirement 2.1 to 2.3): returns whether the deployment is public, or throws
- * a message naming `IRCD_PUBLIC` and `SEANCE_SANDBOX` when agents would run unsandboxed.
+ * a message naming `IRCD_PUBLIC` and `SEANCE_SANDBOX` when agents would run unsandboxed, or naming
+ * `SEANCE_SANDBOX_BLOCKED_CIDRS` when a public podman deployment has none.
  */
 export function checkPublicStartup(env: Readonly<Record<string, string | undefined>>): { readonly publicDeployment: boolean } {
   const publicDeployment = parsePublic(env["IRCD_PUBLIC"]);
+  // Only counts the entries here; loadRunnerConfig validates them (the runner repeats this check).
+  const cidrs = (env["SEANCE_SANDBOX_BLOCKED_CIDRS"] ?? "").split(",").filter((e) => e.trim() !== "").length;
   assertSandboxForPublic({
     public: publicDeployment,
     runnerEnabled: env["SEANCE_RUNNER"] === "1",
     sandbox: env["SEANCE_SANDBOX"] === "podman" ? "podman" : "none",
+    blockedCidrs: cidrs,
   });
   return { publicDeployment };
 }
