@@ -95,7 +95,7 @@ Mounts, and only these:
 
 Why not `:Z` everywhere: a `:Z` label is private to one container, so the second agent of a channel, or any other container reading the agents or auth directory, would be denied. On a host without SELinux, Podman ignores the option.
 
-The agents directory is mounted because Kiro looks up `--agent <name>` in its working directory. It holds profiles, not secrets. The image entrypoint copies the auth directory into the container's tmpfs `$HOME` before `kiro-cli` starts; nothing is written back.
+The agents directory is mounted because Kiro looks up `--agent <name>` in its working directory. It holds profiles, not secrets. It also holds the agents' skills (`.kiro/skills/<name>/SKILL.md`, spec `agent-skills`), so skills are read-only inside the container: an agent can read its skill but never change it, and no skill can come from the worktree, which never holds the target repository's `.kiro`. The image entrypoint copies the auth directory into the container's tmpfs `$HOME` before `kiro-cli` starts; nothing is written back.
 
 Both tmpfs mounts (`/tmp` and `/home/agent`) are `noexec,nosuid,nodev`, so nothing an agent downloads or writes there can be run from there. Everything the container starts lives in the read-only image: `kiro-cli`, `seance-entry` and `seance-probe` are in `/usr/local/bin`. Tools that execute programs from `$HOME` (`npx` and `uvx` caches, for example) do not work in the sandbox by design; run them with `SEANCE_SANDBOX=none` or bake what you need into the image.
 

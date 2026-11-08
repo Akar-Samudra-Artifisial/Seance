@@ -347,6 +347,7 @@ export function createRunner(opts: RunnerOptions): Runner {
     const agentWatchers = new Set<Unsubscribe>();
 
     invites = new InviteController({
+      sandboxMode: sandboxConfig.mode,
       host,
       registry,
       bans,

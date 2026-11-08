@@ -30,6 +30,21 @@ function fit(text: string): string {
   return out;
 }
 
+/**
+ * `skills: a, b` (agent-skills Req 3.2). Eight 40-character names exceed the line budget, so only
+ * whole names are shown and the rest are counted (`+3 more`); a name is never cut in half.
+ * Skill names are ASCII (`[a-z0-9-]`), so characters equal bytes.
+ */
+function skillsLine(skills: readonly string[]): string {
+  const full = `skills: ${skills.join(", ")}`;
+  if (full.length <= WHOIS_LINE_MAX_BYTES) return full;
+  for (let keep = skills.length - 1; keep >= 1; keep -= 1) {
+    const line = `skills: ${skills.slice(0, keep).join(", ")}, +${skills.length - keep} more`;
+    if (line.length <= WHOIS_LINE_MAX_BYTES) return line;
+  }
+  return `skills: ${skills.length} skills`;
+}
+
 /** The value of the `status:` line of `WHOIS`. */
 export type AgentStatus = "idle" | "prompting" | "cooldown" | "away";
 
@@ -69,6 +84,8 @@ export function renderWhois(entry: AgentSnapshot | undefined): readonly string[]
   const lines: string[] = [];
   if (entry.model !== undefined) lines.push(`model: ${entry.model}`);
   if (entry.tools !== undefined) lines.push(`tools: ${entry.tools}`);
+  // agent-skills Req 3.1: only when the profile lists skills.
+  if (entry.skills !== undefined && entry.skills.length > 0) lines.push(skillsLine(entry.skills));
   lines.push(`status: ${status(entry, open)}`);
 
   const total = entry.total.toFixed(2);

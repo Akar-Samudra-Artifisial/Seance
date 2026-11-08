@@ -5,7 +5,7 @@
   "mcpServers": {},
   "tools": ["read"],
   "allowedTools": ["read"],
-  "resources": [],
+  "resources": ["skill://.kiro/skills/seance-review-checklist/SKILL.md"],
   "includeMcpJson": false,
   "model": "claude-sonnet-5.5"
 }

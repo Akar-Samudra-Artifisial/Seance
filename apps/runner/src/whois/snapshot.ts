@@ -16,6 +16,8 @@ export type ChannelSnapshot = {
 export type AgentSnapshot = {
   readonly model?: string;
   readonly tools?: string;
+  /** agent-skills Req 3: skill names from the profile; empty or absent means no `skills:` line. */
+  readonly skills?: readonly string[];
   readonly away?: string;
   /** Keyed by `irc_lower(channel)`. Closed channels stay listed; renderers filter them. */
   readonly channels: ReadonlyMap<string, ChannelSnapshot>;
@@ -26,6 +28,7 @@ export type AgentSnapshot = {
 type MutableEntry = {
   model?: string;
   tools?: string;
+  skills?: readonly string[];
   away?: string;
   channels: Map<string, ChannelSnapshot>;
   total: number;
@@ -40,10 +43,15 @@ export class WhoisSnapshot {
   readonly #entries = new Map<string, MutableEntry>();
 
   /** Sets the static profile fields; creates the entry if needed. */
-  register(nick: string, profile: { readonly model: string; readonly tools: string }): void {
+  register(
+    nick: string,
+    profile: { readonly model: string; readonly tools: string; readonly skills?: readonly string[] | undefined },
+  ): void {
     const entry = this.#ensure(nick);
     entry.model = profile.model;
     entry.tools = profile.tools;
+    // A copy: the snapshot never shares an array with the registry.
+    entry.skills = [...(profile.skills ?? [])];
   }
 
   setState(nick: string, channel: string, state: SessionState): void {

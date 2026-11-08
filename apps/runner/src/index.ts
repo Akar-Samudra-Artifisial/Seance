@@ -25,5 +25,5 @@ export type { AgentHarness } from "./harness/harness.js";
 export { MemorySessionStore } from "./session/memory-session-store.js";
 export type { SessionRecord, SessionStore } from "./session/session-store.js";
 export { AgentRegistry, NoAgentProfileError } from "./registry/agent-registry.js";
-export { AgentFileMissingError } from "./registry/verify-agent-files.js";
+export { AgentFileMissingError, AgentSkillMissingError } from "./registry/verify-agent-files.js";
 export type { ShutdownReport } from "./shutdown.js";

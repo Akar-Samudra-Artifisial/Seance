@@ -1,1 +1,1 @@
-{ "nick": "coder", "kiroAgent": "coder", "model": "sonnet-5.5", "tools": "fs, git, shell(sandbox)", "color": 12 }
+{ "nick": "coder", "kiroAgent": "coder", "model": "sonnet-5.5", "tools": "fs, git, shell(sandbox)", "color": 12, "skills": ["seance-fix-and-commit"] }

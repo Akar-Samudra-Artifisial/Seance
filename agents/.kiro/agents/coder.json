@@ -5,7 +5,7 @@
   "mcpServers": {},
   "tools": ["read", "write", "shell"],
   "allowedTools": [],
-  "resources": [],
+  "resources": ["skill://.kiro/skills/seance-fix-and-commit/SKILL.md"],
   "includeMcpJson": false,
   "model": "claude-sonnet-5.5"
 }

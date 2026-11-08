@@ -151,7 +151,12 @@ describe("credits metering and WHOIS (Req 10.1, 10.4)", { timeout: TEST_TIMEOUT_
 
     const lines = await whoisLines(op, "coder");
     expect(lines).toContain("model: sonnet-5.5");
-    expect(lines).toContain("tools: fs, git, shell(sandbox)");
+    // web-client-extras Req 6: this runner runs with sandbox mode "none", so the shell is the host's.
+    // The profile text still says shell(sandbox); the label follows the configured mode.
+    expect(lines).toContain("tools: fs, git, shell(host)");
+    // agent-skills Req 3.1: agents/coder.json lists one skill; its line follows the tools line.
+    expect(lines).toContain("skills: seance-fix-and-commit");
+    expect(lines.indexOf("skills: seance-fix-and-commit")).toBe(lines.indexOf("tools: fs, git, shell(host)") + 1);
     expect(lines.some((l) => /^status: (idle|cooldown)$/.test(l))).toBe(true);
     // Exactly two decimals, channel amount and agent total both 1.75.
     expect(lines).toContain(`credits: ${CHANNEL} 1.75 / total 1.75`);

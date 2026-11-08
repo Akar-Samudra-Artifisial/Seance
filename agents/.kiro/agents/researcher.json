@@ -5,7 +5,7 @@
   "mcpServers": {},
   "tools": ["read"],
   "allowedTools": ["read"],
-  "resources": [],
+  "resources": ["skill://.kiro/skills/seance-cite-sources/SKILL.md"],
   "includeMcpJson": false,
   "model": "claude-haiku-5.5"
 }

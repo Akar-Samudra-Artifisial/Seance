@@ -217,6 +217,46 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: `noexec` on `/home/agent` with a validated `SEANCE_SANDBOX_KIRO_BIN` (`sandbox/kiro-bin.ts`), `PublicEgressError` for public podman without `SEANCE_SANDBOX_BLOCKED_CIDRS`, rejection of a second concurrent open per (agent, cwd), docs and tests for refused `.gitmodules` and nested `.git`
 - Notes: `SEANCE_SANDBOX_KIRO_BIN` was parsed but never passed to the container, found while pinning kiro-cli to the image path; the P6 property test hung under load until it waited for the start timer instead of a fixed tick count
 
+### 2026-11-08 — web-client-extras spec and implementation
+- Kiro features: spec web-client-extras (requirements, design, tasks 1 to 8), Figma power (`get_design_context` for 1:1623 once), MCP Talk-to-Figma (channel `8p9g0i9k`: `join_channel`, `get_node_info` 1:3814, 1:4392, 1:3593, `scan_nodes_by_types` on 1:3814, 1:1623, 1:2947, `export_node_as_image` for those three), PBT (P1 to P4), steering (web-ui, security, testing), hook (guard-shell)
+- Produced: channel list dialog with client-side agent counting through `NAMES`, Classic theme (token set, lifted colours, Playwright baseline), shortcut registry and dialog, explained disabled controls, runner WHOIS `shell(host)` / `shell(sandbox)` label
+- Notes: the Figma export of frame 06 cannot be written by the tools, so its pixel comparison skips until `e2e/figma/06-classic-1440x900.png` is saved; seven frame 06 colours failed 4.5:1 and were darkened (listed in the design); asset SVG fills for frame 06 were fetched with curl
+
+### 2026-11-08 — web-client-extras final checks
+- Kiro features: spec web-client-extras (task 8), steering (web-ui, testing), hook (guard-shell)
+- Produced: lint-clean `aria-description` on `CaptionButton` and `Toolbar`, README and web README notes, all checks green (web 862, runner 745, ircd 578, e2e 44 passed)
+- Notes: jsx-a11y reports the unknown attribute at the `<button>` element, so the disable comment sits above it; guard-shell blocked a temp file under `/tmp`
+
+### 2026-11-08 — web-client-extras tasks update
+- Kiro features: spec web-client-extras (tasks.md), agent seance-spec (edits), spec format validator
+- Produced: tasks with per-subtask requirement references, named tests and properties P1 to P4, manual task 7.2 for the frame 06 export, Notes and a dependency graph
+- Notes: the validator first rejected the file for a missing dependency graph; guard-shell blocked a heredoc write from the main session, so the edit went through the seance-spec agent
+
+### 2026-11-08 — web-client-extras design update
+- Kiro features: spec web-client-extras (design.md), agent seance-spec (edits), spec format validator
+- Produced: design aligned with the built code, plus Architecture, Components and Interfaces, Data Models, Correctness Properties P1 to P4, Error Handling and Testing Strategy sections
+- Notes: the validator first rejected the design for three missing required sections; the Classic colour table now lists the final lifted values, including the accent `#9f4900`
+
+### 2026-11-08 — agent-skills step 0: kiro-cli 3.1 skill syntax
+- Kiro features: spec agent-skills (task 0), MCP Context7 (Kiro CLI docs), `kiro-cli agent validate` (no prompts, no credits)
+- Produced: syntax `"skill://<path>/SKILL.md"` in `resources` (front matter `name` + `description`, body loaded on demand); globs supported (`skill://.kiro/skills/**/SKILL.md`); the 3.1 built-in default is `skill://.kiro/skills/*/SKILL.md`
+- Notes: the path base is not stated in the docs and not executed; examples and the built-in default only fit cwd-relative, so configs use `skill://.kiro/skills/<name>/SKILL.md` with cwd `agents/`. `agent validate` checks only shape and scheme (rejects `bogus://`, accepts a missing skill path), so existence is checked by the runner and a test
+
+### 2026-11-08 — agent-skills built: Kiro skills for the Séance agents
+- Kiro features: spec agent-skills (tasks 1 to 5.2), skill (three `agents/.kiro/skills/*/SKILL.md`), PBT (P1 skills line), steering (runner-acp, security, testing), hook (guard-shell)
+- Produced: one skill per agent wired through `skill://` resources, registry `skills` field with a fail-closed startup check, WHOIS `skills:` line, consistency test over `agents/`
+- Notes: the full `pnpm test` timed out under machine load (no assertion failures), so packages were re-run one at a time; the reviewer has no shell tool, so its skill falls back from `git diff` to named files
+
+### 2026-11-08 — review fixes for web-client-extras and agent-skills
+- Kiro features: spec web-client-extras (task 7.2, Open Points 1 and 2), spec agent-skills (task 5.3, Open Points 1 to 3), PBT (P5 NAMES line within 512 bytes), steering (web-ui, security, testing), hook (guard-shell)
+- Produced: tray Close reason, deduplicated 322 rows, UTF-8 name limit, focusable shortcut list, strict `shell(...)` token, required `sandboxMode`, hydration-safe theme load, skill commit wording; frame 06 Figma ratio measured at 0.01298 (16,827 of 1,296,000 pixels), limit 0.0156
+- Notes: the user's real kiro-cli journey `#skill-1` passed 11/11 for 0.36 credits and confirmed cwd-relative `skill://` paths
+
+### 2026-11-08 — review fixes: verification status
+- Kiro features: spec web-client-extras and agent-skills (review findings 1 to 10), steering (testing), hook (guard-shell)
+- Produced: lint fix in `theme-hydration.test.tsx` (DOMParser instead of innerHTML); build, typecheck and the touched tests (web 73, runner 18) pass
+- Notes: lint caught innerHTML in a new test; parallel `pnpm test --force` timed out under machine load, and the shell tools then stopped executing, so lint, `test --force --concurrency=1` and e2e still need a run
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.

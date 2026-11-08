@@ -11,6 +11,12 @@ export type AgentProfile = {
   readonly tools: string;
   /** IRC color, integer 0..15. */
   readonly color: number;
+  /**
+   * agent-skills Req 2: names of Kiro skills under `<agentsDir>/.kiro/skills/<name>/SKILL.md`.
+   * `parseProfile` always sets it (`[]` when the file has none); optional in the type so profiles
+   * built in code without skills stay valid. Shown in WHOIS; existence is checked by `verifyAgentFiles`.
+   */
+  readonly skills?: readonly string[];
   /** Source file, for error messages. */
   readonly file: string;
 };
@@ -29,6 +35,30 @@ export class AgentProfileError extends Error {
 }
 
 const MAX_LENGTHS = { kiroAgent: 64, model: 64, tools: 256 } as const;
+
+/** agent-skills Req 2.2: a skill name is also its directory name under `.kiro/skills`. */
+export const SKILL_NAME = /^[a-z0-9-]{1,40}$/;
+export const MAX_SKILLS = 8;
+
+const readSkills = (obj: Readonly<Record<string, unknown>>, file: string): readonly string[] => {
+  const value = obj["skills"];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new AgentProfileError(file, "skills", "must be an array of skill names");
+  if (value.length > MAX_SKILLS) {
+    throw new AgentProfileError(file, "skills", `must list at most ${MAX_SKILLS} skills, got ${value.length}`);
+  }
+  const seen = new Set<string>();
+  for (const name of value as readonly unknown[]) {
+    if (typeof name !== "string" || !SKILL_NAME.test(name)) {
+      // The shown value is clipped: the profile file is local, but an error line should stay short.
+      const shown = (JSON.stringify(name) ?? String(name)).slice(0, 60);
+      throw new AgentProfileError(file, "skills", `entry ${shown} must match ${SKILL_NAME.source}`);
+    }
+    if (seen.has(name)) throw new AgentProfileError(file, "skills", `lists "${name}" twice`);
+    seen.add(name);
+  }
+  return [...seen];
+};
 
 const readString = (
   obj: Readonly<Record<string, unknown>>,
@@ -88,5 +118,7 @@ export const parseProfile = (
     throw new AgentProfileError(file, "color", "must be between 0 and 15");
   }
 
-  return { nick, kiroAgent, model, tools, color, file };
+  const skills = readSkills(obj, file);
+
+  return { nick, kiroAgent, model, tools, color, skills, file };
 };

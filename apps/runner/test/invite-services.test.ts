@@ -97,7 +97,12 @@ type Fake = {
 
 async function makeController(
   fake: Fake,
-  extra: { readonly openSession?: AgentHarness["openSession"]; readonly opNotices?: string[] } = {},
+  extra: {
+    readonly openSession?: AgentHarness["openSession"];
+    readonly opNotices?: string[];
+    readonly sandboxMode?: "none" | "podman";
+    readonly profile?: AgentProfile;
+  } = {},
 ) {
   const mini = new MiniHost();
   const fakeHarness = new FakeHarness({ defaultScript: { turns: [] } });
@@ -112,9 +117,12 @@ async function makeController(
   const chanServ: string[] = [];
   const sessions: Session[] = [];
   const shortHeadCalls: string[] = [];
+  const profile = extra.profile ?? PROFILE;
   const controller = new InviteController({
+    // Review finding 6: sandboxMode is required; these tests run as SEANCE_SANDBOX=none unless told.
+    sandboxMode: extra.sandboxMode ?? "none",
     host: mini.host,
-    registry: { lookup: (n) => (irc_lower(n) === "coder" ? PROFILE : undefined) },
+    registry: { lookup: (n) => (irc_lower(n) === "coder" ? profile : undefined) },
     bans: new BanList(),
     inviters: parseInviters(undefined),
     gate: new InviteGate(100),
@@ -155,7 +163,7 @@ async function makeController(
     const e: HostEvents["irc.invite"] = { channel, inviter: "op", target: "coder", targetKey: "coder", targetOnline: false, ts };
     return controller.handleInvite(e);
   };
-  return { controller, chanServ, sessions, shortHeadCalls, invite, mini };
+  return { controller, chanServ, sessions, shortHeadCalls, invite, mini, snapshot };
 }
 
 describe("worktree ready (Req 5)", () => {
@@ -244,5 +252,18 @@ describe("sandbox start failure (agent-sandbox Requirement 11)", () => {
     );
     await t.invite("#dev", 1);
     expect(opNotices).toEqual(["sandbox: coder not started in #dev: container failed to start: Error: crun: <path>: denied"]);
+  });
+});
+
+describe("WHOIS tools label follows the required sandboxMode (review finding 6)", () => {
+  const shellProfile: AgentProfile = { ...PROFILE, tools: "fs, git, shell(sandbox)", skills: ["seance-fix-and-commit"] };
+  it.each([
+    ["none", "fs, git, shell(host)"],
+    ["podman", "fs, git, shell(sandbox)"],
+  ] as const)("registers the %s label and the skills", async (mode, tools) => {
+    const t = await makeController({ created: false, sha: undefined, ensureFails: false }, { sandboxMode: mode, profile: shellProfile });
+    await t.invite("#dev", 1);
+    expect(t.snapshot.get("coder")?.tools).toBe(tools);
+    expect(t.snapshot.get("coder")?.skills).toEqual(["seance-fix-and-commit"]);
   });
 });

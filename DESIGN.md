@@ -99,7 +99,8 @@ IRC semantics — modes, services, CTCP — are ideal primitives for agent gover
 | `+n`, `+t` | On by default: no messages from outside the channel; only operators change the task (topic) |
 | `+o` | Write tools enabled (edit, `git commit`, shell) |
 | `/msg <agent>` | Private prompt |
-| `/whois <agent>` | Model, tools, status, credits |
+| `/whois <agent>` | Model, tools, skills, status, credits |
+| Agent skills | Kiro skills from `agents/.kiro/skills` only, a fixed list per agent, never from the target repo (spec `agent-skills`) |
 | `/away` | Set automatically while a tool runs |
 | `/list` | Channels with topic and member count |
 | CTCP `VERSION` / `PING` | Model name / latency |

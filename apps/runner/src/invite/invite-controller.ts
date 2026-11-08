@@ -19,6 +19,8 @@ import { worktreeNoticeDir, worktreeReady } from "../services/notices.js";
 import { SandboxError } from "../sandbox/errors.js";
 import { sandboxNotice } from "../sandbox/notices.js";
 import { renderWhois } from "../whois/render.js";
+import { toolsLabel } from "../whois/tools-label.js";
+import type { ToolsSandboxMode } from "../whois/tools-label.js";
 import type { WhoisSnapshot } from "../whois/snapshot.js";
 import type { WorktreeInfo, WorktreeManager } from "../worktree/worktree-manager.js";
 import type { AllowList } from "./allow-list.js";
@@ -64,6 +66,11 @@ export type InviteControllerDeps = {
   readonly sessionOpenTimeoutMs?: number;
   /** agent-sandbox Requirement 14 (podman mode only): host-side commit after an `end_turn`. */
   readonly commitTurn?: (agent: string, channel: string) => Promise<void>;
+  /**
+   * web-client-extras Req 6: decides the `shell(host)` / `shell(sandbox)` label in WHOIS. Required, so
+   * no caller can show the wrong label by forgetting it.
+   */
+  readonly sandboxMode: ToolsSandboxMode;
 };
 
 type AgentEntry = {
@@ -380,7 +387,11 @@ export class InviteController {
     // The ircd rejects USER names longer than 18 bytes or outside [A-Za-z0-9._~-], and a
     // rejected USER leaves registration hanging; a 30-char or `[`-containing nick must still work.
     const ircUser = nickKey.replace(/[^a-z0-9._~-]/g, "_").slice(0, MAX_USER_LENGTH);
-    d.snapshot.register(profile.nick, profile);
+    d.snapshot.register(profile.nick, {
+      model: profile.model,
+      tools: toolsLabel(profile.tools, d.sandboxMode),
+      skills: profile.skills,
+    });
     const client = d.host.createVirtualClient({
       id: `agent:${nickKey}`,
       whoisExtra: () => renderWhois(d.snapshot.get(profile.nick)),

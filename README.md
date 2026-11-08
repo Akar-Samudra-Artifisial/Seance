@@ -53,8 +53,8 @@ IRC solved this decades ago. Its semantics map almost one to one onto agent gove
 - **IRC modes are permissions**: no mode = silent, `+v` = speaks, `+o` = may write files, commit and run shell in its worktree. Enforced in the ACP permission handler.
 - **Exorcism on kick**: `/kick` (or the agent's own `PART`/`QUIT`) cancels the in-flight turn, waits for the cooldown, resets the worktree to the last commit and closes the session. The channel log is kept; a re-invite resumes with a summary of the last 50 lines.
 - **Live activity**: replies stream sentence by sentence; a tool call sets the agent `AWAY` and posts a `NOTICE` such as `using tool: …`.
-- **`WHOIS` for agents**: `320` lines show model, tools, live status (`prompting`, `cooldown`, `away`, `idle`) and credits per channel and in total; an optional per-channel credit cap.
-- **Retro web client** (`apps/web`): Win95-style chrome, maximised MDI windows, switchbar, nick list with `@`/`+` prefixes, `[HH:MM]` timestamps, credits counter, keyboard-first menus, and a responsive layout down to 360 px.
+- **`WHOIS` for agents**: `320` lines show model, tools (`shell(host)` with `SEANCE_SANDBOX=none`, `shell(sandbox)` in podman mode), live status (`prompting`, `cooldown`, `away`, `idle`) and credits per channel and in total; an optional per-channel credit cap.
+- **Retro web client** (`apps/web`): Win95-style chrome, maximised MDI windows, switchbar, nick list with `@`/`+` prefixes, `[HH:MM]` timestamps, credits counter, keyboard-first menus, a channel list dialog with filters and an Agents column, a light "Classic" theme next to the dark "Ghost" one (View menu or toolbar), a Keyboard shortcuts dialog, and a responsive layout down to 360 px. Every disabled toolbar or menu control says why in its tooltip.
 - **Halloween touches**: an orange ASCII jack-o'-lantern MOTD ("This server is haunted."), a dark "Ghost" theme, and `*** coder has been exorcised` on kick.
 - **Property-based tests** with fast-check, from the IRC parser (`parse(serialize(m)) == m`) to the web client's message store.
 
@@ -231,7 +231,9 @@ apps/
 packages/
   irc-protocol/    IRC message parser/serializer + property-based tests
   db/              Database access (Prisma + Postgres)
-agents/            Agent profiles: coder, reviewer, researcher (nick, model, tools, colour)
+agents/            Agent profiles: coder, reviewer, researcher (nick, model, tools, colour, skills)
+  .kiro/agents/    Kiro agent configs the runner starts (`kiro-cli acp --agent <name>`)
+  .kiro/skills/    Kiro skills of those agents (one SKILL.md per skill)
 scripts/           demo-journey.py (scripted Journeys A and B)
 docs/              Demo checklist, sandbox design, Kiro usage log, images
 .kiro/
@@ -240,6 +242,19 @@ docs/              Demo checklist, sandbox design, Kiro usage log, images
   hooks/           Agent hooks
   agents/          Kiro agent definitions
 ```
+
+### Agents and skills
+
+Each agent has two files: the Séance profile `agents/<nick>.json` (nick, model, tools, colour, optional `skills`) and the Kiro agent config `agents/.kiro/agents/<kiroAgent>.json` (prompt, Kiro tools, resources). The runner starts `kiro-cli acp --agent <kiroAgent>` with `agents/` as the working directory. The shipped skills are `seance-fix-and-commit` (coder), `seance-review-checklist` (reviewer) and `seance-cite-sources` (researcher); `/whois <agent>` lists them in a `skills:` line.
+
+To add a skill:
+
+1. Create `agents/.kiro/skills/<name>/SKILL.md`, where `<name>` matches `[a-z0-9-]{1,40}`. It starts with front matter holding `name: <name>` and a one-line `description`, then at most 60 lines of instructions.
+2. Add `"skill://.kiro/skills/<name>/SKILL.md"` to `resources` in the agent's Kiro config.
+3. Add `<name>` to `skills` in the agent's profile (at most 8, no duplicates).
+4. Run `pnpm --filter @seance/runner test`: a consistency test checks that the three places agree.
+
+The runner refuses to start when a profile lists a skill whose `SKILL.md` is missing or leads outside `agents/.kiro/skills`, and it skips (and logs) a profile whose `skills` value is invalid. **Target repositories cannot add skills.** Skills come only from this repository's `agents/` directory; a channel worktree never contains the target repository's `.kiro` directory or `AGENTS.md`.
 
 ### Development scripts
 
@@ -355,12 +370,12 @@ Work in progress for the Kiroween 2026 deadline (4 December 2026).
 | --- | --- | --- |
 | IRC server core, agent commands, review fixes | `ircd-core`, `ircd-agent-commands`, `ircd-agent-commands-fixes`, `ircd-review-fixes` | Done |
 | Agent runner (ACP, worktrees, permissions, exorcism, credits) | `agent-runner` | Done |
-| Web client | `web-client-basic`, `web-client-polish`, `web-client-pixel-match` | Done |
+| Web client | `web-client-basic`, `web-client-polish`, `web-client-pixel-match`, `web-client-extras` (channel list, Classic theme, shortcuts, explained disabled controls) | Done; the frame 06 pixel comparison waits for its Figma export |
 | `ChanServ` / `NickServ` status notices from the runner, agent-to-agent loop guard | `runner-services` | Done |
 | Rootless Podman sandbox per agent and channel | `agent-sandbox` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Built and tested with a fake Podman; the real-Podman run on Linux (EC2) is pending |
 | Public deployment for judges (VPS, TLS, `PASS` accounts) | — | Planned |
 
-Also on the list from [DESIGN.md](./DESIGN.md): `/ban` for agents, persistent logs and audit trail in Postgres, CTCP `VERSION`/`PING`, an Options dialog for models, a channel list window and the Classic theme.
+Also on the list from [DESIGN.md](./DESIGN.md): `/ban` for agents, persistent logs and audit trail in Postgres, CTCP `VERSION`/`PING`, and an Options dialog for models.
 
 ## Testing
 
