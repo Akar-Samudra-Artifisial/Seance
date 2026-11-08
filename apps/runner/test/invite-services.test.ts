@@ -18,6 +18,8 @@ import { MemorySessionStore } from "../src/session/memory-session-store.js";
 import type { Session } from "../src/session/session.js";
 import { WhoisSnapshot } from "../src/whois/snapshot.js";
 import type { WorktreeInfo } from "../src/worktree/worktree-manager.js";
+import type { AgentHarness } from "../src/harness/harness.js";
+import { SandboxError } from "../src/sandbox/errors.js";
 import { FakeHarness } from "./fixtures/fake-harness.js";
 import { ManualClock } from "./fixtures/manual-clock.js";
 
@@ -57,6 +59,8 @@ class MiniHost {
               set.set(irc_lower(nick), { op: false, voice: false });
               members.set(ch, set);
             }
+            // agent-sandbox Requirement 11.5: the failure path parts the channel.
+            if (msg.command === "PART") members.get(irc_lower(msg.params[0] ?? ""))?.delete(irc_lower(nick));
             return undefined;
           },
           onMessage: (l) => {
@@ -91,10 +95,15 @@ type Fake = {
   ensureFails: boolean;
 };
 
-async function makeController(fake: Fake) {
+async function makeController(
+  fake: Fake,
+  extra: { readonly openSession?: AgentHarness["openSession"]; readonly opNotices?: string[] } = {},
+) {
   const mini = new MiniHost();
-  const harness = new FakeHarness({ defaultScript: { turns: [] } });
-  disposers.push(() => harness.dispose());
+  const fakeHarness = new FakeHarness({ defaultScript: { turns: [] } });
+  disposers.push(() => fakeHarness.dispose());
+  const harness: Pick<AgentHarness, "openSession"> =
+    extra.openSession !== undefined ? { openSession: extra.openSession } : fakeHarness;
   const clock = new ManualClock();
   const timers = new TimerSet(clock);
   const snapshot = new WhoisSnapshot();
@@ -133,7 +142,7 @@ async function makeController(fake: Fake) {
     clock,
     timers,
     logger: quiet,
-    opNotice: () => undefined,
+    opNotice: (_channel, text) => void extra.opNotices?.push(text),
     services: {
       chanServ: (channel, text) => {
         chanServ.push(`${channel}: ${text}`);
@@ -205,5 +214,35 @@ describe("P5 notices only when true", () => {
       ),
       { numRuns: 25 },
     );
+  });
+});
+
+describe("sandbox start failure (agent-sandbox Requirement 11)", () => {
+  it("sends the ops one notice with the fixed reason, parts, registers nothing and releases the key", async () => {
+    const opNotices: string[] = [];
+    const t = await makeController(
+      { created: false, sha: "a1b2c3d", ensureFails: false },
+      {
+        openSession: () => Promise.reject(new SandboxError("image-missing", "internal detail /srv/secret")),
+        opNotices,
+      },
+    );
+    await t.invite("#dev", 1);
+    expect(opNotices).toEqual(["sandbox: coder not started in #dev: sandbox image not found"]);
+    expect(t.sessions).toEqual([]);
+    expect(t.mini.members.get("#dev")?.has("coder")).toBe(false);
+    // The Invite_Key was released: the same invite is handled again, not dropped as a duplicate.
+    await t.invite("#dev", 2);
+    expect(opNotices).toHaveLength(2);
+  });
+
+  it("a start failure carries the scrubbed podman stderr tail", async () => {
+    const opNotices: string[] = [];
+    const t = await makeController(
+      { created: false, sha: "a1b2c3d", ensureFails: false },
+      { openSession: () => Promise.reject(new SandboxError("start-failed", "x", "Error: crun: <path>: denied")), opNotices },
+    );
+    await t.invite("#dev", 1);
+    expect(opNotices).toEqual(["sandbox: coder not started in #dev: container failed to start: Error: crun: <path>: denied"]);
   });
 });

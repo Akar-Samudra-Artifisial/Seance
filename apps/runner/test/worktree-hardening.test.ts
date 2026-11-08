@@ -1,7 +1,7 @@
 // Regression tests: committed agent config, case-insensitive sparse patterns, idempotent sparse-checkout.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -164,3 +164,136 @@ describe("sparse-checkout patterns", () => {
     });
   });
 });
+
+// agent-sandbox Requirement 9: a container can rewrite the worktree's `.git` file. The host must
+// never run git with a git dir the agent chose (core.fsmonitor would run as the runner's user).
+describe("hardened host git (agent-sandbox Requirement 9)", () => {
+  async function trap(base: string): Promise<{ evilGitDir: string; marker: string }> {
+    const evil = join(base, "evil");
+    await mkdir(evil, { recursive: true });
+    await exec("git", ["init", "--quiet", evil]);
+    const marker = join(base, "fsmonitor-ran");
+    const script = join(base, "fsmonitor.sh");
+    await writeFile(script, `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
+    await exec("git", ["-C", evil, "config", "core.fsmonitor", script]);
+    return { evilGitDir: join(evil, ".git"), marker };
+  }
+
+  async function withHardened(fn: (env: { repo: TempRepo; manager: WorktreeManager; base: string }) => Promise<void>): Promise<void> {
+    const repo = await createTempRepo();
+    const base = await realpath(await mkdtemp(join(tmpdir(), "seance-wt-sbx-")));
+    try {
+      const manager = new WorktreeManager({
+        repo: repo.path,
+        root: join(base, "ws"),
+        git: createGitRunner(repo.path, { hardened: true }),
+        hardened: true,
+      });
+      await fn({ repo, manager, base });
+    } finally {
+      await rm(base, { recursive: true, force: true });
+      await repo.dispose();
+    }
+  }
+
+  it("the trap is real: a plain `git -C <worktree> status` runs the attacker's fsmonitor", async () => {
+    await withHardened(async ({ manager, base }) => {
+      const info = await manager.ensure("#dev");
+      const { evilGitDir, marker } = await trap(base);
+      await writeFile(join(info.realPath, ".git"), `gitdir: ${evilGitDir}\n`);
+      await createGitRunner(info.realPath).run(["-C", info.realPath, "status", "--porcelain"]).catch(() => undefined);
+      expect(existsSync(marker)).toBe(true);
+    });
+  });
+
+  it("guardBeforePrompt restores `.git`, resets, reports it, and never runs the fsmonitor (9.3 to 9.5)", async () => {
+    await withHardened(async ({ manager, base }) => {
+      const info = await manager.ensure("#dev");
+      const original = await git(info.realPath, "rev-parse", "--git-dir");
+      await writeFile(join(info.realPath, "dirty.txt"), "agent work\n");
+      const { evilGitDir, marker } = await trap(base);
+      await writeFile(join(info.realPath, ".git"), `gitdir: ${evilGitDir}\n`);
+
+      expect(await manager.guardBeforePrompt("#dev")).toEqual({ ok: false, paths: [".git"] });
+      expect(existsSync(marker)).toBe(false);
+      expect(existsSync(join(info.realPath, "dirty.txt"))).toBe(false); // reset
+      expect(await git(info.realPath, "rev-parse", "--git-dir")).toBe(original);
+      expect(await manager.guardBeforePrompt("#dev")).toEqual({ ok: true });
+    });
+  });
+
+  it("a `.git` replaced by a symlink or a directory is restored without following it (9.4)", async () => {
+    await withHardened(async ({ manager, base }) => {
+      const info = await manager.ensure("#dev");
+      const outside = join(base, "outside.txt");
+      await writeFile(outside, "keep me\n");
+      await rm(join(info.realPath, ".git"));
+      await exec("ln", ["-s", outside, join(info.realPath, ".git")]);
+      expect(await manager.guardBeforePrompt("#dev")).toEqual({ ok: false, paths: [".git"] });
+      expect(await readFileText(outside)).toBe("keep me\n");
+
+      const { evilGitDir, marker } = await trap(base);
+      await rm(join(info.realPath, ".git"));
+      await mkdir(join(info.realPath, ".git"));
+      await writeFile(join(info.realPath, ".git", "config"), `[core]\n\tfsmonitor = ${evilGitDir}\n`);
+      expect(await manager.guardBeforePrompt("#dev")).toEqual({ ok: false, paths: [".git"] });
+      expect(existsSync(marker)).toBe(false);
+      expect(await manager.guardBeforePrompt("#dev")).toEqual({ ok: true });
+    });
+  });
+
+  it("reset with a rewritten `.git` uses the recorded git dir and runs no fsmonitor", async () => {
+    await withHardened(async ({ manager, base }) => {
+      const info = await manager.ensure("#dev");
+      const { evilGitDir, marker } = await trap(base);
+      await writeFile(join(info.realPath, ".git"), `gitdir: ${evilGitDir}\n`);
+      await manager.reset("#dev");
+      expect(existsSync(marker)).toBe(false);
+    });
+  });
+
+  it("every host git call on a worktree carries the fsmonitor, untracked-cache and submodule overrides; status ignores submodules (review finding 1)", async () => {
+    const repo = await createTempRepo();
+    const base = await realpath(await mkdtemp(join(tmpdir(), "seance-wt-flags-")));
+    try {
+      const inner = createGitRunner(repo.path, { hardened: true });
+      const calls: (readonly string[])[] = [];
+      const recording = { run: (args: readonly string[]) => (calls.push(args), inner.run(args)), locked: inner.locked.bind(inner) };
+      const manager = new WorktreeManager({ repo: repo.path, root: join(base, "ws"), git: recording, hardened: true });
+      const info = await manager.ensure("#dev");
+      await writeFile(join(info.realPath, "x.txt"), "x\n");
+      await manager.guardBeforePrompt("#dev");
+      await manager.commitTurn("#dev", "coder");
+      await manager.reset("#dev");
+      await manager.shortHead("#dev");
+
+      const onWorktree = calls.filter((c) => c.some((a) => a.startsWith("--work-tree=")));
+      expect(onWorktree.length).toBeGreaterThan(5);
+      for (const c of onWorktree) {
+        const text = c.join(" ");
+        expect(text).toContain("-c core.fsmonitor=false -c core.untrackedCache=false -c submodule.recurse=false");
+        expect(c.indexOf("core.fsmonitor=false")).toBeLessThan(c.findIndex((a) => a.startsWith("--git-dir=")));
+        if (c.includes("status")) expect(c).toContain("--ignore-submodules=all");
+      }
+      expect(onWorktree.some((c) => c.includes("status"))).toBe(true);
+      // No git call on a worktree went through the agent-writable `.git` file.
+      expect(calls.filter((c) => c[0] === "-C" && (c[1] ?? "").startsWith(base) && c.includes("status"))).toEqual([]);
+      expect(calls.filter((c) => c[0] === "-C" && (c[1] ?? "").startsWith(base))).toEqual([]);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+      await repo.dispose();
+    }
+  });
+
+  it("keeps working on a reused worktree after a restart (the git dir is recorded again)", async () => {
+    await withHardened(async ({ repo, manager, base }) => {
+      await manager.ensure("#dev");
+      const again = new WorktreeManager({ repo: repo.path, root: join(base, "ws"), git: createGitRunner(repo.path, { hardened: true }), hardened: true });
+      const info = await again.ensure("#dev");
+      expect(info.created).toBe(false);
+      expect(await again.guardBeforePrompt("#dev")).toEqual({ ok: true });
+    });
+  });
+});
+
+const readFileText = (path: string): Promise<string> => readFile(path, "utf8");

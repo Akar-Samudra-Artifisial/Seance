@@ -16,6 +16,8 @@ import type { SessionManager } from "../session/session-manager.js";
 import { inviteKey } from "../session/session-manager.js";
 import type { SessionStore } from "../session/session-store.js";
 import { worktreeNoticeDir, worktreeReady } from "../services/notices.js";
+import { SandboxError } from "../sandbox/errors.js";
+import { sandboxNotice } from "../sandbox/notices.js";
 import { renderWhois } from "../whois/render.js";
 import type { WhoisSnapshot } from "../whois/snapshot.js";
 import type { WorktreeInfo, WorktreeManager } from "../worktree/worktree-manager.js";
@@ -60,6 +62,8 @@ export type InviteControllerDeps = {
   readonly secrets?: readonly (string | undefined)[];
   readonly registerTimeoutMs?: number;
   readonly sessionOpenTimeoutMs?: number;
+  /** agent-sandbox Requirement 14 (podman mode only): host-side commit after an `end_turn`. */
+  readonly commitTurn?: (agent: string, channel: string) => Promise<void>;
 };
 
 type AgentEntry = {
@@ -310,7 +314,14 @@ export class InviteController {
     }
     // Generic on purpose: only the step name is shown; the cause (paths, stderr, ...) were logged above and stay out of IRC.
     const text = `${profile.nick}: could not start in ${channel}: ${step} failed (see the runner log)`;
-    if (!aborted) {
+    const sandboxErr = err instanceof StepError && err.cause instanceof SandboxError ? err.cause : undefined;
+    if (!aborted && sandboxErr !== undefined) {
+      // agent-sandbox Requirement 11.1, 11.6: one ops notice with a fixed reason, and a log line.
+      d.logger.error("sandbox start failed", { agent: profile.nick, channel, kind: sandboxErr.kind, cause: sandboxErr.message });
+      this.#safe(() => {
+        d.opNotice(channel, truncateBytes(sandboxNotice(profile.nick, channel, sandboxErr), 400));
+      }, "opNotice");
+    } else if (!aborted) {
       if (joined && entry !== undefined) {
         // The NOTICE goes first: after PART the Agent could no longer speak in +n channels.
         entry.output.channelNotice(channel, text);

@@ -1,6 +1,7 @@
 import { allowListedEnv } from "../child-env.js";
 import type { RunnerConfig } from "../config.js";
 import type { AgentProfile } from "../registry/agent-profile.js";
+import type { PodmanLauncher, SandboxSpec } from "../sandbox/launcher.js";
 
 export type SpawnSpec = {
   readonly command: string;
@@ -9,6 +10,20 @@ export type SpawnSpec = {
   readonly cwd: string;
   readonly env: Readonly<Record<string, string | undefined>>;
 };
+
+/**
+ * Podman mode (agent-sandbox design "Spawn and harness"): a thin call to the launcher. The command
+ * is the podman binary, the image runs `acp --agent <name>`, and `KIRO_API_KEY` is never placed in
+ * the environment (design D18).
+ */
+export function buildSandboxSpawnSpec(
+  launcher: Pick<PodmanLauncher, "spec">,
+  profile: Pick<AgentProfile, "nick" | "kiroAgent">,
+  sessionCwd: string,
+  extraEnv: Readonly<Record<string, string | undefined>> = {},
+): Promise<SandboxSpec> {
+  return launcher.spec({ nick: profile.nick, kiroAgent: profile.kiroAgent, sessionCwd, extraEnv });
+}
 
 /**
  * Builds the `kiro-cli acp` launch spec. `KIRO_API_KEY` is placed in the child

@@ -100,8 +100,13 @@ async function setup(files?: Record<string, string>): Promise<Env> {
   };
 }
 
+// The gate runs real git (status, diff, reset). vitest's 1 s default `waitFor` timeout is shorter
+// than that under the parallel root run (each test took 3 to 5 s there and failed spuriously), so
+// the assertions stay as they are and only the time they may wait is raised.
+const waitFor = <T>(fn: () => T | Promise<T>): Promise<T> => vi.waitFor(fn, { timeout: 20_000, interval: 25 });
+
 const sentTexts = (env: Env): string[] => env.harness.prompts.map((p) => p.text);
-const idle = (env: Env) => vi.waitFor(() => expect(env.session.state).toBe("idle"));
+const idle = (env: Env) => waitFor(() => expect(env.session.state).toBe("idle"));
 
 async function plant(worktree: string, rel: string, content = "obey me\n"): Promise<void> {
   await mkdir(join(worktree, rel, ".."), { recursive: true });
@@ -119,7 +124,7 @@ describe("pre-prompt gate", () => {
     await writeFile(join(env.worktree, "stray.txt"), "junk");
 
     env.send("hello");
-    await vi.waitFor(() => expect(env.dropped).toHaveLength(1));
+    await waitFor(() => expect(env.dropped).toHaveLength(1));
     await idle(env);
 
     expect(env.harness.prompts).toHaveLength(0);
@@ -143,7 +148,7 @@ describe("pre-prompt gate", () => {
 
     // A following clean prompt goes through.
     env.send("after");
-    await vi.waitFor(() => expect(sentTexts(env)).toEqual(["after"]));
+    await waitFor(() => expect(sentTexts(env)).toEqual(["after"]));
     await idle(env);
     expect(env.notices).toHaveLength(1);
   });
@@ -151,7 +156,7 @@ describe("pre-prompt gate", () => {
   it("lets an in-flight turn finish and refuses the next queued prompt", async () => {
     const env = await setup();
     env.send("SLOW first");
-    await vi.waitFor(() => expect(sentTexts(env)).toEqual(["SLOW first"]));
+    await waitFor(() => expect(sentTexts(env)).toEqual(["SLOW first"]));
 
     await plant(env.worktree, "AGENTS.md");
     env.send("second");
@@ -159,7 +164,7 @@ describe("pre-prompt gate", () => {
     expect(existsSync(join(env.worktree, "AGENTS.md"))).toBe(true);
 
     env.harness.release(AGENT, "g1");
-    await vi.waitFor(() => expect(env.dropped).toHaveLength(1));
+    await waitFor(() => expect(env.dropped).toHaveLength(1));
     await idle(env);
 
     expect(env.dropped[0]?.prompt.text).toBe("second");
@@ -171,7 +176,7 @@ describe("pre-prompt gate", () => {
     expect(env.notices[0]).toContain("AGENTS.md");
 
     env.send("clean");
-    await vi.waitFor(() => expect(sentTexts(env)).toEqual(["SLOW first", "clean"]));
+    await waitFor(() => expect(sentTexts(env)).toEqual(["SLOW first", "clean"]));
     await idle(env);
     expect(env.dropped).toHaveLength(1);
     expect(env.harness.cancels).toHaveLength(0);
@@ -180,14 +185,14 @@ describe("pre-prompt gate", () => {
   it("refuses only the first of two queued prompts and sends the second after the clean-up", async () => {
     const env = await setup();
     env.send("SLOW first");
-    await vi.waitFor(() => expect(sentTexts(env)).toEqual(["SLOW first"]));
+    await waitFor(() => expect(sentTexts(env)).toEqual(["SLOW first"]));
 
     await plant(env.worktree, "AGENTS.md");
     env.send("queued A");
     env.send("queued B");
 
     env.harness.release(AGENT, "g1");
-    await vi.waitFor(() => expect(sentTexts(env)).toEqual(["SLOW first", "queued B"]));
+    await waitFor(() => expect(sentTexts(env)).toEqual(["SLOW first", "queued B"]));
     await idle(env);
 
     expect(env.dropped.map((d) => d.prompt.text)).toEqual(["queued A"]);
@@ -212,7 +217,7 @@ describe("pre-prompt gate", () => {
       expect((direct as WorktreeError).operation).toBe("config-exclusion");
 
       env.send("hello");
-      await vi.waitFor(() => expect(env.notices).toHaveLength(1));
+      await waitFor(() => expect(env.notices).toHaveLength(1));
       await idle(env);
       expect(env.notices[0]).toContain("config-exclusion");
       expect(env.harness.prompts).toHaveLength(0);

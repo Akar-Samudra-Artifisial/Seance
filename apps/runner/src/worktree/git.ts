@@ -38,6 +38,14 @@ export function gitEnv(source: EnvLike): Record<string, string | undefined> {
   return { ...allowListedEnv(source), GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" };
 }
 
+/**
+ * agent-sandbox Requirement 9.2: the hardened environment ignores the user's and the system's git
+ * config, so only the repository's own config (host-owned) applies.
+ */
+export function hardenedGitEnv(source: EnvLike): Record<string, string | undefined> {
+  return { ...gitEnv(source), GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+}
+
 /** Per-repo mutex tails, shared by every runner for the same repo path. */
 const tails = new Map<string, Promise<void>>();
 
@@ -45,7 +53,7 @@ const tails = new Map<string, Promise<void>>();
  * Runs `git <args>` through `execFile` (never a shell), so channel names and
  * paths are passed as plain argv elements.
  */
-export function runGit(args: readonly string[]): Promise<GitResult> {
+export function runGit(args: readonly string[], env: Record<string, string | undefined> = gitEnv(process.env)): Promise<GitResult> {
   return new Promise<GitResult>((resolve, reject) => {
     execFile(
       "git",
@@ -54,7 +62,7 @@ export function runGit(args: readonly string[]): Promise<GitResult> {
         encoding: "utf8",
         maxBuffer: MAX_BUFFER,
         windowsHide: true,
-        env: gitEnv(process.env),
+        env,
       },
       (error, stdout, stderr) => {
         if (error === null) {
@@ -69,10 +77,14 @@ export function runGit(args: readonly string[]): Promise<GitResult> {
   });
 }
 
-/** Creates a runner whose `locked` calls are serialised per `repo` path. */
-export function createGitRunner(repo: string): GitRunner {
+/**
+ * Creates a runner whose `locked` calls are serialised per `repo` path. `hardened` (podman mode)
+ * adds the environment of `hardenedGitEnv`.
+ */
+export function createGitRunner(repo: string, opts: { readonly hardened?: boolean } = {}): GitRunner {
+  const hardened = opts.hardened === true;
   return {
-    run: runGit,
+    run: (args) => (hardened ? runGit(args, hardenedGitEnv(process.env)) : runGit(args)),
     locked<T>(fn: () => Promise<T>): Promise<T> {
       const previous = tails.get(repo) ?? Promise.resolve();
       const result = previous.then(fn);

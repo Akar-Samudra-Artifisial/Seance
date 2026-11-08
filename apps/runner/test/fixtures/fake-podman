@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stand-in for `podman` (agent-sandbox Requirement 12.3). Point SEANCE_PODMAN_BIN at this file, or
+# at a wrapper that exports FAKE_PODMAN_LOG, FAKE_PODMAN_STATE and FAKE_PODMAN_MODE first (see
+# fake-podman.mjs). Needs the repo Node (.nvmrc) on PATH.
+dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd) || exit 1
+exec node "$dir/fake-podman.mjs" "$@"

@@ -163,3 +163,18 @@ For every scenario: `session/new` succeeded with `currentModeId` equal to the pr
 - **The request still has no `kind`** (as in 3.0); `kind` comes only from the earlier `tool_call` update. Requests also carry a `__tool_use_purpose` field in `rawInput`.
 - **Haiku's first tool call for an edit was a `find … -not -path "*/node_modules/*"`.** The old glob rule of Req 8.15 rejected it as `protected-path`; Req 8.15 now matches literal `AGENTS.md` / `.kiro` names only.
 - Not tested: absolute `rawInput.path`, `create` of a new file in 3.1, rename/move, a session cwd that is not a git repository.
+
+## S12: Podman sandbox on Linux (pending, run on EC2)
+
+**Status:** not run. The development machine is a Mac without Podman; agent-sandbox task 0.4 runs this on an EC2 instance with rootless Podman 5 and blocks no other task.
+
+**Commands** (image built from `sandbox/Dockerfile`, pinned by digest):
+
+```sh
+S12_IMAGE=localhost/seance-agent@sha256:<digest> pnpm --filter @seance/spike-acp s12
+S12_IMAGE=localhost/seance-agent@sha256:<digest> S12_AUTH_DIR=$HOME/.local/share/kiro-cli pnpm --filter @seance/spike-acp s12-auth
+```
+
+`s12` checks the spellings pinned in `apps/runner/src/sandbox/flags.ts`: pasta `--no-map-gw` (and `--map-gw` as the control), `keep-id` ownership, the `--mount` options including `relabel=shared` and `relabel=private`, two containers writing one shared directory, tmpfs with a read-only root, `--timeout`, `--http-proxy=false`, `--no-hosts`, `-i` with `--log-driver=none`, and `stop -t 2` then `rm -f --ignore`. It also prints the SELinux mode. `s12-auth` starts `kiro-cli acp` in the production flag set with the login staged from a read-only mount and no `KIRO_API_KEY`, and sends one prompt.
+
+Record the result lines here; change `flags.ts` only if a spelling differs.

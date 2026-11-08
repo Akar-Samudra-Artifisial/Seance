@@ -27,6 +27,8 @@ export type ChannelSessionDeps = {
   readonly timers: TimerSet;
   readonly logger: RunnerLogger;
   readonly opNotice: (channel: string, text: string) => void;
+  /** agent-sandbox Requirement 14 (podman mode only): host-side commit after an `end_turn`. */
+  readonly commitTurn?: (agent: string, channel: string) => Promise<void>;
 };
 
 /** `session/request_permission` handler for a channel Session confined to `cwd`. */
@@ -68,6 +70,7 @@ export function buildChannelSession(
       d.logger.warn("prompt dropped", { agent: profile.nick, channel, id: prompt.id, why });
     },
   };
+  const commit = d.commitTurn;
   const session = new Session({
     agent: profile.nick,
     channel,
@@ -79,6 +82,7 @@ export function buildChannelSession(
     opNotice: d.opNotice,
     isBlocked,
     logger: d.logger,
+    ...(commit !== undefined ? { afterTurn: () => commit(profile.nick, channel) } : {}),
   });
   attachSessionOutput({ session, output, clock: d.clock });
   const acc = new CreditAccumulator(`${profile.nick}@${channel}:${harnessSession.id}`, d.logger);

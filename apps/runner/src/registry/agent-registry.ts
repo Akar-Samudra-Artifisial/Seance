@@ -32,7 +32,11 @@ export class AgentRegistry {
    * files are logged with file and field and skipped. Throws
    * `NoAgentProfileError` when no profile is valid.
    */
-  static async load(dir: string, log: RunnerLogger): Promise<AgentRegistry> {
+  static async load(
+    dir: string,
+    log: RunnerLogger,
+    opts: { readonly sandboxed?: boolean } = {},
+  ): Promise<AgentRegistry> {
     let names: string[];
     try {
       const entries = await readdir(dir, { withFileTypes: true });
@@ -57,7 +61,7 @@ export class AgentRegistry {
         } catch (err) {
           throw new AgentProfileError(file, "(json)", `is not readable JSON: ${describe(err)}`);
         }
-        profile = parseProfile(json, file);
+        profile = parseProfile(json, file, { sandboxed: opts.sandboxed === true });
       } catch (err) {
         if (err instanceof AgentProfileError) {
           log.error(err.message, { file: err.file, field: err.field });

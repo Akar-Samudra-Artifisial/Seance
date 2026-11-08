@@ -1,0 +1,15 @@
+# Egress allow-list of the Séance agent sandbox (agent-sandbox Requirement 7.6).
+# One host name per line, TCP 443 only. `seance-egress-refresh` resolves these into the nftables set.
+# Before deploying, compare with the Kiro firewall page for your region and sign-in method:
+#   https://kiro.dev/docs/privacy-and-security/firewalls/
+# Kiro service endpoints (us-east-1; add eu-central-1 if you use it).
+runtime.us-east-1.kiro.dev
+management.us-east-1.kiro.dev
+telemetry.us-east-1.kiro.dev
+# Token refresh for an IAM Identity Center login (AWS SSO OIDC). Add the other sign-in endpoints
+# listed on the Kiro firewall page for your login method.
+oidc.us-east-1.amazonaws.com
+# Package registries.
+registry.npmjs.org
+pypi.org
+files.pythonhosted.org

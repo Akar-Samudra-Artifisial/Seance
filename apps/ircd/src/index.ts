@@ -2,6 +2,7 @@ import { loadConfig } from "./config.js";
 import type { RouterLogger } from "./command-router.js";
 import { createServer } from "./server.js";
 import { createIrcHost } from "./runner-wiring.js";
+import { checkPublicStartup } from "./public-guard.js";
 import { ConfigError, createRunner, loadRunnerConfig, redactFields } from "@seance/runner";
 import type { LogFields, Runner, RunnerLogger } from "@seance/runner";
 
@@ -45,6 +46,14 @@ const runnerLogger: RunnerLogger = {
 };
 
 async function main(): Promise<void> {
+  // agent-sandbox Requirement 2.2: refuse before any listener is opened or any process spawned.
+  let publicDeployment: boolean;
+  try {
+    publicDeployment = checkPublicStartup(process.env).publicDeployment;
+  } catch (error: unknown) {
+    console.error(`refusing to start: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
   const config = loadConfig(process.env);
   const runnerEnabled = process.env["SEANCE_RUNNER"] === "1";
   // The resolver is lazy: the runner needs the server, the server needs the resolver (design D10).
@@ -63,6 +72,7 @@ async function main(): Promise<void> {
       config: loadRunnerConfig(process.env),
       ...(config.host !== undefined ? { bindHost: config.host } : {}),
       logger: runnerLogger,
+      publicDeployment,
     });
     runner = created;
     try {

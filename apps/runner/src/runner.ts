@@ -36,7 +36,12 @@ import { agentsOnline } from "./services/notices.js";
 import { createServices } from "./services/services.js";
 import { agentStatus } from "./whois/render.js";
 import { WhoisSnapshot } from "./whois/snapshot.js";
+import { SandboxError } from "./sandbox/errors.js";
+import { assertSandboxForPublic } from "./sandbox/guard.js";
+import { PodmanLauncher, type PodmanExec } from "./sandbox/launcher.js";
+import { sandboxNotice } from "./sandbox/notices.js";
 import { createGitRunner } from "./worktree/git.js";
+import { createTurnCommitter } from "./worktree/turn-committer.js";
 import { WorktreeManager } from "./worktree/worktree-manager.js";
 
 export type RunnerOptions = {
@@ -55,6 +60,15 @@ export type RunnerOptions = {
   readonly bindHost?: string;
   /** Extra environment for agent processes beyond the allow-list; read at each spawn (tests only). */
   readonly childEnv?: () => Readonly<Record<string, string | undefined>>;
+  /**
+   * IRCD_PUBLIC=1 (agent-sandbox Requirement 2.5): `start()` refuses to run without the podman
+   * sandbox. Default false.
+   */
+  readonly publicDeployment?: boolean;
+  /** Podman command runner for the sandbox launcher (tests: the fake podman). */
+  readonly podmanExec?: PodmanExec;
+  /** Environment the podman process is built from; defaults to `process.env` (tests). */
+  readonly podmanBaseEnv?: Readonly<Record<string, string | undefined>>;
 };
 
 export interface Runner {
@@ -100,10 +114,43 @@ export function createRunner(opts: RunnerOptions): Runner {
 
   async function setup(): Promise<Parts> {
     // 1-3. Fail closed before anything is spawned.
+    // agent-sandbox Requirement 2.5: repeated here so an embedder cannot skip the ircd's check.
+    assertSandboxForPublic({
+      public: opts.publicDeployment === true,
+      runnerEnabled: true,
+      sandbox: opts.config.sandbox.mode,
+    });
     assertInvitersConfigured(opts.config, opts.bindHost);
     const config = await validateRunnerPaths(opts.config);
-    const registry = await AgentRegistry.load(config.agentsDir, logger);
+    const sandboxConfig = config.sandbox;
+    const podman = sandboxConfig.mode === "podman";
+    const registry = await AgentRegistry.load(config.agentsDir, logger, { sandboxed: podman });
     await verifyAgentFiles(registry, config.agentsDir);
+
+    // agent-sandbox Requirement 3.1: the Preflight and a sweep run before any invite is accepted.
+    let launcher: PodmanLauncher | undefined;
+    if (sandboxConfig.mode === "podman") {
+      for (const name of sandboxConfig.ignored) {
+        logger.warn(
+          name === "KIRO_API_KEY"
+            ? "KIRO_API_KEY is set but never forwarded to the sandbox; the credential is SEANCE_SANDBOX_AUTH_DIR"
+            : "SEANCE_KIRO_BIN is ignored in podman mode; the command inside the image is SEANCE_SANDBOX_KIRO_BIN",
+          { variable: name },
+        );
+      }
+      launcher = new PodmanLauncher({
+        config: sandboxConfig,
+        agentsDir: config.agentsDir,
+        worktreeRoot: config.workspaces,
+        targetRepo: config.targetRepo,
+        logger,
+        ...(opts.podmanExec !== undefined ? { exec: opts.podmanExec } : {}),
+        ...(opts.podmanBaseEnv !== undefined ? { baseEnv: opts.podmanBaseEnv } : {}),
+      });
+      await launcher.preflight();
+      const swept = await launcher.sweep();
+      if (swept > 0) logger.info("sandbox containers from an earlier run removed", { count: swept });
+    }
 
     // 4. Harness choice: acp for unset/empty/"acp", headless for "headless".
     const baseHarness: AgentHarness =
@@ -116,6 +163,7 @@ export function createRunner(opts: RunnerOptions): Runner {
             clock,
             promptTimeoutMs: config.promptTimeoutMs,
             ...(opts.childEnv !== undefined ? { extraEnv: opts.childEnv } : {}),
+            ...(launcher !== undefined ? { sandbox: launcher } : {}),
           }));
     // Refuses to open sessions once shutdown began (covers invites, revival and private chats).
     const harness: AgentHarness = {
@@ -139,7 +187,8 @@ export function createRunner(opts: RunnerOptions): Runner {
     const worktrees = new WorktreeManager({
       repo: config.targetRepo,
       root: config.workspaces,
-      git: createGitRunner(config.targetRepo),
+      git: createGitRunner(config.targetRepo, { hardened: podman }),
+      hardened: podman,
     });
 
     const humanOpNicks = (channel: string): readonly string[] => {
@@ -179,6 +228,18 @@ export function createRunner(opts: RunnerOptions): Runner {
     });
     await ledger.restore();
 
+    // agent-sandbox Requirement 14: host-side commits exist only in podman mode (14.8).
+    const commitTurn = podman
+      ? createTurnCommitter({
+          host,
+          worktrees,
+          logger,
+          chanServ: (channel, text) => {
+            services.chanServ(channel, text);
+          },
+          opNotice: notifyOps,
+        })
+      : undefined;
     const channelDeps: ChannelSessionDeps = {
       host,
       worktrees,
@@ -188,22 +249,33 @@ export function createRunner(opts: RunnerOptions): Runner {
       timers,
       logger,
       opNotice: notifyOps,
+      ...(commitTurn !== undefined ? { commitTurn } : {}),
     };
     const isBlocked = (channel: string): boolean => ledger.isBlocked(channel);
 
     // Same session-creation logic as the InviteController (shared helpers).
     const reviveSession = async (reg: AgentRegistration, channel: string): Promise<Session> => {
       const info = await worktrees.ensure(channel);
-      const harnessSession = await harness.openSession(reg.profile, {
-        cwd: info.realPath,
-        onPermission: channelPermissionHandler(
-          channelDeps,
-          reg.profile,
-          channel,
-          info.realPath,
-          reg.output,
-        ),
-      });
+      let harnessSession: HarnessSession;
+      try {
+        harnessSession = await harness.openSession(reg.profile, {
+          cwd: info.realPath,
+          onPermission: channelPermissionHandler(
+            channelDeps,
+            reg.profile,
+            channel,
+            info.realPath,
+            reg.output,
+          ),
+        });
+      } catch (err) {
+        // agent-sandbox Requirement 11.1: the Human_Ops learn why the agent did not come back.
+        if (err instanceof SandboxError) {
+          logger.error("sandbox start failed", { agent: reg.profile.nick, channel, kind: err.kind, cause: err.message });
+          notifyOps(channel, sandboxNotice(reg.profile.nick, channel, err));
+        }
+        throw err;
+      }
       try {
         const session = buildChannelSession(
           channelDeps,
@@ -310,6 +382,7 @@ export function createRunner(opts: RunnerOptions): Runner {
       isBlocked,
       services: { chanServ: services.chanServ, workspaces: config.workspaces },
       secrets: [config.kiroApiKey],
+      ...(commitTurn !== undefined ? { commitTurn } : {}),
       onHarnessSession: (session, harnessSession) => {
         harnessSessions.set(session, harnessSession);
       },

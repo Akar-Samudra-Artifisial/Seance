@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FakeAgentCore } from "./fixtures/fake-agent.js";
+import { FakeAgentCore, parseScript } from "./fixtures/fake-agent.js";
 import type { FakeScript } from "./fixtures/fake-agent.js";
 
 type Frame = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -214,5 +214,34 @@ describe("FakeAgentCore session mode", () => {
 
   it("uses the scripted modeId when set", () => {
     expect(mode(make({ turns: [], modeId: "kiro_default" }, "reviewer"))).toBe("kiro_default");
+  });
+});
+
+describe("probe steps (agent-sandbox task 8.3)", () => {
+  it("validates the probe spec in the script schema", () => {
+    for (const probe of ["status", "git", "env:HOME,KIRO_API_KEY", "write:/tmp/x", "connect:127.0.0.1:80"]) {
+      expect(() => parseScript({ turns: [{ steps: [{ probe }] }] })).not.toThrow();
+    }
+    for (const probe of ["rm -rf /", "env:lower", "write:relative", "connect:host", 3]) {
+      expect(() => parseScript({ turns: [{ steps: [{ probe }] }] })).toThrow(/probe/);
+    }
+  });
+
+  it("sends the injected probe result as a message chunk; the core itself does no I/O", () => {
+    const seen: string[] = [];
+    const core = new FakeAgentCore({
+      agentName: "coder",
+      script: { turns: [{ steps: [{ probe: "status" }] }] },
+      probe: (spec) => {
+        seen.push(spec);
+        return "CapEff=0000000000000000";
+      },
+    });
+    send(core, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    const created = send(core, { jsonrpc: "2.0", id: 2, method: "session/new", params: { cwd: "/w", mcpServers: [] } });
+    const sessionId = created[0]?.result?.sessionId as string;
+    const frames = send(core, { jsonrpc: "2.0", id: 3, method: "session/prompt", params: { sessionId, prompt: [{ type: "text", text: "x" }] } });
+    expect(seen).toEqual(["status"]);
+    expect(frames.some((f) => f.params?.update?.content?.text === "probe status => CapEff=0000000000000000\n")).toBe(true);
   });
 });

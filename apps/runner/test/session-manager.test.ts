@@ -666,6 +666,22 @@ describe("agent-to-agent loop guard (runner-services Req 11)", () => {
   });
 });
 
+describe("per-container exits (agent-sandbox Requirement 8.3)", () => {
+  it("closes only the sessions named by the exit event; without names, every session of the agent", async () => {
+    const env = await setup();
+    const ops = await env.makeSession(WRAITH, "#ops");
+    env.manager.addChannelSession(ops);
+    const dev = env.sessions[WRAITH];
+    env.manager.onProcessExited(WRAITH, [ops.acpSessionId]);
+    expect(ops.state).toBe("closed");
+    expect(dev?.state).not.toBe("closed");
+    env.manager.onProcessExited(WRAITH, []);
+    expect(dev?.state).not.toBe("closed");
+    env.manager.onProcessExited(WRAITH);
+    expect(dev?.state).toBe("closed");
+  });
+});
+
 describe("P7 agent loop guard (routing level)", () => {
   type Ev =
     | { readonly kind: "voiced" }

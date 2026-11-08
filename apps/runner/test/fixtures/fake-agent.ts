@@ -9,6 +9,7 @@
 //   FAKE_AGENT_NAME    agent name reported as `modes.currentModeId` (the launcher passes `--agent <name>`)
 //   FAKE_AGENT_SCRIPT  inline JSON (starts with `{`) or a path to a JSON file
 //   FAKE_AGENT_DUMP_FILE  optional; the latest `fake/dump` state is written there after every input line
+import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -36,7 +37,15 @@ export type Step =
   | { readonly delay: number }
   | { readonly gate: string }
   | { readonly crash: number }
-  | { readonly stop: string };
+  | { readonly stop: string }
+  /**
+   * Sandbox suite only (agent-sandbox task 8.3): `status`, `env:NAME,NAME`, `write:/path`,
+   * `connect:host:port` or `git`. The core stays pure: the stdio wrapper runs the probe and the
+   * result is sent as a message chunk `probe <spec> => <result>`.
+   */
+  | { readonly probe: string };
+
+export const PROBE_SPEC = /^(?:status|git|env:[A-Z_][A-Z0-9_]*(?:,[A-Z_][A-Z0-9_]*)*|write:(?:@cwd)?\/[^\0]*|connect:[0-9A-Za-z.-]+:[0-9]{1,5})$/;
 
 export interface TurnScript {
   readonly match?: string;
@@ -99,6 +108,11 @@ const parseStep = (v: unknown, where: string): Step => {
     case "stop":
       if (typeof val !== "string") return fail(where, `${key} must be a string`);
       return { [key]: val } as Step;
+    case "probe":
+      if (typeof val !== "string" || !PROBE_SPEC.test(val)) {
+        return fail(where, "probe must be status, git, env:NAMES, write:/path or connect:host:port");
+      }
+      return { probe: val };
     case "toolCall":
       return { toolCall: parseToolCall(val, `${where}.toolCall`) };
     case "permission": {
@@ -228,6 +242,8 @@ export interface FakeDump {
 
 interface Session {
   readonly id: string;
+  /** `session/new` params.cwd; `@cwd` in a probe spec expands to it. */
+  readonly cwd: string;
   settleUntil: number;
   metadataPending: boolean;
   cancelledTurnMs: number;
@@ -265,6 +281,8 @@ export interface FakeAgentOptions {
   /** Reported as `modes.currentModeId` unless the script sets `modeId`. */
   readonly agentName: string;
   readonly script?: FakeScript;
+  /** Runs a `probe` step (stdio wrapper only); absent means "probe unavailable". */
+  readonly probe?: (spec: string) => string;
 }
 
 export class FakeAgentCore {
@@ -285,9 +303,12 @@ export class FakeAgentCore {
   private readonly cancels: { sessionId: string; inFlight: boolean }[] = [];
   private readonly permissionAnswers: { id: RpcId; optionId: string | null }[] = [];
 
+  private readonly probe: ((spec: string) => string) | undefined;
+
   constructor(options: FakeAgentOptions) {
     this.agentName = options.agentName;
     this.script = options.script ?? { turns: [] };
+    this.probe = options.probe;
   }
 
   /** Current virtual time in ms. */
@@ -440,6 +461,7 @@ export class FakeAgentCore {
     const sessionId = `fake-session-${this.sessionCounter}`;
     this.sessions.set(sessionId, {
       id: sessionId,
+      cwd: params["cwd"],
       settleUntil: 0,
       metadataPending: false,
       cancelledTurnMs: 0,
@@ -612,6 +634,11 @@ export class FakeAgentCore {
       } else if ("crash" in step) {
         this.exitCode = step.crash;
         return;
+      } else if ("probe" in step) {
+        const cwd = this.sessions.get(turn.sessionId)?.cwd ?? "/";
+        const spec = step.probe.replace(/^write:@cwd\//, `write:${cwd}/`);
+        const result = this.probe === undefined ? "probe unavailable" : this.probe(spec);
+        out.push(this.update(turn.sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `probe ${step.probe} => ${result}\n` } }));
       } else {
         out.push(...this.finish(turn, step.stop));
         return;
@@ -717,6 +744,41 @@ export class FakeAgentCore {
 
 // ---- stdio wrapper ----------------------------------------------------------------------------
 
+/** Real effects of a `probe` step (agent-sandbox task 8.3); one line of text, never throws. */
+const runProbe = (spec: string): string => {
+  const short = (e: unknown): string => (e instanceof Error ? e.message : String(e)).split("\n")[0] ?? "";
+  try {
+    if (spec === "status") {
+      const status = readFileSync("/proc/self/status", "utf8");
+      const pick = (k: string): string => /^(\S+):\s*(.*)$/m.exec(status.split("\n").find((l) => l.startsWith(`${k}:`)) ?? "")?.[2]?.trim() ?? "?";
+      return `CapEff=${pick("CapEff")} NoNewPrivs=${pick("NoNewPrivs")} Uid=${pick("Uid").split(/\s+/)[0] ?? "?"}`;
+    }
+    if (spec === "git") {
+      const r = spawnSync("git", ["rev-parse", "--git-dir"], { encoding: "utf8" });
+      return r.status === 0 ? `ok ${r.stdout.trim()}` : `failed ${String(r.status)}`;
+    }
+    if (spec.startsWith("env:")) {
+      return spec
+        .slice(4)
+        .split(",")
+        .map((n) => `${n}=${process.env[n] === undefined ? "<unset>" : "<set>"}`)
+        .join(" ");
+    }
+    if (spec.startsWith("write:")) {
+      writeFileSync(spec.slice(6), "probe\n");
+      return "written";
+    }
+    if (spec.startsWith("connect:")) {
+      const [host, port] = [spec.slice(8, spec.lastIndexOf(":")), spec.slice(spec.lastIndexOf(":") + 1)];
+      const r = spawnSync("nc", ["-z", "-w", "2", host, port], { encoding: "utf8" });
+      return r.status === 0 ? "connected" : "unreachable";
+    }
+    return "unknown probe";
+  } catch (e) {
+    return `error ${short(e)}`;
+  }
+};
+
 const runStdio = (): void => {
   const agentName = process.env["FAKE_AGENT_NAME"] ?? "fake";
   let script: FakeScript;
@@ -726,7 +788,7 @@ const runStdio = (): void => {
     process.stderr.write(`fake-agent: ${e instanceof Error ? e.message : String(e)}\n`);
     process.exit(2);
   }
-  const core = new FakeAgentCore({ agentName, script });
+  const core = new FakeAgentCore({ agentName, script, probe: runProbe });
   const dumpEnv = process.env["FAKE_AGENT_DUMP_FILE"];
   const dumpFile = dumpEnv === undefined || dumpEnv === "" ? undefined : dumpEnv;
   const emit = (lines: readonly string[]): void => {

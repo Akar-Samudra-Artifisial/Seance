@@ -1,0 +1,42 @@
+#!/bin/sh
+# Loads sandbox/egress-allow.txt into the nftables set `inet seance_sandbox seance_allow4`
+# (agent-sandbox Requirement 7.6). nftables filters addresses, so every name is resolved here and
+# the set is replaced in one `nft -f` transaction. Run as root on a timer; never run by the runner.
+# Usage: seance-egress-refresh [allow-list file]
+set -eu
+
+here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+list=${1:-"$here/egress-allow.txt"}
+[ -r "$list" ] || { echo "seance-egress-refresh: cannot read $list" >&2; exit 1; }
+
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT INT TERM
+
+# Names: letters, digits, dots and dashes only; anything else is skipped and reported.
+addrs=$(
+  sed -e 's/#.*//' -e 's/[[:space:]]//g' "$list" | while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    if printf '%s' "$name" | grep -q '[^A-Za-z0-9.-]'; then
+      echo "seance-egress-refresh: skipping invalid name $name" >&2
+      continue
+    fi
+    if out=$(getent ahostsv4 "$name"); then
+      printf '%s\n' "$out" | awk '{ print $1 }'
+    else
+      echo "seance-egress-refresh: $name did not resolve" >&2
+    fi
+  done | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' | sort -u
+)
+
+if [ -z "$addrs" ]; then
+  echo "seance-egress-refresh: no address resolved; the set is left unchanged" >&2
+  exit 1
+fi
+
+{
+  echo "flush set inet seance_sandbox seance_allow4"
+  printf 'add element inet seance_sandbox seance_allow4 { %s }\n' "$(printf '%s\n' "$addrs" | paste -sd, -)"
+} > "$tmp"
+
+nft -f "$tmp"
+echo "seance-egress-refresh: $(printf '%s\n' "$addrs" | wc -l | tr -d ' ') addresses loaded"

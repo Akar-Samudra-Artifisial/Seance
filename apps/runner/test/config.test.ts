@@ -34,6 +34,8 @@ describe("loadRunnerConfig defaults", () => {
       channelCreditCap: undefined,
       inviteRate: 5,
       inviters: undefined,
+      // agent-sandbox Requirement 1.1: unset SEANCE_SANDBOX means no sandbox.
+      sandbox: { mode: "none" },
     });
   });
 
@@ -82,6 +84,8 @@ describe("loadRunnerConfig valid values", () => {
       channelCreditCap: 2.5,
       inviteRate: 10,
       inviters: ["alice"],
+      // agent-sandbox Requirement 1.1: the new field, unset here.
+      sandbox: { mode: "none" },
     });
   });
 

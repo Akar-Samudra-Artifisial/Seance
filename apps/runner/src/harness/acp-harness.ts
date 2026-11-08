@@ -2,7 +2,7 @@
  * AcpHarness: one `kiro-cli acp` process per Agent, one ACP session per channel.
  * Everything the agent sends is untrusted and is validated at this boundary (Req 2.11, 8.9, 8.10).
  */
-import { AcpClient, type JsonObject } from "../acp/client.js";
+import { AcpClient, type AcpClientOptions, type JsonObject } from "../acp/client.js";
 import type { Json } from "../acp/frames.js";
 import type { Clock, TimerHandle } from "../clock.js";
 import type { RunnerConfig } from "../config.js";
@@ -17,7 +17,11 @@ import type {
   SessionEvent,
   TurnResult,
 } from "./harness.js";
-import { buildSpawnSpec } from "./spawn.js";
+import { irc_lower } from "@seance/irc-protocol";
+import { SandboxError } from "../sandbox/errors.js";
+import type { PodmanLauncher } from "../sandbox/launcher.js";
+import { scrubDetail } from "../sandbox/notices.js";
+import { buildSandboxSpawnSpec, buildSpawnSpec, type SpawnSpec } from "./spawn.js";
 import { resolveTool, ToolCache } from "./tool-info.js";
 
 export type AcpHarnessConfig = Pick<RunnerConfig, "kiroBin" | "kiroApiKey" | "agentsDir">;
@@ -37,10 +41,23 @@ export interface AcpHarnessOptions {
   readonly promptTimeoutMs?: number;
   /** Grace between SIGTERM and SIGKILL when terminating an agent; defaults to 5000 ms. */
   readonly killGraceMs?: number;
+  /**
+   * Podman mode (agent-sandbox): one container per (agent, session cwd). Absent means `none` mode,
+   * one host process per agent, unchanged.
+   */
+  readonly sandbox?: PodmanLauncher;
+  /**
+   * Podman mode: budget for the container to answer `initialize` and `session/new`; defaults to
+   * 25000 ms, under the invite pipeline's 30 s, so the sandbox reason wins (Requirement 8.4).
+   */
+  readonly startTimeoutMs?: number;
+  /** Builds the ACP client of a process; defaults to `new AcpClient(o)` (tests: an in-memory client). */
+  readonly createClient?: (o: AcpClientOptions) => AcpClient;
 }
 
 const DEFAULT_PROMPT_TIMEOUT_MS = 120_000;
 const DEFAULT_KILL_GRACE_MS = 5000;
+export const DEFAULT_SANDBOX_START_TIMEOUT_MS = 25_000;
 
 /** Kiro fell back to another agent than the requested profile (spike S8, Req 2.15, 2.16). */
 export class AgentProfileNotLoadedError extends Error {
@@ -74,6 +91,12 @@ export interface Proc {
   /** Watchdog timer; set only while a Turn is in flight. */
   watchdog?: TimerHandle | undefined;
   ready: Promise<void>;
+  /** Key in the process map: the nick (`none`) or nick and session cwd (podman). */
+  readonly key: string;
+  /** Podman mode: the container this process runs (`podman run -i`). */
+  readonly containerName?: string;
+  /** Podman mode: the memoised removal of the container (stop, then rm). */
+  removal?: Promise<void>;
 }
 
 class AcpSession implements HarnessSession {
@@ -118,6 +141,9 @@ class AcpSession implements HarnessSession {
   close(): Promise<void> {
     this.markClosed();
     this.proc.sessions.delete(this.id);
+    // Podman mode: the container serves this session only, so closing it stops and removes the
+    // container (Requirement 10.1); a removal failure rejects so the exorcism can report it.
+    if (this.proc.containerName !== undefined) return this.harness.retireContainer(this.proc);
     return Promise.resolve();
   }
 
@@ -142,17 +168,54 @@ export class AcpHarness implements AgentHarness {
   private readonly opts: AcpHarnessOptions;
   private readonly procs = new Map<string, Proc>();
   private readonly processListeners = new Set<(e: ProcessEvent) => void>();
+  /** Podman mode: opens in flight by `nick\0cwd` (review finding 2). */
+  private readonly opening = new Map<string, Promise<HarnessSession>>();
+  /** True once dispose() has started (review finding 3). */
+  private disposing = false;
 
   constructor(opts: AcpHarnessOptions) {
     this.opts = opts;
   }
 
-  async openSession(
+  openSession(
     profile: AgentProfile,
     opts: { readonly cwd: string; readonly onPermission: PermissionHandler },
   ): Promise<HarnessSession> {
-    const proc = this.ensureProc(profile);
+    // Review finding 3: once dispose() has started nothing new may start.
+    if (this.disposing) return Promise.reject(this.refusedAfterDispose());
+    const launcher = this.opts.sandbox;
+    if (launcher === undefined) return this.openHostSession(profile, opts);
+    // Review finding 2: one open per (agent, cwd) at a time. A concurrent open of the same pair
+    // shares the in-flight one (one container, one session); the map entry is set before any await.
+    const key = `${irc_lower(profile.nick)}\0${opts.cwd}`;
+    const inFlight = this.opening.get(key);
+    if (inFlight !== undefined) return inFlight;
+    const attempt = this.openSandboxSession(launcher, key, profile, opts).finally(() => {
+      if (this.opening.get(key) === attempt) this.opening.delete(key);
+    });
+    this.opening.set(key, attempt);
+    return attempt;
+  }
+
+  private refusedAfterDispose(): Error {
+    return new Error("agent harness is shutting down: openSession refused");
+  }
+
+  private async openHostSession(
+    profile: AgentProfile,
+    opts: { readonly cwd: string; readonly onPermission: PermissionHandler },
+  ): Promise<HarnessSession> {
+    const proc = this.ensureProc(profile, buildSpawnSpec(profile, this.opts.config, this.opts.baseEnv, this.opts.extraEnv?.()), profile.nick);
     await proc.ready;
+    return this.newSession(proc, profile, opts);
+  }
+
+  /** `session/new` in a ready process, with the S8 profile check. */
+  private async newSession(
+    proc: Proc,
+    profile: AgentProfile,
+    opts: { readonly cwd: string; readonly onPermission: PermissionHandler },
+  ): Promise<AcpSession> {
     const res = await proc.client.request("session/new", { cwd: opts.cwd, mcpServers: [] });
     const sessionId = res["sessionId"];
     if (typeof sessionId !== "string" || sessionId === "") {
@@ -166,7 +229,8 @@ export class AcpHarness implements AgentHarness {
         kiroAgent: profile.kiroAgent,
         actualModeId: actual,
       });
-      await this.terminate(profile, "SIGTERM");
+      if (proc.containerName !== undefined) await this.retireContainer(proc).catch(() => undefined);
+      else await this.terminate(profile, "SIGTERM");
       throw new AgentProfileNotLoadedError(profile.kiroAgent, actual);
     }
     const session = new AcpSession(sessionId, proc, this, opts.onPermission);
@@ -174,7 +238,112 @@ export class AcpHarness implements AgentHarness {
     return session;
   }
 
+  /**
+   * Podman mode (Requirements 3.5, 8, 10, 11): quick checks, one container per (agent, cwd), a start
+   * budget, and on any failure the container is removed and a `SandboxError` thrown. Never falls
+   * back to a host process (3.6).
+   */
+  private async openSandboxSession(
+    launcher: PodmanLauncher,
+    key: string,
+    profile: AgentProfile,
+    opts: { readonly cwd: string; readonly onPermission: PermissionHandler },
+  ): Promise<HarnessSession> {
+    await launcher.quickCheck();
+    if (this.disposing) throw this.refusedAfterDispose();
+    // A container of this pair that is still registered has not been retired, whatever it holds.
+    if (this.procs.has(key)) {
+      throw new SandboxError("invalid-input", `${profile.nick} already has a container for this session directory`);
+    }
+    const spec = await buildSandboxSpawnSpec(launcher, profile, opts.cwd, this.opts.extraEnv?.());
+    if (this.disposing) {
+      // The spec registered a name but no container exists yet: forget it before refusing.
+      await launcher.remove(spec.containerName).catch(() => undefined);
+      throw this.refusedAfterDispose();
+    }
+    if (this.procs.has(key)) {
+      await launcher.remove(spec.containerName).catch(() => undefined);
+      throw new SandboxError("invalid-input", `${profile.nick} already has a container for this session directory`);
+    }
+    // From here to `ensureProc` there is no await: dispose() either sees this container or this
+    // open has already been refused above.
+    const proc = this.ensureProc(profile, spec, key, spec.containerName);
+    const budget = this.opts.startTimeoutMs ?? DEFAULT_SANDBOX_START_TIMEOUT_MS;
+    let timer: TimerHandle | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = this.opts.clock.setTimeout(() => {
+        reject(new SandboxError("start-timeout", `container start timed out after ${budget} ms`));
+      }, budget);
+    });
+    try {
+      const session = await Promise.race([
+        proc.ready.then(
+          () => this.newSession(proc, profile, opts),
+          (err: unknown) => {
+            throw new SandboxError(
+              "start-failed",
+              `container failed to start: ${errText(err)}`,
+              scrubDetail(proc.client.lastStderrLine, [this.opts.config.kiroApiKey]),
+            );
+          },
+        ),
+        timeout,
+      ]);
+      // Review finding 3: a session that came up while dispose() ran is not handed out.
+      if (this.disposing) throw this.refusedAfterDispose();
+      return session;
+    } catch (err) {
+      await this.retireContainer(proc).catch((removeErr: unknown) => {
+        this.opts.logger.error("container removal after a failed start failed", {
+          agent: profile.nick,
+          error: errText(removeErr),
+        });
+      });
+      if (this.disposing || err instanceof SandboxError || err instanceof AgentProfileNotLoadedError) throw err;
+      throw new SandboxError("start-failed", `container failed to start: ${errText(err)}`, scrubDetail(proc.client.lastStderrLine));
+    } finally {
+      if (timer !== undefined) this.opts.clock.clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Podman mode: stops the `podman run` client and removes its container by name (the name-based
+   * `stop` / `rm` is authoritative, Requirement 10.6). Memoised; rejects when the removal failed.
+   */
+  retireContainer(proc: Proc): Promise<void> {
+    const launcher = this.opts.sandbox;
+    const name = proc.containerName;
+    if (launcher === undefined || name === undefined) return Promise.resolve();
+    if (this.procs.get(proc.key) === proc) this.procs.delete(proc.key);
+    proc.removal ??= (async (): Promise<void> => {
+      this.disarm(proc);
+      await proc.client.close().catch((err: unknown) => {
+        this.opts.logger.warn("podman client close failed", { container: name, error: errText(err) });
+      });
+      await launcher.remove(name);
+    })();
+    return proc.removal;
+  }
+
+  /** Every process of an agent: one in `none` mode, one per container in podman mode. */
+  private procsOf(profile: AgentProfile): readonly Proc[] {
+    const nick = irc_lower(profile.nick);
+    return [...this.procs.values()].filter((p) => irc_lower(p.profile.nick) === nick);
+  }
+
   async terminate(profile: AgentProfile, signal: "SIGTERM" | "SIGKILL" = "SIGTERM"): Promise<void> {
+    if (this.opts.sandbox !== undefined) {
+      // Requirement 8.2: every container of the agent; removal by name follows the kill.
+      await Promise.all(
+        this.procsOf(profile).map(async (proc) => {
+          await this.killWithEscalation(proc, signal);
+          await this.retireContainer(proc).catch((err: unknown) => {
+            this.opts.logger.error("container removal failed", { agent: profile.nick, error: errText(err) });
+          });
+        }),
+      );
+      return;
+    }
     const proc = this.procs.get(profile.nick);
     if (proc === undefined) return;
     await this.killWithEscalation(proc, signal);
@@ -209,13 +378,39 @@ export class AcpHarness implements AgentHarness {
   }
 
   hasProcess(profile: AgentProfile): boolean {
+    if (this.opts.sandbox !== undefined) return this.procsOf(profile).some((p) => p.client.running);
     return this.procs.get(profile.nick)?.client.running === true;
   }
 
   async dispose(): Promise<void> {
+    // Review finding 3: from here on openSession rejects. Every container an open in flight has
+    // created is in `procs` (ensureProc runs without an await after the last check), so it is
+    // closed and retired below; an open still in its pre-flight checks is refused when it resumes.
+    this.disposing = true;
     const procs = [...this.procs.values()];
     for (const p of procs) this.disarm(p);
     await Promise.all(procs.map((p) => p.client.close()));
+    const launcher = this.opts.sandbox;
+    if (launcher === undefined) return;
+    // Requirement 10.2, 10.4: every container of this run is removed, then a label sweep.
+    await Promise.all(
+      procs.map((p) =>
+        this.retireContainer(p).catch((err: unknown) => {
+          this.opts.logger.error("container removal at shutdown failed", { agent: p.profile.nick, error: errText(err) });
+        }),
+      ),
+    );
+    // Opens in flight settle (refused or failed) before the final sweep, so nothing they started
+    // is left behind when dispose() resolves.
+    await Promise.allSettled([...this.opening.values()]);
+    await Promise.all(
+      [...this.procs.values()].map((p) =>
+        this.retireContainer(p).catch((err: unknown) => {
+          this.opts.logger.error("container removal at shutdown failed", { agent: p.profile.nick, error: errText(err) });
+        }),
+      ),
+    );
+    await launcher.sweep();
   }
 
   // --- hung-agent watchdog (Req 9.12, 9.13) ---
@@ -269,21 +464,29 @@ export class AcpHarness implements AgentHarness {
     for (const l of [...this.processListeners]) l(e);
   }
 
-  private ensureProc(profile: AgentProfile): Proc {
-    const existing = this.procs.get(profile.nick);
-    if (existing !== undefined) return existing;
+  private ensureProc(profile: AgentProfile, spec: SpawnSpec, key: string, containerName?: string): Proc {
+    const existing = this.procs.get(key);
+    if (existing !== undefined && containerName === undefined) return existing;
 
-    const spec = buildSpawnSpec(profile, this.opts.config, this.opts.baseEnv, this.opts.extraEnv?.());
-    const client = new AcpClient({
+    const clientOptions: AcpClientOptions = {
       command: spec.command,
       args: spec.args,
       cwd: spec.cwd,
       env: spec.env,
       logger: this.opts.logger,
       clock: this.opts.clock,
-    });
-    const proc: Proc = { profile, client, sessions: new Map(), inFlight: 0, ready: Promise.resolve() };
-    this.procs.set(profile.nick, proc);
+    };
+    const client = this.opts.createClient?.(clientOptions) ?? new AcpClient(clientOptions);
+    const proc: Proc = {
+      profile,
+      client,
+      sessions: new Map(),
+      inFlight: 0,
+      ready: Promise.resolve(),
+      key,
+      ...(containerName !== undefined ? { containerName } : {}),
+    };
+    this.procs.set(key, proc);
 
     client.onNotification((method, params) => this.onNotification(proc, method, params));
     client.onActivity(() => this.frameSeen(proc));
@@ -308,10 +511,20 @@ export class AcpHarness implements AgentHarness {
   private onExit(proc: Proc, code: number | null, signal: NodeJS.Signals | null): void {
     this.disarm(proc);
     proc.inFlight = 0;
-    if (this.procs.get(proc.profile.nick) === proc) this.procs.delete(proc.profile.nick);
+    if (this.procs.get(proc.key) === proc) this.procs.delete(proc.key);
+    const sessionIds = [...proc.sessions.keys()];
     for (const s of proc.sessions.values()) s.markClosed();
     proc.sessions.clear();
-    this.emitProcess({ kind: "exited", agent: proc.profile.nick, code, signal });
+    if (proc.containerName === undefined) {
+      this.emitProcess({ kind: "exited", agent: proc.profile.nick, code, signal });
+      return;
+    }
+    // Podman mode: an exit (crash, hung kill, `--timeout`) removes the container too (Requirement
+    // 10.2, 10.5); the event names only this container's sessions (8.3).
+    this.retireContainer(proc).catch((err: unknown) => {
+      this.opts.logger.error("container removal after exit failed", { agent: proc.profile.nick, error: errText(err) });
+    });
+    this.emitProcess({ kind: "exited", agent: proc.profile.nick, code, signal, sessionIds });
   }
 
   private onNotification(proc: Proc, method: string, params: JsonObject): void {

@@ -74,3 +74,9 @@ export function agentsOnline(agents: readonly { readonly nick: string; readonly 
   const text = [...groups.entries()].map(([status, nicks]) => `${nicks.join(", ")} (${status})`).join("; ");
   return fit(`agents online: ${text === "" ? "none" : text}`);
 }
+
+/** agent-sandbox Requirement 14.6: `<agent> committed <sha7> (<n> file(s))`. */
+export function turnCommitted(o: { readonly agent: string; readonly sha: string; readonly files: number }): string {
+  const files = Number.isFinite(o.files) && o.files > 0 ? Math.floor(o.files) : 0;
+  return fit(`${o.agent} committed ${o.sha} (${String(files)} ${files === 1 ? "file" : "files"})`);
+}

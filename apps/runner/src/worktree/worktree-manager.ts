@@ -1,5 +1,7 @@
-import { mkdir, realpath, rm, stat } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { irc_lower } from "@seance/irc-protocol";
 import { resolveInside } from "./confine.js";
 import { GitError, type GitRunner } from "./git.js";
 import { sanitizeChannel } from "./sanitize.js";
@@ -13,7 +15,8 @@ export type WorktreeOperation =
   | "reset"
   | "inspect"
   | "config-exclusion"
-  | "private-dir";
+  | "private-dir"
+  | "commit";
 
 /** A git or filesystem step failed for a channel's worktree. */
 export class WorktreeError extends Error {
@@ -47,10 +50,22 @@ export type ResetReport = {
 
 export type GuardResult = { readonly ok: true } | { readonly ok: false; readonly paths: readonly string[] };
 
+/** Outcome of a host-side commit after an agent turn (agent-sandbox Requirement 14). */
+export type TurnCommitResult =
+  | { readonly kind: "committed"; readonly sha: string; readonly files: number }
+  | { readonly kind: "clean" }
+  | { readonly kind: "refused"; readonly paths: readonly string[] };
+
 export type WorktreeManagerOptions = {
   readonly repo: string;
   readonly root: string;
   readonly git: GitRunner;
+  /**
+   * agent-sandbox Requirement 9 (podman mode): the worktree is writable from a container, so every
+   * git call on it passes `--git-dir` (recorded from the repository side) and `--work-tree`, and the
+   * `.git` file is verified before each prompt. Default false: calls stay `git -C <worktree> ...`.
+   */
+  readonly hardened?: boolean;
 };
 
 /** Case-insensitive gitignore-style globs: sparse-checkout patterns are case-sensitive. */
@@ -66,6 +81,32 @@ export const SPARSE_PATTERNS: readonly string[] = [
 ];
 
 const BASE_CONFIG_KEY = "seance.base";
+
+/**
+ * agent-sandbox review finding 1: config overrides on every hardened host git call on a worktree,
+ * so an fsmonitor, an untracked cache or a submodule recursion set in agent-writable files is never
+ * honoured. They come before `--git-dir` and beat any repository setting.
+ */
+export const HARDENED_GIT_CONFIG: readonly string[] = [
+  "-c",
+  "core.fsmonitor=false",
+  "-c",
+  "core.untrackedCache=false",
+  "-c",
+  "submodule.recurse=false",
+];
+
+/** `git status` flag that keeps submodules out of the host's view (`git add` has no such option). */
+export const IGNORE_SUBMODULES = "--ignore-submodules=all";
+
+/** Committer of host-side commits (Requirement 14.2). */
+export const RUNNER_COMMITTER = { name: "Séance runner", email: "runner@seance.invalid" } as const;
+
+/** Author e-mail local part: `irc_lower` nick, every character outside `[a-z0-9._-]` becomes `-`. */
+export function authorKey(nick: string): string {
+  const key = irc_lower(nick).replace(/[^a-z0-9._-]/g, "-");
+  return key === "" ? "agent" : key;
+}
 
 /** Paths (from `git diff --name-only -z`) with a segment named AGENTS.md or .kiro, case-insensitive. */
 export function protectedPaths(namesZ: string): readonly string[] {
@@ -95,16 +136,28 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+async function realOrSelf(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    return path;
+  }
+}
+
 export class WorktreeManager {
   readonly #repo: string;
   readonly #root: string;
   readonly #git: GitRunner;
+  readonly #hardened: boolean;
   readonly #ensuring = new Map<string, Promise<WorktreeInfo>>();
+  /** Requirement 9.1: realpath of the worktree -> its git dir, read from the repository side. */
+  readonly #gitDirs = new Map<string, string>();
 
   constructor(opts: WorktreeManagerOptions) {
     this.#repo = opts.repo;
     this.#root = opts.root;
     this.#git = opts.git;
+    this.#hardened = opts.hardened === true;
   }
 
   /** Creates or reuses the channel's worktree; confined and free of agent config. */
@@ -129,6 +182,11 @@ export class WorktreeManager {
 
     if (await this.#safeExists(channel, path)) {
       const realPath = await resolveInside(this.#root, path, channel);
+      if (this.#hardened) {
+        // First reuse after a restart: record the git dir and repair `.git` before any git call.
+        await this.#gitDirOf(channel, realPath);
+        await this.#restoreDotGit(channel, realPath);
+      }
       if ((await this.#toplevel(channel, realPath)) !== realPath) {
         throw new WorktreeError(channel, "inspect", `${path} exists but is not a git worktree root`);
       }
@@ -167,21 +225,22 @@ export class WorktreeManager {
     }
     // Commits that touch AGENTS.md or .kiro are discarded: the branch goes back to its base.
     const target = (await this.#committedHits(channel, realPath)).length > 0 ? await this.#base(channel, realPath) : "HEAD";
+    const wt = await this.#prefix(channel, realPath);
     return this.#git.locked(async () => {
       try {
         const status = await this.#git.run([
-          "-C",
-          realPath,
+          ...wt,
           "status",
+          ...this.#statusExtra(),
           "--porcelain=v1",
           "-z",
           "--untracked-files=all",
           "--no-renames",
         ]);
         const filesReverted = status.stdout.split("\0").filter((r) => r !== "").length;
-        await this.#git.run(["-C", realPath, "reset", "--hard", target]);
-        await this.#git.run(["-C", realPath, "clean", "-fd"]);
-        const short = (await this.#git.run(["-C", realPath, "rev-parse", "--short=7", "HEAD"])).stdout.trim();
+        await this.#git.run([...wt, "reset", "--hard", target]);
+        await this.#git.run([...wt, "clean", "-fd"]);
+        const short = (await this.#git.run([...wt, "rev-parse", "--short=7", "HEAD"])).stdout.trim();
         return { target: short, filesReverted };
       } catch (err) {
         throw new WorktreeError(channel, "reset", message(err));
@@ -194,7 +253,8 @@ export class WorktreeManager {
     try {
       const path = join(this.#root, sanitizeChannel(channel));
       const realPath = await resolveInside(this.#root, path, channel);
-      const sha = (await this.#git.run(["-C", realPath, "rev-parse", "--short=7", "HEAD"])).stdout.trim();
+      const wt = await this.#prefix(channel, realPath);
+      const sha = (await this.#git.run([...wt, "rev-parse", "--short=7", "HEAD"])).stdout.trim();
       return /^[0-9a-f]{7,40}$/.test(sha) ? sha : undefined;
     } catch {
       return undefined;
@@ -205,6 +265,11 @@ export class WorktreeManager {
   async guardBeforePrompt(channel: string): Promise<GuardResult> {
     const path = join(this.#root, sanitizeChannel(channel));
     const realPath = await resolveInside(this.#root, path, channel);
+    if (this.#hardened && (await this.#restoreDotGit(channel, realPath))) {
+      // Requirement 9.3, design D15: report through the existing guard result after the repair.
+      await this.reset(channel);
+      return { ok: false, paths: [".git"] };
+    }
     const scanned = await scanConfig(realPath);
     const committed = await this.#committedHits(channel, realPath);
     const hits = [...new Set([...scanned, ...committed])].sort();
@@ -237,6 +302,61 @@ export class WorktreeManager {
     return { ok: false, paths: hits };
   }
 
+  /**
+   * agent-sandbox Requirement 14: commits every change in the channel's worktree on the host,
+   * authored by `agent`, with hooks, signing and the user's config off. Protected config present
+   * means no commit (`refused`); no change means no commit (`clean`).
+   */
+  async commitTurn(channel: string, agent: string): Promise<TurnCommitResult> {
+    const path = join(this.#root, sanitizeChannel(channel));
+    const realPath = await resolveInside(this.#root, path, channel);
+    if (this.#hardened && (await this.#restoreDotGit(channel, realPath))) {
+      // A rewritten `.git` means the turn's work cannot be trusted: discard it, as the guard does.
+      await this.reset(channel);
+      return { kind: "refused", paths: [".git"] };
+    }
+    const hits = await scanConfig(realPath);
+    if (hits.length > 0) return { kind: "refused", paths: hits };
+    const wt = await this.#prefix(channel, realPath);
+    return this.#git.locked(async () => {
+      try {
+        const status = await this.#git.run([
+          ...wt,
+          "status",
+          ...this.#statusExtra(),
+          "--porcelain=v1",
+          "-z",
+          "--untracked-files=all",
+          "--no-renames",
+        ]);
+        const files = status.stdout.split("\0").filter((r) => r !== "").length;
+        if (files === 0) return { kind: "clean" };
+        await this.#git.run([...wt, "add", "--all", "--", "."]);
+        await this.#git.run([
+          "-c",
+          "core.hooksPath=/dev/null",
+          "-c",
+          "commit.gpgSign=false",
+          "-c",
+          `user.name=${RUNNER_COMMITTER.name}`,
+          "-c",
+          `user.email=${RUNNER_COMMITTER.email}`,
+          ...wt,
+          "commit",
+          "--no-verify",
+          "--quiet",
+          `--author=${agent} <${authorKey(agent)}@seance.invalid>`,
+          "-m",
+          `${agent}: turn in ${channel}`,
+        ]);
+        const sha = (await this.#git.run([...wt, "rev-parse", "--short=7", "HEAD"])).stdout.trim();
+        return { kind: "committed", sha, files };
+      } catch (err) {
+        throw new WorktreeError(channel, "commit", message(err));
+      }
+    });
+  }
+
   /** Plain private directory for an agent: `<root>/_private/<sanitized nick>`. */
   async privateDir(agentNick: string): Promise<string> {
     const path = join(this.#root, "_private", sanitizeChannel(agentNick));
@@ -248,9 +368,96 @@ export class WorktreeManager {
     return resolveInside(this.#root, path, agentNick);
   }
 
+  #statusExtra(): readonly string[] {
+    return this.#hardened ? [IGNORE_SUBMODULES] : [];
+  }
+
+  /**
+   * The argv prefix of a git call on the worktree. Not hardened: `-C <worktree>` (unchanged).
+   * Hardened (Requirement 9.2): `--git-dir=<recorded>` and `--work-tree=<worktree>`, so the
+   * agent-writable `.git` file is never read.
+   */
+  async #prefix(channel: string, realPath: string): Promise<readonly string[]> {
+    if (!this.#hardened) return ["-C", realPath];
+    const gitDir = await this.#gitDirOf(channel, realPath);
+    return [...HARDENED_GIT_CONFIG, `--git-dir=${gitDir}`, `--work-tree=${realPath}`];
+  }
+
+  /**
+   * Requirement 9.1: the worktree's git dir, from the repository side only. The worktree must be
+   * listed by `git -C <repo> worktree list --porcelain`; its admin directory is found by the
+   * `gitdir` files under `<common dir>/worktrees/` (host-owned), never by the `.git` file.
+   */
+  async #gitDirOf(channel: string, realPath: string): Promise<string> {
+    const known = this.#gitDirs.get(realPath);
+    if (known !== undefined) return known;
+    try {
+      const list = await this.#git.run(["-C", this.#repo, "worktree", "list", "--porcelain"]);
+      const listed = list.stdout
+        .split("\n")
+        .filter((l) => l.startsWith("worktree "))
+        .map((l) => l.slice("worktree ".length));
+      const resolved = await Promise.all(listed.map((p) => realOrSelf(p)));
+      if (!resolved.includes(realPath)) throw new Error(`${realPath} is not a registered worktree of ${this.#repo}`);
+      const common = (await this.#git.run(["-C", this.#repo, "rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout.trim();
+      const adminRoot = join(await realOrSelf(common), "worktrees");
+      for (const name of await readdir(adminRoot)) {
+        let target: string;
+        try {
+          target = (await readFile(join(adminRoot, name, "gitdir"), "utf8")).trim();
+        } catch {
+          continue;
+        }
+        if (!isAbsolute(target)) continue;
+        if ((await realOrSelf(dirname(target))) !== realPath) continue;
+        const gitDir = join(adminRoot, name);
+        this.#gitDirs.set(realPath, gitDir);
+        return gitDir;
+      }
+      throw new Error(`no admin directory under ${adminRoot} points at ${realPath}`);
+    } catch (err) {
+      throw new WorktreeError(channel, "inspect", `cannot record the git dir: ${message(err)}`);
+    }
+  }
+
+  /**
+   * Requirement 9.3, 9.4: the worktree's `.git` must be a regular file holding `gitdir: <recorded>`.
+   * Anything else (other content, a directory, a symlink) is replaced through a temp file and a
+   * rename, which never follows a symlink. Returns true when it had to repair.
+   */
+  async #restoreDotGit(channel: string, realPath: string): Promise<boolean> {
+    const gitDir = await this.#gitDirOf(channel, realPath);
+    const dotGit = join(realPath, ".git");
+    let ok = false;
+    try {
+      const st = await lstat(dotGit);
+      if (st.isFile()) {
+        const text = (await readFile(dotGit, "utf8")).trim();
+        const m = /^gitdir: (.+)$/.exec(text);
+        ok = m !== null && (m[1] === gitDir || (await realOrSelf(m[1] ?? "")) === gitDir);
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw new WorktreeError(channel, "inspect", `cannot read .git: ${message(err)}`);
+      }
+    }
+    if (ok) return false;
+    try {
+      const st = await lstat(dotGit).catch(() => undefined);
+      if (st?.isDirectory() === true) await rm(dotGit, { recursive: true, force: true });
+      const tmp = join(realPath, `.git.seance-${randomBytes(4).toString("hex")}`);
+      await writeFile(tmp, `gitdir: ${gitDir}\n`, { flag: "wx", mode: 0o644 });
+      await rename(tmp, dotGit);
+    } catch (err) {
+      throw new WorktreeError(channel, "inspect", `cannot restore .git: ${message(err)}`);
+    }
+    return true;
+  }
+
   async #sparse(channel: string, realPath: string): Promise<void> {
     try {
-      await this.#git.run(["-C", realPath, "sparse-checkout", "set", "--no-cone", ...SPARSE_PATTERNS]);
+      const wt = await this.#prefix(channel, realPath);
+      await this.#git.run([...wt, "sparse-checkout", "set", "--no-cone", ...SPARSE_PATTERNS]);
     } catch (err) {
       throw new WorktreeError(channel, "sparse-checkout", message(err));
     }
@@ -258,8 +465,9 @@ export class WorktreeManager {
 
   /** The commit the channel branch started from: the stored base, else the merge-base with the repo HEAD. */
   async #base(channel: string, realPath: string): Promise<string> {
+    const wt = await this.#prefix(channel, realPath);
     try {
-      const { stdout } = await this.#git.run(["-C", realPath, "config", "--worktree", "--get", BASE_CONFIG_KEY]);
+      const { stdout } = await this.#git.run([...wt, "config", "--worktree", "--get", BASE_CONFIG_KEY]);
       const stored = stdout.trim();
       if (stored !== "") return stored;
     } catch (err) {
@@ -267,7 +475,7 @@ export class WorktreeManager {
     }
     try {
       const head = (await this.#git.run(["-C", this.#repo, "rev-parse", "HEAD"])).stdout.trim();
-      const { stdout } = await this.#git.run(["-C", realPath, "merge-base", "HEAD", head]);
+      const { stdout } = await this.#git.run([...wt, "merge-base", "HEAD", head]);
       return stdout.trim();
     } catch (err) {
       throw new WorktreeError(channel, "inspect", `cannot determine the base commit: ${message(err)}`);
@@ -277,16 +485,9 @@ export class WorktreeManager {
   /** Protected paths touched by `git diff --name-only <base>..HEAD`. */
   async #committedHits(channel: string, realPath: string): Promise<readonly string[]> {
     const base = await this.#base(channel, realPath);
+    const wt = await this.#prefix(channel, realPath);
     try {
-      const { stdout } = await this.#git.run([
-        "-C",
-        realPath,
-        "diff",
-        "--name-only",
-        "--no-renames",
-        "-z",
-        `${base}..HEAD`,
-      ]);
+      const { stdout } = await this.#git.run([...wt, "diff", "--name-only", "--no-renames", "-z", `${base}..HEAD`]);
       return protectedPaths(stdout);
     } catch (err) {
       throw new WorktreeError(channel, "inspect", message(err));
@@ -303,7 +504,8 @@ export class WorktreeManager {
 
   async #toplevel(channel: string, realPath: string): Promise<string> {
     try {
-      const { stdout } = await this.#git.run(["-C", realPath, "rev-parse", "--show-toplevel"]);
+      const wt = await this.#prefix(channel, realPath);
+      const { stdout } = await this.#git.run([...wt, "rev-parse", "--show-toplevel"]);
       return await realpath(stdout.trim());
     } catch (err) {
       throw new WorktreeError(channel, "inspect", message(err));
@@ -345,8 +547,9 @@ export class WorktreeManager {
     await this.#sparse(channel, realPath);
     if (!branchExisted) {
       try {
-        const head = (await this.#git.run(["-C", realPath, "rev-parse", "HEAD"])).stdout.trim();
-        await this.#git.run(["-C", realPath, "config", "--worktree", BASE_CONFIG_KEY, head]);
+        const wt = await this.#prefix(channel, realPath);
+        const head = (await this.#git.run([...wt, "rev-parse", "HEAD"])).stdout.trim();
+        await this.#git.run([...wt, "config", "--worktree", BASE_CONFIG_KEY, head]);
       } catch (err) {
         throw new WorktreeError(channel, "worktree-config", message(err));
       }

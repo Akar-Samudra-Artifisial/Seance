@@ -171,3 +171,28 @@ describe("AgentRegistry", () => {
     });
   });
 });
+
+describe("kiroAgent in podman mode (agent-sandbox Requirement 4.5)", () => {
+  const silent: RunnerLogger = { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined };
+
+  it("accepts flag-safe names and skips the others only when sandboxed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "seance-reg-sbx-"));
+    try {
+      const profile = (nick: string, kiroAgent: string): string => JSON.stringify({ nick, kiroAgent, model: "m", tools: "t", color: 1 });
+      await writeFile(join(dir, "a.json"), profile("good", "coder.v2_x-1"));
+      await writeFile(join(dir, "b.json"), profile("dash", "-rf"));
+      await writeFile(join(dir, "c.json"), profile("spaced", "my agent"));
+      const plain = await AgentRegistry.load(dir, silent);
+      expect(plain.all().map((p) => p.nick)).toEqual(["good", "dash", "spaced"]);
+      const sandboxed = await AgentRegistry.load(dir, silent, { sandboxed: true });
+      expect(sandboxed.all().map((p) => p.nick)).toEqual(["good"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("the repository's agents pass the podman rule", async () => {
+    const reg = await AgentRegistry.load(repoAgents, silent, { sandboxed: true });
+    expect(reg.all().length).toBeGreaterThan(0);
+  });
+});

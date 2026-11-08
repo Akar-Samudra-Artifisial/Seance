@@ -1,0 +1,17 @@
+#!/bin/sh
+# Entrypoint of the Séance sandbox image (agent-sandbox Requirement 5.6, design D5).
+# Stages the read-only Kiro login state into the tmpfs $HOME, so token refresh works and nothing is
+# written back to the host, then runs kiro-cli with the arguments podman passed (`acp --agent <name>`).
+set -eu
+
+auth=/run/seance/auth
+target="${HOME:-/home/agent}/.local/share/kiro-cli"
+
+if [ -d "$auth" ]; then
+  mkdir -p "$target"
+  # -R without -p: files become owned by the container user; permissions stay private.
+  cp -R "$auth/." "$target/"
+  chmod -R go-rwx "$target"
+fi
+
+exec "${SEANCE_KIRO_BIN:-kiro-cli}" "$@"

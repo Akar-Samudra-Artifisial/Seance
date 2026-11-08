@@ -363,7 +363,39 @@ describe("scanConfig", () => {
       expect(await scanConfig(dir)).toEqual([]);
       await mkdir(join(dir, "sub", ".git"), { recursive: true });
       await writeFile(join(dir, "sub", ".git", "AGENTS.md"), "");
-      expect(await scanConfig(dir)).toEqual([join("sub", ".git", "AGENTS.md")]);
+      // agent-sandbox review finding 1: a nested .git is itself refused (and not descended into),
+      // so the entry is reported as `sub/.git`, not as the AGENTS.md inside it.
+      expect(await scanConfig(dir)).toEqual([join("sub", ".git")]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a nested .git as a directory or a file, and .gitmodules at any depth, any case (review finding 1)", async () => {
+    const dir = await tempDir();
+    try {
+      await mkdir(join(dir, "a", ".git"), { recursive: true });
+      await mkdir(join(dir, "b"), { recursive: true });
+      await writeFile(join(dir, "b", ".GIT"), "gitdir: /elsewhere\n");
+      await writeFile(join(dir, ".gitmodules"), "");
+      await mkdir(join(dir, "c", "d"), { recursive: true });
+      await writeFile(join(dir, "c", "d", ".GitModules"), "");
+      await writeFile(join(dir, ".gitignore"), ""); // an ordinary dotfile stays allowed
+      await writeFile(join(dir, ".github"), "");
+      expect(await scanConfig(dir)).toEqual(
+        [".gitmodules", join("a", ".git"), join("b", ".GIT"), join("c", "d", ".GitModules")].sort(),
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not descend into a found nested .git", async () => {
+    const dir = await tempDir();
+    try {
+      await mkdir(join(dir, "sub", ".git", "deep"), { recursive: true });
+      await writeFile(join(dir, "sub", ".git", "deep", "AGENTS.md"), "");
+      expect(await scanConfig(dir)).toEqual([join("sub", ".git")]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

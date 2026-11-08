@@ -1,0 +1,36 @@
+// agent-sandbox Requirement 2.1 to 2.3: IRCD_PUBLIC parsing and the startup refusal, before any
+// listener (main() calls checkPublicStartup first and exits 1 on a throw).
+import { describe, expect, it } from "vitest";
+import { checkPublicStartup, parsePublic, PublicConfigError } from "../src/public-guard.js";
+
+describe("IRCD_PUBLIC (2.1)", () => {
+  it.each([
+    [undefined, false],
+    ["", false],
+    ["0", false],
+    ["1", true],
+  ])("%j -> %s", (raw, expected) => {
+    expect(parsePublic(raw)).toBe(expected);
+  });
+
+  it.each(["true", "yes", "2", " 1"])("%j stops startup naming the variable", (raw) => {
+    expect(() => parsePublic(raw)).toThrow(PublicConfigError);
+    expect(() => parsePublic(raw)).toThrow(/IRCD_PUBLIC/);
+  });
+});
+
+describe("checkPublicStartup (2.2, 2.3)", () => {
+  it("refuses a public server with the runner and no podman sandbox, naming both variables", () => {
+    for (const sandbox of [undefined, "", "none", "docker"]) {
+      expect(() => checkPublicStartup({ IRCD_PUBLIC: "1", SEANCE_RUNNER: "1", SEANCE_SANDBOX: sandbox })).toThrow(
+        /IRCD_PUBLIC.*SEANCE_SANDBOX/,
+      );
+    }
+  });
+
+  it("accepts a public server with the sandbox, or without the runner", () => {
+    expect(checkPublicStartup({ IRCD_PUBLIC: "1", SEANCE_RUNNER: "1", SEANCE_SANDBOX: "podman" })).toEqual({ publicDeployment: true });
+    expect(checkPublicStartup({ IRCD_PUBLIC: "1" })).toEqual({ publicDeployment: true });
+    expect(checkPublicStartup({ SEANCE_RUNNER: "1" })).toEqual({ publicDeployment: false });
+  });
+});

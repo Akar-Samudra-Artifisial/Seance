@@ -293,12 +293,21 @@ The agent runner is configured through environment variables only. They are vali
 | `SEANCE_WORKSPACES` | none, required | Not blank. Created if missing; its real path becomes the worktree root |
 | `SEANCE_PROMPT_TIMEOUT_MS` | `120000` | Positive integer (digits only). Maximum time a single prompt may run |
 | `SEANCE_CHANNEL_CREDIT_CAP` | unset (no cap) | Finite number greater than 0. Per-channel credit limit |
-| `KIRO_API_KEY` | unset | Optional. Read from the environment only; never taken from a file or flag, never logged, and passed only to the agent child process |
+| `KIRO_API_KEY` | unset | Optional. Read from the environment only; never taken from a file or flag, never logged, and passed only to the agent child process in `none` mode. In podman mode it is never forwarded (a warning is logged once) |
 | `SEANCE_INVITE_RATE` | `5` | Positive integer (digits only). Rate limit applied to invitations of agents |
 | `SEANCE_INVITERS` | unset (everyone may invite, loopback only) | Comma-separated nicks, each valid as an IRC nick after trimming. A blank value counts as unset. The same list gates private `/msg` sessions with agents (at most 1 per human and 4 in total). When unset, the runner starts only if `IRCD_HOST` is a loopback address (`127.0.0.1`, `::1`, `localhost`); otherwise startup fails with a `ConfigError` naming `SEANCE_INVITERS`. An unset `IRCD_HOST` binds all interfaces and counts as non-loopback |
 | `SEANCE_AGENTS_DIR` | `<cwd>/agents` | Not blank, and must be an existing directory. The agent processes start with this directory as their working directory |
 | `SEANCE_KIRO_BIN` | `kiro-cli` | Not blank. Path or name of the Kiro CLI executable |
 | `SEANCE_E2E_KIRO` | unset | `1` enables the end-to-end test against the real `kiro-cli`. Used by the test suite only |
+| `IRCD_PUBLIC` | unset | `1` marks a public deployment; unset, empty or `0` do not. Any other value stops startup. With `IRCD_PUBLIC=1` and `SEANCE_RUNNER=1` the server refuses to start unless `SEANCE_SANDBOX=podman` |
+| `SEANCE_SANDBOX` | `none` | `none` or `podman`. `podman` runs every agent in a rootless container ([docs/SANDBOX.md](./docs/SANDBOX.md)); Linux only. The variables below are read only in this mode |
+| `SEANCE_SANDBOX_IMAGE` | none, required | Pinned by digest: `<name>@sha256:<64 hex>`, built from `sandbox/Dockerfile`. Never pulled |
+| `SEANCE_SANDBOX_AUTH_DIR` | none, required | Existing directory with the Kiro login state, mounted read-only. `KIRO_API_KEY` is never forwarded into a container |
+| `SEANCE_PODMAN_BIN` | `podman` | Path or name of Podman 5 or newer, rootless |
+| `SEANCE_SANDBOX_MEMORY` / `_CPUS` / `_PIDS` / `_TIMEOUT_S` | `2g` / `2` / `256` / `86400` | `<n>k\|m\|g`; decimal above 0 up to 64; integer 16 to 4096; integer 60 to 604800 seconds |
+| `SEANCE_SANDBOX_KIRO_BIN` | `kiro-cli` | Command name inside the image; `SEANCE_KIRO_BIN` is ignored in podman mode |
+| `SEANCE_SANDBOX_EGRESS_PROBES` | `1.1.1.1:443` | Up to 8 `<IPv4>:<port>` targets the start-up probe must not reach, in every podman start |
+| `SEANCE_SANDBOX_BLOCKED_CIDRS` | unset | Up to 8 IPv4 CIDRs the host rule blocks (VPC, private ranges); the probe tries one address inside each |
 
 **Services and loop guard.** The nicks `ChanServ` and `NickServ` are reserved (a `NICK` with either gets `432`, an agent profile may not use them). The runner speaks through them with `NOTICE`s that state facts it just observed: `-ChanServ- worktree ready: workspaces/<channel> @ <sha>` when a channel worktree is created, `-ChanServ- session cancelled|closed, worktree reset to <sha>` and `-ChanServ- N files reverted · X.XX credits used` after a kick, and `-NickServ- agents online: ...` when a human connects. An agent's channel line prompts another agent only when it names it, and each agent answers other agents at most 3 times per channel until a voiced or op human speaks again. No new environment variable.
 
@@ -348,7 +357,7 @@ Work in progress for the Kiroween 2026 deadline (4 December 2026).
 | Agent runner (ACP, worktrees, permissions, exorcism, credits) | `agent-runner` | Done |
 | Web client | `web-client-basic`, `web-client-polish`, `web-client-pixel-match` | Done |
 | `ChanServ` / `NickServ` status notices from the runner, agent-to-agent loop guard | `runner-services` | Done |
-| Rootless Podman sandbox per agent and channel | `agent-sandbox` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Specified, not built |
+| Rootless Podman sandbox per agent and channel | `agent-sandbox` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Built and tested with a fake Podman; the real-Podman run on Linux (EC2) is pending |
 | Public deployment for judges (VPS, TLS, `PASS` accounts) | — | Planned |
 
 Also on the list from [DESIGN.md](./DESIGN.md): `/ban` for agents, persistent logs and audit trail in Postgres, CTCP `VERSION`/`PING`, an Options dialog for models, a channel list window and the Classic theme.
@@ -375,7 +384,7 @@ Séance lets AI agents act on a codebase from a chat channel, so the rules in [.
 - **Web client**: a nonce-based Content Security Policy whose `connect-src` allows only the configured ircd origin.
 - **Secrets**: `KIRO_API_KEY` is read from the environment only, never logged, and passed only to the agent process.
 
-Not yet: agents run as plain processes of the runner's user. The container sandbox in [docs/SANDBOX.md](./docs/SANDBOX.md) is designed but not implemented, so do not expose the runner on a public server yet.
+With `SEANCE_SANDBOX=podman` every agent runs in a rootless Podman container that sees one worktree, a read-only agents directory and a read-only copy of the Kiro login; the runner commits an op agent's changes on the host after each turn ([docs/SANDBOX.md](./docs/SANDBOX.md)). The default `none` runs agents as plain processes of the runner's user, for local development only. The sandbox has not yet been run against a real Podman on Linux, so treat a public deployment as unverified until that run (spec `agent-sandbox`, task 0.4) has passed.
 
 ## License
 

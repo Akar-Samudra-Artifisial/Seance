@@ -1,6 +1,7 @@
 import type { TimerSet } from "../clock.js";
 import type { RunnerLogger } from "../log.js";
 import type { HostVirtualClient, IrcHost } from "../ports.js";
+import { SandboxError } from "../sandbox/errors.js";
 import { inviteKey } from "../session/session-manager.js";
 import type { SessionManager } from "../session/session-manager.js";
 import type { Session } from "../session/session.js";
@@ -129,6 +130,14 @@ async function run(deps: ExorcismDeps, session: Session, trigger: ExorcismTrigge
         channel,
         reason: messageOf(err),
       });
+      // agent-sandbox Requirement 10.3: a container that could not be removed is reported once.
+      if (err instanceof SandboxError && err.kind === "remove-failed") {
+        try {
+          deps.report(channel, `${agent}: sandbox container not removed in ${channel}; retried at the next sweep`);
+        } catch (reportErr) {
+          deps.logger.error("exorcism: error report failed", { channel, reason: messageOf(reportErr) });
+        }
+      }
     }
   }
 

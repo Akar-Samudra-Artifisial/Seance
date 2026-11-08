@@ -75,21 +75,26 @@ Any failure before `session/new` returns raises a `SandboxError`; the invite pip
 | # | Decision | Why |
 |---|---|---|
 | D1 | One container per (agent, Session_Cwd). `AcpHarness` keys processes by `nick` in `none` mode and by `nick\0cwd` in podman mode. | A container's mounts are fixed at start. One container for all channels of an agent would need all worktrees mounted, which defeats the isolation. Cost: a 2 to 3 s process start per channel (spike S1), inside the 30 s `session/new` budget. |
-| D2 | Three bind mounts: worktree rw, agents dir ro, auth ro. Plus tmpfs for `/tmp` and `$HOME`. | The brief asks for the worktree and auth. The agents dir is the one addition, forced by S8. It holds profiles (prompts, tool lists) and no secrets. |
-| D3 | No git metadata in the container. | Mounting `.git/worktrees/<name>`, `objects/` or `refs/` exposes state shared by other channels, and `config.worktree` is read by the host's git. A single-file mount of a ref cannot work (git replaces refs by rename). Cost: no `git commit` inside the sandbox (Open Point 1). |
+| D2 | Three bind mounts, always: worktree rw, agents dir ro, auth ro. Plus tmpfs for `/tmp` and `$HOME`. | The brief asks for the worktree and auth. The agents dir is the one addition, forced by S8. It holds profiles (prompts, tool lists) and no secrets. |
+| D3 | No git metadata in the container. | Mounting `.git/worktrees/<name>`, `objects/` or `refs/` exposes state shared by other channels, and `config.worktree` is read by the host's git. A single-file mount of a ref cannot work (git replaces refs by rename). Cost: no `git commit` inside the sandbox; the runner commits on the host instead (D17). |
 | D4 | Host git calls use `--git-dir`/`--work-tree` recorded from the repository side, and `.git` is verified and restored before every prompt. | With the worktree writable from a container, the `.git` file is attacker-controlled input. Without D4 the escape is: rewrite `.git`, wait for the runner's next `git status`, get code execution through `core.fsmonitor` as the runner user. |
 | D5 | The auth dir is mounted at `/run/seance/auth` and copied into tmpfs `$HOME` by the image entrypoint. | A direct read-only mount of an SQLite login database can fail (journal files) and token refresh cannot persist anyway (issue 4847). Staging works with both, and nothing returns to the host. |
-| D6 | `--network=pasta:--no-map-gw,--ipv4-only`. The metadata endpoint is blocked by a host nftables rule on the runner's Unix user; a Probe verifies both at every boot. | Rootless Podman has no destination filter. Pasta makes outbound connections from the host side, so a hop-limit trick does not help; only a host rule matched by user does. The Probe makes a missing rule a boot failure on a cloud VM. |
+| D6 | `--network=pasta:--no-map-gw,--ipv4-only`. The metadata endpoint, the VPC and non-allow-listed destinations are blocked by a host nftables rule on the runner's Unix user (D19); a Probe verifies them at every boot. | Rootless Podman has no destination filter. Pasta makes outbound connections from the host side, so a hop-limit trick does not help; only a host rule matched by user does. The Probe makes a missing rule a boot failure on a cloud VM. |
 | D7 | Container identity: name `seance-<nick>-<hash>-<rand>` and three labels; stop/remove by name; sweep by label at start and shutdown; `--timeout` as a backstop. | Killing the `podman run` client is not enough (SIGKILL leaves the container). Names make removal precise, labels make a crash recoverable, the timeout ends orphans even when the runner never returns. |
 | D8 | Preflight at `start()` plus cheap re-checks before every start; no fallback to host processes, ever. | Fail closed (brief). A podman removed after boot must not turn into a host spawn. |
 | D9 | Mounts use `--mount type=bind,...`, not `-v`; paths with `,` `"` NUL CR LF are refused. | `--mount` is a CSV list, so a comma in a path would inject options. `-v` would hide that behind colon parsing. |
-| D10 | Values never travel in argv: `-e NAME` only. | Keeps `KIRO_API_KEY` out of `ps` and logs. |
+| D10 | Values never travel in argv: `-e NAME` only. | Keeps values out of `ps` and logs. `KIRO_API_KEY` is not forwarded at all (D18). |
 | D11 | `--http-proxy=false`, `--no-hosts`, `--log-driver=none`, `--pull=never`. | Podman forwards host proxy variables by default; `/etc/hosts` leaks host names; the default log driver would store ACP traffic on disk; a pull at start is a supply-chain and latency risk. |
 | D12 | Podman 5 or newer, Linux, rootless only. | Pasta is the default network from 5.0; `keep-id:uid=,gid=` needs 4.3 or newer. |
 | D13 | Headless harness is refused in podman mode. | One process per prompt with no stable cwd; not worth a second sandbox path. |
 | D14 | Every Podman spelling that may differ between versions lives in `apps/runner/src/sandbox/flags.ts` (mount option names, network value, userns value, tmpfs options). | Spike S12 cannot run on the development Mac. If a spelling is wrong, the fix is one file, and tests that compare to `flags.ts` constants stay valid. |
 | D15 | A changed `.git` file is reported through the existing guard result: `guardBeforePrompt` returns `{ ok: false, paths: [".git"] }` after it restored the file and reset the worktree. | The Session already turns a failed guard into a dropped prompt and an ops notice, so no new notification path is added. |
-| D16 | Host-only steps (running the spike scripts, the real-Podman suite, loading the nftables template, the VPS kick check) are operator steps listed in the Notes of `tasks.md`, not coding tasks. | They need a Linux host with Podman 5 and, for the nftables check, a cloud VM; the repository ships the scripts, the template and the tests. |
+| D16 | Host-only steps (running the spike scripts, the real-Podman suite, loading the nftables template, the VPS kick check) are operator steps listed in the Notes of `tasks.md`, not coding tasks. Spike S12 is task 0.4, marked "run on EC2", and no task depends on it. | They need a Linux host with Podman 5 and, for the nftables check, a cloud VM; the repository ships the scripts, the template and the tests. |
+| D17 | Host-side commit after each `end_turn` of a `+o` agent in podman mode (Open Point 1, decision 1). `Session` gets an optional async `afterTurn` hook that runs between the end of `session/prompt` and `turn-ended`; `TurnCommitter` checks the mode and calls `WorktreeManager.commitTurn`, which uses the hardened git of D4 with hooks and signing off. | The agent keeps no git metadata (D3), yet Journey A's "coder commits" still works. Running inside the turn keeps the next prompt out until the commit is done, and only the runner's own git, with config it controls, touches the repository. Option C (a commit command for Human_Ops) stays a later spec. |
+| D18 | The Kiro credential is only the read-only Auth_Dir mount (decision 2). `SEANCE_SANDBOX_AUTH_DIR` is required in podman mode; `KIRO_API_KEY` is never forwarded and never put in the `podman` process environment. | An environment variable is visible to every process in the container and to `podman inspect`; a staged copy in tmpfs is not. The agent can still read the staged files, which `docs/SANDBOX.md` names as the residual exfiltration risk. |
+| D19 | Egress default deny on the host for the runner's user: DNS to the resolver, TCP 443 to an address set built from `sandbox/egress-allow.txt`, loopback for the runner's own services; `169.254.0.0/16` and the VPC CIDR dropped first (decision 3). In a public deployment the Probe also tries `SEANCE_SANDBOX_EGRESS_PROBES` (default `1.1.1.1:443`). | nftables filters addresses, so names are resolved by `seance-egress-refresh` on a timer. The Probe turns a missing default-deny rule into a boot failure on the public host without making podman mode unusable on a developer's Linux box. |
+| D20 | `SEANCE_SANDBOX_IMAGE` must be `name@sha256:<digest>`; the image is built from `sandbox/Dockerfile`, whose `FROM` is pinned by digest (decision 5). | A tag can move; a digest cannot. `podman image inspect --format '{{.Digest}}'` gives the digest of a locally built image. |
+| D21 | Bind mounts carry `relabel=shared` (`:z`), except the private session directory, which carries `relabel=private` (`:Z`) (decision 6). | `:Z` gives the path a label private to one container; a second agent of the same channel, or any other container mounting the agents or auth directory, would then be denied. The spellings live in `flags.ts`. |
 
 ## Components and Interfaces
 
@@ -100,13 +105,14 @@ export type SandboxMode = "none" | "podman";
 export interface PodmanSandboxConfig {
   readonly mode: "podman";
   readonly podmanBin: string;
-  readonly image: string;
-  readonly authDir: string | undefined;
+  readonly image: string;       // name@sha256:<64 hex> (D20)
+  readonly authDir: string;     // required (D18)
   readonly memory: string;      // e.g. "2g"
   readonly cpus: string;        // e.g. "2"
   readonly pids: number;
   readonly timeoutS: number;
   readonly kiroBin: string;     // command inside the image
+  readonly egressProbes: readonly string[]; // "ip:port", Probe targets in a public deployment (D19)
 }
 export type SandboxConfig = { readonly mode: "none" } | PodmanSandboxConfig;
 // RunnerConfig gains: readonly sandbox: SandboxConfig
@@ -156,7 +162,7 @@ export interface PodmanExec { run(bin: string, args: readonly string[], env: Env
 
 export class PodmanLauncher {
   constructor(o: { config: PodmanSandboxConfig; agentsDir: string; worktreeRoot: string;
-                   exec?: PodmanExec; logger: RunnerLogger; random?: () => string });
+                   publicDeployment: boolean; exec?: PodmanExec; logger: RunnerLogger; random?: () => string });
   preflight(): Promise<void>;                        // R3, incl. Probe with an ephemeral host loopback listener, always closed
   quickCheck(): Promise<void>;                       // R3.5: version and image checks only
   spec(profile, sessionCwd, env): Promise<SandboxSpec>; // { command, args, cwd, env, containerName }
@@ -170,7 +176,28 @@ export class PodmanLauncher {
 - `remove` stops with `stop -t 2`, then runs `rm -f --ignore`. A removal that fails is remembered in a set and retried by the next `sweep`.
 - Outside the label sweep, only names created in this run are removed.
 - `quickCheck` re-runs the version and image checks only.
-- `preflight` opens an ephemeral listener on the host's `127.0.0.1`, runs the Probe with that port and always closes the listener.
+- `preflight` opens an ephemeral listener on the host's `127.0.0.1`, runs the Probe with that port (and, when `publicDeployment`, the egress probe targets) and always closes the listener.
+
+### Host-side commit (`apps/runner/src/worktree/turn-committer.ts`, D17)
+
+```ts
+// WorktreeManager
+commitTurn(channel: string, agent: string): Promise<
+  | { readonly kind: "committed"; readonly sha: string; readonly files: number }
+  | { readonly kind: "clean" }
+  | { readonly kind: "refused"; readonly paths: readonly string[] }>;
+
+// turn-committer.ts
+export function createTurnCommitter(d: {
+  host: Pick<IrcHost, "modeOf">; worktrees: Pick<WorktreeManager, "commitTurn">;
+  logger: RunnerLogger; chanServ?: (channel: string, text: string) => void;
+  opNotice: (channel: string, text: string) => void;
+}): (agent: string, channel: string) => Promise<void>;   // never rejects
+```
+
+- `Session` gains `SessionDeps.afterTurn?: () => Promise<void>`. `#sendPrompt` awaits it only for `end_turn`, while the model is `prompting` and not `closing`, then posts `turn-ended`. A `send-cancel` effect while it runs sends nothing (the turn is over).
+- `buildChannelSession` passes `afterTurn` when `ChannelSessionDeps.commitTurn` is set; `runner.ts` sets it only in podman mode. Private sessions never get it.
+- `commitTurn` runs under the git mutex: `scanConfig` (hit → `refused`), `status --porcelain=v1 -z --untracked-files=all` (empty → `clean`), `add --all`, `commit` with the options of Requirement 14.2, `rev-parse --short=7 HEAD`. All through the hardened prefix of D4.
 
 ### Spawn and harness
 
@@ -194,11 +221,12 @@ export class PodmanLauncher {
 
 ### Image (`sandbox/`, shipped in the repo)
 
-- `sandbox/Containerfile`: base image chosen by the operator (debian slim by default, pinned by digest in the file), `useradd -u 10001 agent`, `kiro-cli` binary copied from the build context, `seance-entry`, `seance-probe`, `nc` from busybox or netcat-openbsd, `USER 10001`, `ENTRYPOINT ["/usr/local/bin/seance-entry"]`.
+- `sandbox/Dockerfile`: `FROM docker.io/library/debian:bookworm-slim@sha256:<digest>` (D20), `useradd -u 10001 agent`, `kiro-cli` binary copied from the build context, `seance-entry`, `seance-probe`, `nc` from netcat-openbsd, `USER 10001`, `ENTRYPOINT ["/usr/local/bin/seance-entry"]`.
 - `seance-entry`: if `/run/seance/auth` exists, `cp -a /run/seance/auth/. "$HOME/.local/share/kiro-cli/"`; then `exec "${SEANCE_KIRO_BIN:-kiro-cli}" "$@"`.
-- `seance-probe <port>`: reads the default gateway from `/proc/net/route`; exit `10` if `<gateway>:<port>` connects, `11` if `169.254.169.254:80` connects, `12` if `nc` is missing, `0` otherwise.
-- `sandbox/seance-sandbox.nft`: the nftables template that drops `169.254.0.0/16` for the runner's Unix user (placeholder for the user name). It is loaded by the operator, never by the runner.
-- Test image (`apps/runner/test/fixtures/sandbox/Containerfile`): node base, `fake-agent.ts` and `fake-kiro` baked in, `kiro-cli` symlink, same entry and probe.
+- `seance-probe <port> [ip:port ...]`: reads the default gateway from `/proc/net/route`; exit `10` if `<gateway>:<port>` connects, `11` if `169.254.169.254:80` connects, `13` if any extra target connects, `12` if `nc` is missing, `0` otherwise.
+- `sandbox/seance-sandbox.nft`: the nftables template of D19 with placeholders `@RUNNER_USER@`, `@VPC_CIDR@`, `@RESOLVER@` and the empty set `seance_allow4`. Loaded by the operator, never by the runner.
+- `sandbox/egress-allow.txt` and `sandbox/seance-egress-refresh`: the host names of the allow-list and the POSIX sh script that resolves them (`getent ahostsv4`) and replaces the set's elements in one `nft -f` transaction.
+- Test image (`apps/runner/test/fixtures/sandbox/Dockerfile`): node base pinned by digest, `fake-agent.ts` and `fake-kiro` baked in, `kiro-cli` symlink, same entry and probe.
 
 ## The generated command
 
@@ -213,13 +241,15 @@ podman run -i --rm --name=seance-coder-1a2b3c4d-9f8e7d6c
   --network=pasta:--no-map-gw,--ipv4-only
   --tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m
   --tmpfs=/home/agent:rw,nosuid,nodev,size=256m
-  --mount=type=bind,src=<wt>,dst=<wt>,rw,bind-propagation=rprivate,nosuid,nodev   # see note
-  --mount=type=bind,src=<agents>,dst=<agents>,ro,bind-propagation=rprivate,nosuid,nodev
-  --mount=type=bind,src=<auth>,dst=/run/seance/auth,ro,bind-propagation=rprivate,nosuid,nodev
-  -e HOME=/home/agent -e TMPDIR=/tmp -e LANG -e TERM -e KIRO_API_KEY
+  --mount=type=bind,src=<wt>,dst=<wt>,rw,bind-propagation=rprivate,nosuid,nodev,relabel=shared   # see note
+  --mount=type=bind,src=<agents>,dst=<agents>,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared
+  --mount=type=bind,src=<auth>,dst=/run/seance/auth,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared
+  -e HOME=/home/agent -e TMPDIR=/tmp -e LANG -e TERM
   --workdir=<agents>
-  <image> acp --agent coder
+  <image>@sha256:<digest> acp --agent coder
 ```
+
+For a private session the first mount ends in `relabel=private` instead (D21). `KIRO_API_KEY` never appears (D18).
 
 Note: the option spellings in the `--mount`, `--tmpfs` and `--network` lines are the initial values of `flags.ts`. In a Podman `--mount` list the read-only option may need to be written `ro=true`. Spike S12 fixes the spelling against the installed Podman, and only `flags.ts` and `docs/SANDBOX.md` change. Constant environment values (`HOME`, `TMPDIR`) are literal `-e NAME=value` pairs; they are not host values.
 
@@ -257,7 +287,7 @@ All property tests use fast-check, at least 100 runs, named after the property I
 
 ### Property 1: Argv invariants
 
-For any valid input, the argv contains each required flag exactly once; exactly two bind mounts without auth, three with; mount sources and destinations equal the inputs; the element after the last flag is the image; what follows is exactly `acp --agent <kiroAgent>`; none of the forbidden flags of R4.2 occurs; no element contains NUL.
+For any valid input, the argv contains each required flag exactly once; exactly three bind mounts, each with one relabel option (`private` for a private session directory, `shared` otherwise); mount sources and destinations equal the inputs; the element after the last flag is the image; what follows is exactly `acp --agent <kiroAgent>`; none of the forbidden flags of R4.2 occurs; no element contains NUL.
 
 **Validates: Requirements 4.1, 4.2, 4.4, 5.1, 5.2**
 
@@ -269,7 +299,7 @@ For any input (including paths with spaces, `=`, `:` and a leading `-`), the mul
 
 ### Property 3: Environment
 
-Every `-e` element is `NAME` with `NAME` in the allowed set, or one of the two constant pairs. For a random secret `KIRO_API_KEY`, the secret does not occur in any argv element, in the `SandboxError` messages produced from that input, or in the notice text.
+Every `-e` element is `NAME` with `NAME` in the allowed set, or one of the two constant pairs; `KIRO_API_KEY` is never one of them, even when the input asks to forward it (it throws). For a random secret `KIRO_API_KEY` in the base environment, the secret does not occur in any argv element, in the `podman` process environment, in the `SandboxError` messages produced from that input, or in the notice text.
 
 **Validates: Requirements 6.1, 6.2, 6.4**
 
@@ -309,7 +339,7 @@ For any injected failure (podman missing, bad version, not rootless, image missi
 
 ## Testing strategy
 
-- **Unit:** `podman-args.test.ts`, `sandbox-config.test.ts`, `guard.test.ts`, `sandbox-paths.test.ts`, `sandbox-notices.test.ts`, and a hardened-git test in `worktree-hardening.test.ts` (R9.5).
+- **Unit:** `podman-args.test.ts`, `sandbox-config.test.ts`, `guard.test.ts`, `sandbox-paths.test.ts`, `sandbox-notices.test.ts`, a hardened-git test in `worktree-hardening.test.ts` (R9.5), `turn-commit.test.ts` against a temporary repository (R14, R12.7), and `sandbox-files.test.ts` for the digest pins and the probe and nft files (R12.8).
 - **Property:** `podman-args.property.test.ts` (P1 to P4), `sandbox-lifecycle.property.test.ts` (P5, P6).
 - **Fake podman:** `apps/runner/test/fixtures/fake-podman` (sh) records every call to a file and implements the subcommands of R12.3 with switches for: missing binary, old version, not rootless, missing image, probe exit codes 10 and 11, run exit 125, 126 and 127, slow start, and `rm` failure. Used by `sandbox-harness.test.ts` (kick removes the container, two channels give two containers, hung agent, process exit, `--timeout` exit and revival, failure notices, cleanup after a failed start) and by the launcher unit tests.
 - **Integration (real Podman):** `apps/ircd/test/runner/sandbox.integration.test.ts`, guarded by `it.skipIf(!podmanAvailable)` with `podmanAvailable` computed once from `podman info`. Skipped runs print the reason. Needs the runner built first (`pnpm --filter @seance/runner build`) because ircd tests import it from `dist`.
@@ -318,9 +348,11 @@ For any injected failure (podman missing, bad version, not rootless, image missi
 
 ## Open Points
 
-1. **Commits inside the sandbox.** With D3, `git commit` cannot run in the container, but `DESIGN.md` Journey A has `coder` commit after `+o`. Options: (A) mount git paths: rejected, see D3 and finding 4. (B) A self-contained clone per channel, fetched back by the runner: strongest isolation, but the host then reads a repository the agent controls (the same class of problem as D4) and the whole worktree manager changes. (C) A runner-side commit action: the agent edits files, a Human_Op (or the runner on `/msg ChanServ commit`) commits from the host with the hardened git of D4, authored by the agent. Small, keeps the trust boundary, needs its own spec. (D) Accept no commits in public mode for the first release. **Recommendation: D now, C next.** Decision needed from the user.
-2. **Credential exposure.** The agent can read the staged Kiro credential and, with an open network, send it out. Use a dedicated low-privilege `KIRO_API_KEY` with spend limits for the public host if Kiro offers it; rotate after the event. Not solvable inside the container.
-3. **Egress to internal networks.** `pasta` forwards to whatever the host can reach (VPC addresses, other hosts). A host nftables allow-list by destination for the runner's Unix user is the fix and is documented as recommended, not enforced.
-4. **Spike S12** is delivered as two scripts (`s12-podman.ts`, `s12-kiro-auth.ts`, tasks 0.1 and 0.2) that an operator runs on a Linux host with Podman 5. They check pasta option syntax, `keep-id` syntax, `--mount` option spelling, `--timeout`, `--http-proxy=false`, kiro-cli with staged auth under a read-only root and stop/remove timing. Results go to `spikes/acp/FINDINGS.md` and may change flag spelling in `flags.ts`, not the design.
-5. **Image supply.** The `kiro-cli` binary must be added to the image by the operator; its redistribution terms are not checked here. Pin the base image by digest.
-6. **SELinux** hosts need relabelling that this spec does not do.
+All six were decided by the user on 2026-11-08; the decisions are recorded in `requirements.md` and in D16 to D21.
+
+1. **Commits inside the sandbox.** Decided: no git inside the container; the runner commits on the host after each `end_turn` of a `+o` agent (option D with a host-side commit, D17, Requirement 14). Option C (a commit command for Human_Ops) is a later spec. Rejected earlier: (A) mounting git paths (D3, finding 4) and (B) a clone per channel.
+2. **Credential exposure.** Decided: read-only mount only, never in an environment (D18). Residual risk, documented in `docs/SANDBOX.md`: the agent can read the staged credential and send it to an allowed host. Use a dedicated low-privilege login for the public host and rotate it after the event.
+3. **Egress.** Decided: host default deny with `169.254.169.254` and the VPC CIDR dropped and HTTPS allowed only to the Kiro endpoints and package registries (D19, Requirement 7.3 to 7.8).
+4. **Spike S12.** Decided: kept as task 0.4, marked "run on EC2", blocking nothing. The scripts (`s12-podman.ts`, `s12-kiro-auth.ts`) check pasta option syntax, `keep-id` syntax, `--mount` option spelling including `relabel`, `--timeout`, `--http-proxy=false`, kiro-cli with staged auth under a read-only root and stop/remove timing. Results go to `spikes/acp/FINDINGS.md` and may change spellings in `flags.ts`, not the design.
+5. **Image supply.** Decided: `sandbox/Dockerfile` in the repository, base pinned by digest, runtime reference pinned by digest (D20). Still open for the operator: the `kiro-cli` binary is added to the build context by hand; its redistribution terms are not checked here.
+6. **SELinux.** Decided: enforcing hosts are supported with relabelled mounts (D21). `:Z` is used only where one container mounts the path; shared paths take `:z` (finding 8). Verified only by the argv tests here; a run on an enforcing host is part of task 0.4.

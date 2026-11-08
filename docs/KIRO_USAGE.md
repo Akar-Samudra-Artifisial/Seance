@@ -202,6 +202,16 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: only voiced or op humans reset agent counts, reset before the no-Session return, forget on last Session close, count released on failed revive, `~` as a mention boundary, unmoded-lurker integration case
 - Notes: dropping `~` from the nick set alone did nothing because `irc_lower` maps `~` to `^`, so boundaries are now read before lowering; a prompt-gate `vi.waitFor` timed out once under full parallel load and passed on re-run
 
+### 2026-11-08 — agent-sandbox decisions and implementation
+- Kiro features: spec agent-sandbox (Open Points 1 to 6 decided, tasks 0.1 to 10; 0.4 left for EC2), PBT (P1 to P6), steering (security, runner-acp, testing), hook (guard-shell), web research (Kiro endpoints, pinned base image digests)
+- Produced: `apps/runner/src/sandbox/*` (flags, argv builder, launcher, guard, notices), one container per agent and session dir, hardened host git with `.git` restore, host-side commits after +o turns, `IRCD_PUBLIC` guard, `sandbox/` Dockerfile, probe, nft default-deny rule and allow-list refresh, fake podman, S12 spike scripts
+- Notes: a new test shows a rewritten `.git` would otherwise run an attacker's `core.fsmonitor` on the host; `:Z` is used only for private sessions because shared worktrees need `:z`; guard-shell blocked an `rm -rf` on a test fixture dir; macOS `nc` ignores `-w`, so probe reachability is tested on Linux only
+
+### 2026-11-08 — agent-sandbox review fixes
+- Kiro features: spec agent-sandbox (new Requirement 15, tasks 11 to 16), PBT (CIDR probe target property, P5/P6 re-run), steering (security, testing), hook (guard-shell)
+- Produced: nested `.git` and `.gitmodules` refusal with hardened git overrides, per-(agent, cwd) open serialization, dispose that retires in-flight containers, egress probe on every podman start plus `SEANCE_SANDBOX_BLOCKED_CIDRS`, `KIRO_CLI_SHA256` build arg, name-based sweep
+- Notes: the two-turn PoC failed red first (the nested repo was committed as a gitlink); `git add` has no `--ignore-submodules`, checked against git 2.56; prompt-gate `vi.waitFor` timeouts failed 2 of 3 root runs, so only the wait time was raised
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.

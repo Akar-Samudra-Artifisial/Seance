@@ -11,6 +11,8 @@
     "s9": "node src/s9-session-cwd-config.ts",
     "s10": "node src/s10-nested-config.ts",
     "s11": "node src/s11-permission-frames.ts",
+    "s12": "node src/s12-podman.ts",
+    "s12-auth": "node src/s12-kiro-auth.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

@@ -51,6 +51,11 @@ export type SessionDeps = {
   /** Credit-blocked check for the channel (Req 10.10). */
   readonly isBlocked: (channel: string) => boolean;
   readonly logger?: RunnerLogger;
+  /**
+   * agent-sandbox Requirement 14: runs after a turn that ended `end_turn` while the Session was not
+   * closing, before `turn-ended` is posted, so the next prompt waits for it. Must not reject.
+   */
+  readonly afterTurn?: () => Promise<void>;
 };
 
 const MAX_NOTICE_BYTES = 512;
@@ -87,6 +92,8 @@ export class Session {
   #cooldownTimer: TimerHandle | undefined;
   /** Id of a prompt whose gate check is pending (no `session/prompt` sent yet). */
   #gating: number | undefined;
+  /** True while `afterTurn` runs: the turn is over, so a cancel must not reach the wire. */
+  #afterTurnRunning = false;
   #cancelDuringGate = false;
   #suppressNotify = false;
 
@@ -170,6 +177,8 @@ export class Session {
           this.#cancelDuringGate = true;
           return;
         }
+        // The turn already ended; only the host-side commit runs (agent-sandbox Requirement 14.5).
+        if (this.#afterTurnRunning) return;
         this.#deps.harnessSession.cancel();
         return;
       case "start-cooldown":
@@ -254,6 +263,18 @@ export class Session {
       outcome = { error: messageOf(err) };
     }
     if (this.#model.inFlight?.id !== prompt.id) return; // closed meanwhile
+    const afterTurn = this.#deps.afterTurn;
+    if (afterTurn !== undefined && outcome === "end_turn" && this.#model.state === "prompting" && !this.#model.closing) {
+      this.#afterTurnRunning = true;
+      try {
+        await afterTurn();
+      } catch (err) {
+        this.#deps.logger?.error("afterTurn hook failed", { agent: this.agent, channel: this.channel, reason: messageOf(err) });
+      } finally {
+        this.#afterTurnRunning = false;
+      }
+      if (this.#model.inFlight?.id !== prompt.id) return; // closed meanwhile
+    }
     this.#finish(outcome);
   }
 

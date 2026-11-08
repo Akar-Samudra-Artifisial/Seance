@@ -254,7 +254,7 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 | Risk | Mitigation |
 |---|---|
 | Credits | `+m` by default; per-channel credit cap; agent-to-agent replies capped at 3 per human line (runner-services Req 11); Haiku for researcher, Sonnet for coder; ChanServ/NickServ cost nothing (runner code, no model) |
-| Security | Shell only for `+o`; cwd locked to the worktree; deny-list hooks; Podman container (rootless, one per agent and channel; spec `agent-sandbox`, `docs/SANDBOX.md`; no `git commit` inside it yet, see Open Point 1 of that spec); only messages from human ops become instructions — everything else is wrapped in `<untrusted>`; agent output is never executed |
+| Security | Shell only for `+o`; cwd locked to the worktree; deny-list hooks; Podman container (rootless, one per agent and session directory instead of one process per agent; spec `agent-sandbox`, [`docs/SANDBOX.md`](docs/SANDBOX.md); no git metadata inside it, so the runner commits an op agent's work on the host after each turn with hardened git; a commit command for ops is a later spec; egress limited to HTTPS towards Kiro and package registries by a host rule); only messages from human ops become instructions — everything else is wrapped in `<untrusted>`; agent output is never executed |
 | Latency | Stream per sentence; 120 s timeout → `NOTICE` |
 | Judge hosting | VPS + Podman + Caddy TLS; judge accounts via `PASS`; max 2 active agent channels |
 | Trademark | Never use "mIRC" in the product name |

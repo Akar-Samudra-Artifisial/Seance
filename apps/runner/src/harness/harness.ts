@@ -55,6 +55,11 @@ export type ProcessEvent =
       readonly agent: string;
       readonly code: number | null;
       readonly signal: NodeJS.Signals | null;
+      /**
+       * Podman mode (agent-sandbox Requirement 8.3): the sessions of the one container that exited.
+       * Absent when the process served every session of the agent (`none` mode).
+       */
+      readonly sessionIds?: readonly string[];
     };
 
 export interface AgentHarness {

@@ -15,6 +15,7 @@ import type { AgentProfile } from "../registry/agent-profile.js";
 import type { AgentRegistry } from "../registry/agent-registry.js";
 import type { HostEvents, HostVirtualClient, IrcHost, Unsubscribe } from "../ports.js";
 import type { AllowList } from "../invite/allow-list.js";
+import { SandboxError } from "../sandbox/errors.js";
 import { WhoisSnapshot } from "../whois/snapshot.js";
 import type { WorktreeManager } from "../worktree/worktree-manager.js";
 import { AgentLoopGuard } from "./agent-loop-guard.js";
@@ -117,7 +118,7 @@ export class SessionManager {
   /** Subscribes to harness process events so an exit closes the Agent's Sessions (Req 9.14). */
   attach(): Unsubscribe {
     return this.#d.harness.onProcessEvent((e) => {
-      if (e.kind === "exited") this.onProcessExited(e.agent);
+      if (e.kind === "exited") this.onProcessExited(e.agent, e.sessionIds);
     });
   }
 
@@ -126,9 +127,12 @@ export class SessionManager {
    * reported dropped by the Session) and forgets its Private_Sessions. The
    * Agents stay in their channels (Req 9.14).
    */
-  onProcessExited(agent: string): void {
+  onProcessExited(agent: string, sessionIds?: readonly string[]): void {
+    // agent-sandbox Requirement 8.3: a container serves one session, so only those close.
+    const only = sessionIds === undefined ? undefined : new Set(sessionIds);
     for (const session of this.sessionsOfAgent(agent)) {
       if (session.state === "closed") continue;
+      if (only !== undefined && !only.has(session.acpSessionId)) continue;
       try {
         session.close("process-exit");
       } catch (err) {
@@ -140,7 +144,7 @@ export class SessionManager {
       }
       this.#forgetIfNoOpenSession(session.channel);
     }
-    this.closePrivateSessions("process-exit", agent).catch((err: unknown) => {
+    this.closePrivateSessions("process-exit", agent, only).catch((err: unknown) => {
       this.#d.logger.error("private session close after process exit failed", {
         agent,
         reason: messageOf(err),
@@ -177,7 +181,10 @@ export class SessionManager {
           reason: messageOf(err),
         });
         try {
-          reg.output.channelNotice(closed.channel, `${closed.agent}: could not be started`);
+          // agent-sandbox Requirement 11.1: a sandbox failure already sent its one ops notice.
+          if (!(err instanceof SandboxError)) {
+            reg.output.channelNotice(closed.channel, `${closed.agent}: could not be started`);
+          }
         } catch (noticeErr) {
           this.#d.logger.error("revival failure notice failed", { reason: messageOf(noticeErr) });
         }
@@ -254,6 +261,8 @@ export class SessionManager {
   async closePrivateSessions(
     reason: "process-exit" | "shutdown",
     agent?: string,
+    /** Podman mode: only the private sessions with these ACP session ids (one container). */
+    sessionIds?: ReadonlySet<string>,
   ): Promise<void> {
     const a = agent === undefined ? undefined : irc_lower(agent);
     // Requirement 11.5: the loop guard's counts are forgotten when the runner shuts down.
@@ -261,6 +270,21 @@ export class SessionManager {
     const closing: Promise<void>[] = [];
     for (const [key, pending] of [...this.#privates]) {
       if (a !== undefined && !key.startsWith(`${a}\0`)) continue;
+      if (sessionIds !== undefined) {
+        // Decide after the entry resolved: a private session of another container stays open.
+        closing.push(
+          pending.then(async (entry) => {
+            if (entry === undefined || !sessionIds.has(entry.harnessSession.id)) return;
+            if (this.#privates.get(key) === pending) this.#privates.delete(key);
+            entry.detach();
+            entry.session.close(reason);
+            await entry.harnessSession.close().catch((err: unknown) => {
+              this.#d.logger.error("private session close failed", { agent: entry.agent, reason: messageOf(err) });
+            });
+          }),
+        );
+        continue;
+      }
       this.#privates.delete(key);
       closing.push(
         pending.then(async (entry) => {

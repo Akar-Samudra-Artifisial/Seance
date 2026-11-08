@@ -3,10 +3,40 @@ import { mkdir, realpath, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { isValidNick } from "@seance/irc-protocol";
+import { isCidr } from "./sandbox/cidr.js";
 
 const execFileAsync = promisify(execFile);
 
 export type HarnessKind = "acp" | "headless";
+
+/** `SEANCE_SANDBOX` (agent-sandbox Requirement 1.1). */
+export type SandboxMode = "none" | "podman";
+
+export interface PodmanSandboxConfig {
+  readonly mode: "podman";
+  readonly podmanBin: string;
+  /** `name@sha256:<64 hex>` (Requirement 1.8, design D20). */
+  readonly image: string;
+  /** Kiro login state, mounted read-only; required (design D18). Realpath after `validateRunnerPaths`. */
+  readonly authDir: string;
+  readonly memory: string;
+  readonly cpus: string;
+  readonly pids: number;
+  readonly timeoutS: number;
+  /** Command name inside the image. */
+  readonly kiroBin: string;
+  /** `ip:port` targets the Probe must not reach, in every podman start (Requirement 7.7, review finding 4). */
+  readonly egressProbes: readonly string[];
+  /**
+   * IPv4 CIDRs the host rule blocks (the VPC, other private ranges). The Probe tries one address
+   * inside each and fails the start when it is reachable (`SEANCE_SANDBOX_BLOCKED_CIDRS`).
+   */
+  readonly blockedCidrs: readonly string[];
+  /** Variables that were set but are ignored in podman mode; the runner logs each once. */
+  readonly ignored: readonly ("SEANCE_KIRO_BIN" | "KIRO_API_KEY")[];
+}
+
+export type SandboxConfig = { readonly mode: "none" } | PodmanSandboxConfig;
 
 export interface RunnerConfig {
   readonly harness: HarnessKind;
@@ -25,6 +55,8 @@ export interface RunnerConfig {
    * ircd binds to loopback.
    */
   readonly inviters: readonly string[] | undefined;
+  /** Agent sandbox (agent-sandbox Requirement 1); `{ mode: "none" }` unless SEANCE_SANDBOX=podman. */
+  readonly sandbox: SandboxConfig;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -114,12 +146,149 @@ function parseInviters(env: EnvSource): readonly string[] | undefined {
   return entries;
 }
 
+/** A comma would inject `--mount` options; quotes, NUL, CR and LF have no business in a path. */
+const UNSAFE_CHARS = /[,"\0\r\n]/;
+
+/** Requirement 1.5: rejects a value that cannot travel safely inside a `--mount` CSV value. */
+function assertMountSafe(name: string, value: string): void {
+  if (UNSAFE_CHARS.test(value)) {
+    throw new ConfigError(
+      name,
+      `${name} must not contain a comma, a double quote, NUL, CR or LF in podman mode (got ${describe(value)})`,
+    );
+  }
+}
+
+const IMAGE_DIGEST = /^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$/;
+const MEMORY = /^[1-9][0-9]*[kmg]$/i;
+const CPUS = /^[0-9]+(?:\.[0-9]+)?$/;
+const INTEGER = /^[0-9]+$/;
+const PROBE_TARGET = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3}):(\d{1,5})$/;
+const MAX_EGRESS_PROBES = 8;
+
+function boundedInteger(env: EnvSource, name: string, fallback: number, min: number, max: number): number {
+  const raw = readString(env, name);
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!INTEGER.test(raw) || !Number.isSafeInteger(value) || value < min || value > max) {
+    throw new ConfigError(name, `${name} must be an integer from ${min} to ${max} (got ${describe(raw)})`);
+  }
+  return value;
+}
+
+/** True for `a.b.c.d:port` with every octet 0..255 and port 1..65535. */
+export function isProbeTarget(entry: string): boolean {
+  const m = PROBE_TARGET.exec(entry);
+  if (m === null) return false;
+  const octets = m.slice(1, 5).map(Number);
+  const port = Number(m[5]);
+  return octets.every((o) => o <= 255) && port >= 1 && port <= 65535;
+}
+
+function parseEgressProbes(env: EnvSource): readonly string[] {
+  const name = "SEANCE_SANDBOX_EGRESS_PROBES";
+  const raw = readString(env, name);
+  if (raw === undefined) return ["1.1.1.1:443"];
+  const entries = raw.split(",").map((e) => e.trim());
+  if (entries.length > MAX_EGRESS_PROBES || entries.some((e) => !isProbeTarget(e))) {
+    throw new ConfigError(
+      name,
+      `${name} must be a comma-separated list of 1 to ${MAX_EGRESS_PROBES} entries of the form <IPv4>:<port> (got ${describe(raw)})`,
+    );
+  }
+  return entries;
+}
+
+function parseBlockedCidrs(env: EnvSource): readonly string[] {
+  const name = "SEANCE_SANDBOX_BLOCKED_CIDRS";
+  const raw = readString(env, name);
+  if (raw === undefined) return [];
+  const entries = raw.split(",").map((e) => e.trim());
+  if (entries.length > MAX_EGRESS_PROBES || entries.some((e) => !isCidr(e))) {
+    throw new ConfigError(
+      name,
+      `${name} must be a comma-separated list of 1 to ${MAX_EGRESS_PROBES} IPv4 CIDRs such as 10.0.0.0/16 (got ${describe(raw)})`,
+    );
+  }
+  return entries;
+}
+
+/** Requirement 1: the podman variables; only read when SEANCE_SANDBOX=podman. */
+function parseSandbox(env: EnvSource, harness: HarnessKind): SandboxConfig {
+  const raw = env["SEANCE_SANDBOX"];
+  if (raw === undefined || raw === "" || raw === "none") return { mode: "none" };
+  if (raw !== "podman") {
+    throw new ConfigError("SEANCE_SANDBOX", `SEANCE_SANDBOX must be "none" or "podman" (got ${describe(raw)})`);
+  }
+  if (harness === "headless") {
+    throw new ConfigError(
+      "SEANCE_HARNESS",
+      "SEANCE_HARNESS=headless cannot be sandboxed: use SEANCE_HARNESS=acp (or unset) with SEANCE_SANDBOX=podman",
+    );
+  }
+  const podmanBin = requireNonEmpty(env, "SEANCE_PODMAN_BIN", "podman");
+  assertMountSafe("SEANCE_PODMAN_BIN", podmanBin);
+
+  const image = requireNonEmpty(env, "SEANCE_SANDBOX_IMAGE");
+  assertMountSafe("SEANCE_SANDBOX_IMAGE", image);
+  if (image.startsWith("-") || !IMAGE_DIGEST.test(image)) {
+    throw new ConfigError(
+      "SEANCE_SANDBOX_IMAGE",
+      `SEANCE_SANDBOX_IMAGE must be pinned by digest as <name>@sha256:<64 hex> (got ${describe(image)}); ` +
+        `read the digest with: podman image inspect --format '{{.Digest}}' <name>`,
+    );
+  }
+
+  const authDir = readString(env, "SEANCE_SANDBOX_AUTH_DIR");
+  if (authDir === undefined || authDir.trim() === "") {
+    throw new ConfigError(
+      "SEANCE_SANDBOX_AUTH_DIR",
+      "SEANCE_SANDBOX_AUTH_DIR is required in podman mode: the Kiro login state is mounted read-only and KIRO_API_KEY is never forwarded",
+    );
+  }
+  assertMountSafe("SEANCE_SANDBOX_AUTH_DIR", authDir);
+
+  const memory = readString(env, "SEANCE_SANDBOX_MEMORY") ?? "2g";
+  if (!MEMORY.test(memory)) {
+    throw new ConfigError("SEANCE_SANDBOX_MEMORY", `SEANCE_SANDBOX_MEMORY must match <n>k, <n>m or <n>g (got ${describe(memory)})`);
+  }
+  const cpus = readString(env, "SEANCE_SANDBOX_CPUS") ?? "2";
+  const cpuValue = Number(cpus);
+  if (!CPUS.test(cpus) || !(cpuValue > 0) || cpuValue > 64) {
+    throw new ConfigError("SEANCE_SANDBOX_CPUS", `SEANCE_SANDBOX_CPUS must be a decimal greater than 0 and at most 64 (got ${describe(cpus)})`);
+  }
+  const kiroBin = requireNonEmpty(env, "SEANCE_SANDBOX_KIRO_BIN", "kiro-cli");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(kiroBin)) {
+    throw new ConfigError("SEANCE_SANDBOX_KIRO_BIN", `SEANCE_SANDBOX_KIRO_BIN must be a plain command name or path (got ${describe(kiroBin)})`);
+  }
+
+  const ignored: ("SEANCE_KIRO_BIN" | "KIRO_API_KEY")[] = [];
+  if (readString(env, "SEANCE_KIRO_BIN") !== undefined) ignored.push("SEANCE_KIRO_BIN");
+  if (readString(env, "KIRO_API_KEY") !== undefined) ignored.push("KIRO_API_KEY");
+
+  return {
+    mode: "podman",
+    podmanBin,
+    image,
+    authDir,
+    memory: memory.toLowerCase(),
+    cpus,
+    pids: boundedInteger(env, "SEANCE_SANDBOX_PIDS", 256, 16, 4096),
+    timeoutS: boundedInteger(env, "SEANCE_SANDBOX_TIMEOUT_S", 86_400, 60, 604_800),
+    kiroBin,
+    egressProbes: parseEgressProbes(env),
+    blockedCidrs: parseBlockedCidrs(env),
+    ignored,
+  };
+}
+
 /**
  * Pure: reads only `env` (and `cwd` for the default agents directory), no I/O.
  * Throws ConfigError naming the variable; never includes the KIRO_API_KEY value.
  */
 export function loadRunnerConfig(env: EnvSource, cwd: string = process.cwd()): RunnerConfig {
   const harness = parseHarness(env);
+  const sandbox = parseSandbox(env, harness);
   const kiroBin = requireNonEmpty(env, "SEANCE_KIRO_BIN", "kiro-cli");
   const targetRepo = requireNonEmpty(env, "SEANCE_TARGET_REPO");
   const workspaces = requireNonEmpty(env, "SEANCE_WORKSPACES");
@@ -131,8 +300,14 @@ export function loadRunnerConfig(env: EnvSource, cwd: string = process.cwd()): R
     );
   }
   const agentsDir = agentsDirRaw ?? resolve(cwd, "agents");
+  if (sandbox.mode === "podman") {
+    // Both become `--mount` sources (the session directories live under the workspaces root).
+    assertMountSafe("SEANCE_AGENTS_DIR", agentsDir);
+    assertMountSafe("SEANCE_WORKSPACES", workspaces);
+  }
 
   return {
+    sandbox,
     harness,
     kiroBin,
     kiroApiKey: readString(env, "KIRO_API_KEY"),
@@ -204,10 +379,23 @@ export async function validateRunnerPaths(config: RunnerConfig): Promise<RunnerC
       `SEANCE_AGENTS_DIR is not an existing directory (got ${describe(config.agentsDir)})`,
     );
   }
+  let sandbox = config.sandbox;
+  if (sandbox.mode === "podman") {
+    // Requirement 1.4, 3.2 (d): the auth dir is an existing directory; mount sources are realpaths.
+    if (!(await isDirectory(sandbox.authDir))) {
+      throw new ConfigError(
+        "SEANCE_SANDBOX_AUTH_DIR",
+        `SEANCE_SANDBOX_AUTH_DIR is not an existing directory (got ${describe(sandbox.authDir)})`,
+      );
+    }
+    const authDir = await realpath(sandbox.authDir);
+    assertMountSafe("SEANCE_SANDBOX_AUTH_DIR", authDir);
+    sandbox = { ...sandbox, authDir };
+  }
+  let workspaces: string;
   try {
     await mkdir(config.workspaces, { recursive: true });
-    const workspaces = await realpath(config.workspaces);
-    return { ...config, workspaces };
+    workspaces = await realpath(config.workspaces);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new ConfigError(
@@ -215,4 +403,9 @@ export async function validateRunnerPaths(config: RunnerConfig): Promise<RunnerC
       `SEANCE_WORKSPACES could not be created (got ${describe(config.workspaces)}): ${reason}`,
     );
   }
+  if (sandbox.mode !== "podman") return { ...config, workspaces };
+  const agentsDir = await realpath(config.agentsDir);
+  assertMountSafe("SEANCE_WORKSPACES", workspaces);
+  assertMountSafe("SEANCE_AGENTS_DIR", agentsDir);
+  return { ...config, workspaces, agentsDir, sandbox };
 }

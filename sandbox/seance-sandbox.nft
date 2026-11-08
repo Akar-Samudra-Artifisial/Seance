@@ -1,0 +1,45 @@
+#!/usr/sbin/nft -f
+# Egress rule for the Séance agent sandbox (spec agent-sandbox, Requirement 7.3, design D19).
+#
+# Rootless pasta opens every outbound connection of a container as the runner's Unix user, so the
+# rule matches that user. Loaded by the operator, never by the runner. Render the placeholders:
+#   sed -e 's/@RUNNER_USER@/seance/' \
+#       -e 's|@VPC_CIDR@|10.0.0.0/16|' \
+#       -e 's/@RESOLVER@/10.0.0.2/' sandbox/seance-sandbox.nft > /etc/nftables.d/seance-sandbox.nft
+#   nft -f /etc/nftables.d/seance-sandbox.nft
+#   sandbox/seance-egress-refresh          # fills the seance_allow4 set; run it on a timer
+#
+# @RESOLVER@ is the DNS server in /etc/resolv.conf (on AWS the VPC base + 2, or 169.254.169.253).
+# Order matters: DNS first, then the drops for the metadata range and the VPC, then loopback (the
+# runner's own services; containers cannot reach it because of --no-map-gw), then HTTPS to the
+# allow-list, then drop everything else, IPv4 and IPv6.
+
+table inet seance_sandbox
+delete table inet seance_sandbox
+
+table inet seance_sandbox {
+  set seance_allow4 {
+    type ipv4_addr
+    flags interval
+  }
+
+  chain output {
+    type filter hook output priority 0; policy accept;
+
+    meta skuid != "@RUNNER_USER@" accept
+    ct state established,related accept
+
+    ip daddr @RESOLVER@ udp dport 53 accept
+    ip daddr @RESOLVER@ tcp dport 53 accept
+
+    ip daddr 169.254.0.0/16 drop
+    ip daddr @VPC_CIDR@ drop
+
+    ip daddr 127.0.0.0/8 accept
+    ip6 daddr ::1 accept
+
+    ip daddr @seance_allow4 tcp dport 443 accept
+
+    drop
+  }
+}

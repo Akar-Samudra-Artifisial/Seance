@@ -51,7 +51,14 @@ const readString = (
  * Validates an already-parsed JSON value as an `AgentProfile`.
  * Throws `AgentProfileError` naming `file` and the first failing field.
  */
-export const parseProfile = (json: unknown, file: string): AgentProfile => {
+/** agent-sandbox Requirement 4.5: in podman mode `kiroAgent` can never be read as a flag. */
+export const SANDBOX_KIRO_AGENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+export const parseProfile = (
+  json: unknown,
+  file: string,
+  opts: { readonly sandboxed?: boolean } = {},
+): AgentProfile => {
   if (typeof json !== "object" || json === null || Array.isArray(json)) {
     throw new AgentProfileError(file, "(root)", "must be a JSON object");
   }
@@ -66,6 +73,9 @@ export const parseProfile = (json: unknown, file: string): AgentProfile => {
     throw new AgentProfileError(file, "nick", `"${nick}" is reserved for network services`);
   }
   const kiroAgent = readString(obj, file, "kiroAgent", MAX_LENGTHS.kiroAgent);
+  if (opts.sandboxed === true && !SANDBOX_KIRO_AGENT.test(kiroAgent)) {
+    throw new AgentProfileError(file, "kiroAgent", "must match [A-Za-z0-9][A-Za-z0-9._-]{0,63} in podman mode");
+  }
   const model = readString(obj, file, "model", MAX_LENGTHS.model);
   const tools = readString(obj, file, "tools", MAX_LENGTHS.tools);
 
