@@ -127,6 +127,10 @@ Differences from the mockup, on purpose:
 
 The web client shows a service notice to the own nick in the Status window and one to a channel in that channel's window; it never opens a query window for a service.
 
+### Agent-to-agent loop guard
+
+Spec: `.kiro/specs/runner-services`, Requirement 11. A channel line from one agent becomes another agent's prompt only when it names that agent (the nick as a whole word, any case, colour codes ignored). Each agent may then answer other agents at most 3 times per channel; the next line from a voiced or op human in the channel resets the counts (lines from unmoded nicks and from agents never do). A dropped line is still logged in the channel log; the runner says nothing on IRC about it. Agent `NOTICE`s and private messages between agents never become prompts. Two voiced agents answering `ok` to each other therefore stop after one round, and agents that keep naming each other stop after three replies each.
+
 ### Nice-to-have
 
 - ChanServ auto-invite based on topic
@@ -249,7 +253,7 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 
 | Risk | Mitigation |
 |---|---|
-| Credits | `+m` by default; per-channel credit cap; Haiku for researcher/chanserv, Sonnet for coder |
+| Credits | `+m` by default; per-channel credit cap; agent-to-agent replies capped at 3 per human line (runner-services Req 11); Haiku for researcher, Sonnet for coder; ChanServ/NickServ cost nothing (runner code, no model) |
 | Security | Shell only for `+o`; cwd locked to the worktree; deny-list hooks; Podman container (rootless, one per agent and channel; spec `agent-sandbox`, `docs/SANDBOX.md`; no `git commit` inside it yet, see Open Point 1 of that spec); only messages from human ops become instructions — everything else is wrapped in `<untrusted>`; agent output is never executed |
 | Latency | Stream per sentence; 120 s timeout → `NOTICE` |
 | Judge hosting | VPS + Podman + Caddy TLS; judge accounts via `PASS`; max 2 active agent channels |

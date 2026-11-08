@@ -72,3 +72,13 @@ describe("nick prefix at the time of the line (Frame_01 1:1360)", () => {
     expect(r.textContent).toBe("[00:00] <@coder> hi");
   });
 });
+
+describe("service notices (runner-services Req 8, 9.4)", () => {
+  it("draws -ChanServ- text in a channel and -NickServ- text in Status like any notice", () => {
+    const chan = row({ ...base, kind: "notice", from: "ChanServ", text: "session closed, worktree reset to a1b2c3d" });
+    expect(chan.textContent).toBe("[00:00] -ChanServ- session closed, worktree reset to a1b2c3d");
+    const status = row({ ...base, kind: "notice", from: "NickServ", text: "agents online: coder (idle)" });
+    expect(status.textContent).toBe("[00:00] -NickServ- agents online: coder (idle)");
+    expect(status.querySelector(".text-ghost-orange")?.textContent).toBe("-NickServ-");
+  });
+});

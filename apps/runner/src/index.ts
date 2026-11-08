@@ -5,8 +5,10 @@ export type {
   HostMembership,
   HostVirtualClient,
   IrcHost,
+  ServiceName,
   Unsubscribe,
 } from "./ports.js";
+export type { ResetReport } from "./worktree/worktree-manager.js";
 export { realClock, TimerSet } from "./clock.js";
 export type { Clock, TimerHandle } from "./clock.js";
 export { assertInvitersConfigured, ConfigError, isLoopbackHost, loadRunnerConfig, validateRunnerPaths } from "./config.js";

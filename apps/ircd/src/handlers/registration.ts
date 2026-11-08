@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { Numerics, isValidNick } from "@seance/irc-protocol";
+import { Numerics, isServiceNick, isValidNick } from "@seance/irc-protocol";
 import type { IrcMessage } from "@seance/irc-protocol";
 import type { Client } from "../client.js";
 import { nowSeconds } from "../clock.js";
@@ -117,6 +117,8 @@ export function onRegistrationComplete(ctx: RouterContext, client: Client): void
     );
   }
   numeric(ctx, client, Numerics.RPL_ENDOFMOTD, "End of /MOTD command");
+  // runner-services Req 3.1: last step, once per client; a rejected registration never gets here.
+  ctx.events?.publish("irc.register", { nick, virtual: client.virtual === true });
 }
 
 /**
@@ -165,6 +167,11 @@ function handleNick(ctx: RouterContext, client: Client, msg: IrcMessage): void {
   }
   if (!isValidNick(nick)) {
     numeric(ctx, client, Numerics.ERR_ERRONEUSNICKNAME, nick, "Erroneous nickname");
+    return;
+  }
+  // runner-services Req 1.2, 1.3: the services' nicks belong to the network (any transport).
+  if (isServiceNick(nick)) {
+    numeric(ctx, client, Numerics.ERR_ERRONEUSNICKNAME, nick, "Nickname is reserved for network services");
     return;
   }
   const oldNick = client.nick;

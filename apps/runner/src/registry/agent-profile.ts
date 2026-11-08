@@ -1,4 +1,4 @@
-import { isValidNick } from "@seance/irc-protocol";
+import { isServiceNick, isValidNick } from "@seance/irc-protocol";
 
 export type AgentProfile = {
   /** IRC nick, 1..30 chars, `isValidNick`. */
@@ -60,6 +60,10 @@ export const parseProfile = (json: unknown, file: string): AgentProfile => {
   const nick = readString(obj, file, "nick", 30);
   if (!isValidNick(nick)) {
     throw new AgentProfileError(file, "nick", `"${nick}" is not a valid IRC nick`);
+  }
+  // runner-services Req 1.4: the services' nicks belong to the network.
+  if (isServiceNick(nick)) {
+    throw new AgentProfileError(file, "nick", `"${nick}" is reserved for network services`);
   }
   const kiroAgent = readString(obj, file, "kiroAgent", MAX_LENGTHS.kiroAgent);
   const model = readString(obj, file, "model", MAX_LENGTHS.model);

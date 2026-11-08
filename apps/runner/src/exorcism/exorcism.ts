@@ -4,7 +4,8 @@ import type { HostVirtualClient, IrcHost } from "../ports.js";
 import { inviteKey } from "../session/session-manager.js";
 import type { SessionManager } from "../session/session-manager.js";
 import type { Session } from "../session/session.js";
-import type { WorktreeManager } from "../worktree/worktree-manager.js";
+import { filesReverted, sessionEnded } from "../services/notices.js";
+import type { ResetReport, WorktreeManager } from "../worktree/worktree-manager.js";
 
 /** What removed the Agent: `kick`, its own `part`, or `quit` (the `ERROR` from `close()`). */
 export type ExorcismTrigger = "kick" | "part" | "quit";
@@ -25,6 +26,10 @@ export type ExorcismDeps = {
   readonly pollMs?: number;
   /** Upper bound for the Cooldown wait; the exorcism proceeds afterwards. */
   readonly maxWaitMs?: number;
+  /** ChanServ notice to the channel (runner-services Req 6); optional, never throws. */
+  readonly chanServ?: (channel: string, text: string) => void;
+  /** `CreditLedger.amount(agent, channel)`: the `used` value of `WHOIS 320` (Req 6.3, 7.3). */
+  readonly creditsOf?: (agent: string, channel: string) => number;
 };
 
 const DEFAULT_POLL_MS = 25;
@@ -61,9 +66,31 @@ function waitSettled(session: Session, deps: ExorcismDeps): Promise<void> {
   });
 }
 
+/** The two ChanServ lines of Req 6.1 and 6.3, in that order; the second only when non-zero. */
+function sessionEndNotices(
+  deps: ExorcismDeps,
+  agent: string,
+  channel: string,
+  wasPrompting: boolean,
+  report: ResetReport,
+): void {
+  const send = deps.chanServ;
+  if (send === undefined) return;
+  try {
+    send(channel, sessionEnded({ cancelled: wasPrompting, sha: report.target }));
+    const second = filesReverted({ files: report.filesReverted, credits: deps.creditsOf?.(agent, channel) ?? 0 });
+    if (second !== undefined) send(channel, second);
+  } catch (err) {
+    deps.logger.error("exorcism: session end notice failed", { agent, channel, reason: messageOf(err) });
+  }
+}
+
 async function run(deps: ExorcismDeps, session: Session, trigger: ExorcismTrigger): Promise<void> {
   const { agent, channel } = session;
   deps.logger.info("exorcism started", { agent, channel, trigger });
+
+  // Req 6.1: "cancelled" only when a prompt was in flight when the exorcism began.
+  const wasPrompting = session.state === "prompting";
 
   // 0. Refuse new prompts, drop the queue, never drain.
   session.beginClosing();
@@ -76,7 +103,11 @@ async function run(deps: ExorcismDeps, session: Session, trigger: ExorcismTrigge
 
   // (c) reset this channel's worktree only; a failure never stops (d) or the leave.
   try {
-    await deps.worktrees.reset(channel);
+    const report = await deps.worktrees.reset(channel);
+    // Req 6.1 to 6.6: only after a successful reset, only for kick/part, before the agent leaves.
+    if (trigger !== "quit" && deps.chanServ !== undefined) {
+      sessionEndNotices(deps, agent, channel, wasPrompting, report);
+    }
   } catch (err) {
     const cause = messageOf(err);
     deps.logger.error("exorcism: worktree reset failed", { agent, channel, reason: cause });

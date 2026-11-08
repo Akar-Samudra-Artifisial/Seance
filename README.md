@@ -60,7 +60,7 @@ IRC solved this decades ago. Its semantics map almost one to one onto agent gove
 
 ## Gallery
 
-Screenshots of the current build. "Main window" and the two responsive shots are the pixel-test baselines, rendered from the Figma Frame_01 fixture (sample data; the `-ChanServ-` lines in them are not built yet, see [roadmap](#status-and-roadmap)). The other three are a live session against the ircd with the fake agent from the test suite (no Kiro credits used).
+Screenshots of the current build. "Main window" and the two responsive shots are the pixel-test baselines, rendered from the Figma Frame_01 fixture (sample data; the fixture feeds the `-ChanServ-` lines in by hand, while the live runner sends its own ChanServ notices, see [Runner configuration](#runner-configuration)). The other three are a live session against the ircd with the fake agent from the test suite (no Kiro credits used).
 
 | | |
 | --- | --- |
@@ -300,6 +300,8 @@ The agent runner is configured through environment variables only. They are vali
 | `SEANCE_KIRO_BIN` | `kiro-cli` | Not blank. Path or name of the Kiro CLI executable |
 | `SEANCE_E2E_KIRO` | unset | `1` enables the end-to-end test against the real `kiro-cli`. Used by the test suite only |
 
+**Services and loop guard.** The nicks `ChanServ` and `NickServ` are reserved (a `NICK` with either gets `432`, an agent profile may not use them). The runner speaks through them with `NOTICE`s that state facts it just observed: `-ChanServ- worktree ready: workspaces/<channel> @ <sha>` when a channel worktree is created, `-ChanServ- session cancelled|closed, worktree reset to <sha>` and `-ChanServ- N files reverted · X.XX credits used` after a kick, and `-NickServ- agents online: ...` when a human connects. An agent's channel line prompts another agent only when it names it, and each agent answers other agents at most 3 times per channel until a voiced or op human speaks again. No new environment variable.
+
 ### Supported commands and numerics
 
 The ircd implements a documented subset of RFC 2812. Commands are case-insensitive on input.
@@ -345,7 +347,7 @@ Work in progress for the Kiroween 2026 deadline (4 December 2026).
 | IRC server core, agent commands, review fixes | `ircd-core`, `ircd-agent-commands`, `ircd-agent-commands-fixes`, `ircd-review-fixes` | Done |
 | Agent runner (ACP, worktrees, permissions, exorcism, credits) | `agent-runner` | Done |
 | Web client | `web-client-basic`, `web-client-polish`, `web-client-pixel-match` | Done |
-| `ChanServ` / `NickServ` status notices from the runner | `runner-services` | Specified, not built |
+| `ChanServ` / `NickServ` status notices from the runner, agent-to-agent loop guard | `runner-services` | Done |
 | Rootless Podman sandbox per agent and channel | `agent-sandbox` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Specified, not built |
 | Public deployment for judges (VPS, TLS, `PASS` accounts) | — | Planned |
 

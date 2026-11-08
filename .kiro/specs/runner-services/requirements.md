@@ -150,6 +150,22 @@ Where the mockup wording would claim something the runner cannot make true, this
 4. Web tests SHALL cover Requirement 8, including a property that no service notice ever opens a query window.
 5. A test SHALL assert that no produced notice contains the trademarked client name that `product.md` forbids. The test builds the term from two fragments, so the forbidden word does not appear in the test source either.
 
+### Requirement 11: Agent-to-agent loop guard
+
+**User Story:** As an operator, I want two agents in one channel to stop talking to each other on their own, so that an `ok` / `ok` exchange cannot burn credits until I step in.
+
+Added 2026-11-08 at the user's request. Today every voiced Agent receives every channel `PRIVMSG` of another Agent as a prompt, so two `+v` agents answering `ok` keep prompting each other without end.
+
+#### Acceptance Criteria
+
+1. WHEN a channel `PRIVMSG` comes from a Known_Agent (a nick of the Registry), THE Runner SHALL NOT prompt another Agent with it unless the text mentions that Agent's nick. A mention is the nick as a whole word, compared with rfc1459 case-mapping after IRC formatting codes (colour, bold, reset and the other control characters) are removed. The nick characters `A-Z a-z 0-9 - [ ] \ ` ^ { } | _` count as word characters.
+2. A `NOTICE` from a Known_Agent, to a channel or to an Agent's nick, and a private `PRIVMSG` from a Known_Agent SHALL never prompt an Agent, mentioned or not. This is today's behaviour; the guard keeps it.
+3. FOR each pair (Agent, channel), THE Runner SHALL count the prompts that Agent received from other Agents' messages since the last resetting message (criterion 4) in that channel. A prompt that needs a revived Session SHALL count only when the revival succeeds; a failed revival gives the count back. WHILE the count is 3 (`AGENT_REPLY_LIMIT`), THE Runner SHALL drop further prompts from Agents to that Agent in that channel, SHALL log the drop once per limit episode (agent, channel, limit) and SHALL send no IRC text about it.
+4. WHEN a channel `PRIVMSG` arrives from a channel member with `+v` or `+o` who is not a Known_Agent, THE Runner SHALL reset the counts of every Agent in that channel to zero, before any other routing step and also when no Session is open in the channel. A `PRIVMSG` from a nick without a mode, from a non-member or from a Known_Agent SHALL NOT reset the counts (amended 2026-11-08 after review: an unmoded nick or a bot must not be able to restart an agent loop). No human message is ever dropped by the guard; the existing mode rules (no mode = listen only, `+m`) still apply.
+5. Counts SHALL be kept per channel and per Agent with rfc1459 case-mapping, SHALL NOT carry over to another channel, SHALL be forgotten for a channel when its last open Session is removed or closed, and SHALL be forgotten entirely when the runner shuts down. The guard SHALL hold no more than one entry per (Agent, channel) pair that has a Session.
+6. THE guard SHALL decide before a prompt is built or a Session is revived, so a dropped message never starts an agent process, never counts credits and never reaches the channel log of a prompt. The channel log itself (`ChannelLog`) still records the message, as for any channel line.
+7. THE decision SHALL be a pure function (`apps/runner/src/session/agent-loop-guard.ts`) covered by a property test, and an integration test with two `+v` Fake_Agents SHALL show that an `ok` / `ok` exchange stops: without mentions after the first round, with mutual mentions after `AGENT_REPLY_LIMIT` replies each, and that a new human message allows one more bounded round.
+
 ### Requirement 10: Documentation and naming
 
 **User Story:** As a reviewer, I want the design document to match the behaviour.

@@ -4,6 +4,8 @@ import type { InviteResolver, RouterContext, RouterLogger } from "./command-rout
 import type { ServerConfig } from "./config.js";
 import { ConnectionManager } from "./connection-manager.js";
 import { EventBus } from "./event-bus.js";
+import { createServices } from "./services.js";
+import type { Services } from "./services.js";
 import { ConnectionGate } from "./limits.js";
 import type { SessionLimits } from "./limits.js";
 import { registerAwayHandler } from "./handlers/away.js";
@@ -38,6 +40,8 @@ export interface IrcServer {
   readonly ctx: RouterContext;
   readonly router: CommandRouter;
   readonly events: EventBus;
+  /** ChanServ / NickServ notices (runner-services Req 2). */
+  readonly services: Services;
   /** Connect an in-process client (for agents); it must still register via NICK/USER. */
   createVirtualClient(options: VirtualClientOptions): VirtualClient;
   /** Bind both transports; resolves with the bound ports. */
@@ -114,10 +118,13 @@ export function createServer(
     ...hostOption,
   });
 
+  const services = createServices(ctx);
+
   return {
     ctx,
     router,
     events,
+    services,
     createVirtualClient(options) {
       return createVirtualClient(ctx, router, options);
     },

@@ -192,6 +192,16 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: Frame_01 wording (session start, `-tool-` rows, `is back (gone …)`, orange `-nick-` only, prefix at line time, `(TLS) as`, tray name), gen-icons attribute allowlist with escaping, CI-strict bundle test, new baselines, Figma ratio 0.01309 (limit 0.0157)
 - Notes: `next build` caught two test type errors that vitest misses; guard-shell blocked a `../..` output path
 
+### 2026-11-08 — runner-services built, plus an agent loop guard
+- Kiro features: spec runner-services (new Requirement 11, tasks 1 to 12), PBT (P1 to P7), steering (runner-acp, irc-protocol, testing), hook (guard-shell)
+- Produced: reserved ChanServ/NickServ nicks, service notice delivery, `irc.register`, ChanServ worktree/kick notices, NickServ roster, web Status routing, and the agent-to-agent loop guard (mention-only, at most 3 replies per human line) with a two-agent Fake_Agent integration test
+- Notes: Property 1 showed the design's 400-byte notice limit overflows 512 with the longest prefix and channel, so it is now 300; guard-shell blocked a `../..` output path
+
+### 2026-11-08 — runner-services loop guard review fixes
+- Kiro features: spec runner-services (Req 11.3 to 11.5, design D15/D16, Property 7), PBT (P7 at guard and routing level), steering (testing, runner-acp)
+- Produced: only voiced or op humans reset agent counts, reset before the no-Session return, forget on last Session close, count released on failed revive, `~` as a mention boundary, unmoded-lurker integration case
+- Notes: dropping `~` from the nick set alone did nothing because `irc_lower` maps `~` to `^`, so boundaries are now read before lowering; a prompt-gate `vi.waitFor` timed out once under full parallel load and passed on re-run
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.

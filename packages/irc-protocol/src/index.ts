@@ -12,3 +12,5 @@ export {
   isValidChannel,
   isValidNick,
 } from "./casemap.js";
+export type { ServiceNick } from "./services.js";
+export { SERVICE_NICKS, isServiceNick } from "./services.js";

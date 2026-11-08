@@ -12,6 +12,7 @@ import type { AgentProfile } from "../src/registry/agent-profile.js";
 import { inviteKey } from "../src/session/session-manager.js";
 import { Session } from "../src/session/session.js";
 import { WhoisSnapshot } from "../src/whois/snapshot.js";
+import type { ResetReport } from "../src/worktree/worktree-manager.js";
 import type { FakeScript } from "./fixtures/fake-agent.js";
 import { FakeHarness } from "./fixtures/fake-harness.js";
 import { ManualClock } from "./fixtures/manual-clock.js";
@@ -62,7 +63,14 @@ type Env = {
   settle(p: Promise<void>): Promise<void>;
 };
 
-async function setup(): Promise<Env> {
+type NoticeOptions = {
+  /** Receives every ChanServ line as `<channel>: <text>`; set to wire `chanServ`. */
+  readonly notices?: string[];
+  readonly report?: ResetReport;
+  readonly credits?: number;
+};
+
+async function setup(opts: NoticeOptions = {}): Promise<Env> {
   const harness = new FakeHarness({ defaultScript: SCRIPT });
   disposers.push(() => harness.dispose());
   const clock = new ManualClock();
@@ -126,7 +134,7 @@ async function setup(): Promise<Env> {
           resets.push(channel);
           states.push(sessions.get(inviteKey(AGENT, channel))?.state ?? "gone");
           if (env.failReset) throw new Error("git reset exploded");
-          return undefined as never;
+          return opts.report ?? { target: "a1b2c3d", filesReverted: 0 };
         },
       },
       timers,
@@ -134,6 +142,15 @@ async function setup(): Promise<Env> {
       clientOf: () => client,
       report: (channel, text) => void reports.push(`${channel}: ${text}`),
       closeHarnessSession: async () => void events.push("close-harness"),
+      ...(opts.notices !== undefined
+        ? {
+            chanServ: (channel: string, text: string) => {
+              opts.notices?.push(`${channel}: ${text}`);
+              events.push(`chanserv:${text}`);
+            },
+            creditsOf: () => opts.credits ?? 0,
+          }
+        : {}),
     }),
     async open(channel) {
       const hs = await harness.openSession(PROFILE, {
@@ -296,6 +313,68 @@ describe("exorcise failures and scope", () => {
     expect(env.parts).toEqual([]);
     expect(env.resets).toEqual([DEV]);
     expect(s.state).toBe("closed");
+  });
+});
+
+describe("ChanServ session end notices (runner-services Req 6)", () => {
+  it("says 'cancelled' when a prompt was in flight, after the reset and before the PART", async () => {
+    const notices: string[] = [];
+    const env = await setup({ notices, report: { target: "abc1234", filesReverted: 3 }, credits: 4.1 });
+    const s = await prompting(env, DEV);
+    await env.settle(env.exorcise(s, "kick"));
+    expect(notices).toEqual([
+      `${DEV}: session cancelled, worktree reset to abc1234`,
+      `${DEV}: 3 files reverted · 4.10 credits used`,
+    ]);
+    const order = env.events.filter((e) => e.startsWith("reset:") || e.startsWith("chanserv:") || e.startsWith("PART"));
+    expect(order).toEqual([
+      `reset:${DEV}`,
+      "chanserv:session cancelled, worktree reset to abc1234",
+      "chanserv:3 files reverted · 4.10 credits used",
+      `PART ${DEV} *** ${AGENT} has been exorcised`,
+    ]);
+  });
+
+  it("says 'closed' for an idle Session and the singular for one file (part trigger)", async () => {
+    const notices: string[] = [];
+    const env = await setup({ notices, report: { target: "def5678", filesReverted: 1 } });
+    const s = await env.open(DEV);
+    await env.settle(env.exorcise(s, "part"));
+    expect(notices).toEqual([`${DEV}: session closed, worktree reset to def5678`, `${DEV}: 1 file reverted · 0.00 credits used`]);
+  });
+
+  it("omits the second line when no file was reverted and no credits were used", async () => {
+    const notices: string[] = [];
+    const env = await setup({ notices, report: { target: "def5678", filesReverted: 0 }, credits: 0 });
+    const s = await env.open(DEV);
+    await env.settle(env.exorcise(s, "kick"));
+    expect(notices).toEqual([`${DEV}: session closed, worktree reset to def5678`]);
+  });
+
+  it("sends nothing for the quit trigger and nothing when the reset fails", async () => {
+    const quitNotices: string[] = [];
+    const quitEnv = await setup({ notices: quitNotices, report: { target: "abc1234", filesReverted: 2 } });
+    const q = await quitEnv.open(DEV);
+    await quitEnv.settle(quitEnv.exorcise(q, "quit"));
+    expect(quitNotices).toEqual([]);
+
+    const failNotices: string[] = [];
+    const failEnv = await setup({ notices: failNotices, report: { target: "abc1234", filesReverted: 2 } });
+    failEnv.failReset = true;
+    const f = await failEnv.open(DEV);
+    await failEnv.settle(failEnv.exorcise(f, "kick"));
+    expect(failNotices).toEqual([]);
+    expect(failEnv.reports).toHaveLength(1);
+  });
+
+  it("sends at most once per exorcism even for duplicate triggers", async () => {
+    const notices: string[] = [];
+    const env = await setup({ notices, report: { target: "abc1234", filesReverted: 2 } });
+    const s = await prompting(env, DEV);
+    const first = env.exorcise(s, "kick");
+    void env.exorcise(s, "part");
+    await env.settle(first);
+    expect(notices).toHaveLength(2);
   });
 });
 

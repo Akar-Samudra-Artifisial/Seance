@@ -99,6 +99,25 @@ describe("AgentRegistry", () => {
     });
   });
 
+  it("rejects a profile that uses a service nick and keeps loading the others (runner-services Req 1.4)", async () => {
+    const files: Record<string, string> = {
+      "a-ok.json": JSON.stringify(valid("okay")),
+      "b-chanserv.json": JSON.stringify({ ...valid("x"), nick: "chanserv" }),
+      "c-nickserv.json": JSON.stringify({ ...valid("y"), nick: "NickServ" }),
+    };
+    await withDir(files, async (dir) => {
+      const { log, errors } = recordingLogger();
+      const registry = await AgentRegistry.load(dir, log);
+      expect(registry.all().map((p) => p.nick)).toEqual(["okay"]);
+      expect(errors).toHaveLength(2);
+      for (const file of ["b-chanserv.json", "c-nickserv.json"]) {
+        const entry = errors.find((e) => e.fields?.["file"] === join(dir, file));
+        expect(entry?.fields?.["field"]).toBe("nick");
+        expect(entry?.msg).toContain("reserved for network services");
+      }
+    });
+  });
+
   it("keeps the first profile when a nick is duplicated (case-mapped)", async () => {
     await withDir(
       {

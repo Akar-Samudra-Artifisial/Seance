@@ -17,6 +17,7 @@ import type { HostEvents, HostVirtualClient, IrcHost, Unsubscribe } from "../por
 import type { AllowList } from "../invite/allow-list.js";
 import { WhoisSnapshot } from "../whois/snapshot.js";
 import type { WorktreeManager } from "../worktree/worktree-manager.js";
+import { AgentLoopGuard } from "./agent-loop-guard.js";
 import type { Prompt } from "./machine.js";
 import { Session } from "./session.js";
 import type { PromptGate, PromptSink } from "./session.js";
@@ -61,6 +62,8 @@ export type SessionManagerDeps = {
   readonly reviveSession?: (reg: AgentRegistration, channel: string) => Promise<Session>;
   /** Who may start a Private_Session (the SEANCE_INVITERS gate); defaults to everyone. */
   readonly inviters?: AllowList;
+  /** Agent-to-agent loop guard (runner-services Req 11); defaults to one with `AGENT_REPLY_LIMIT`. */
+  readonly loopGuard?: AgentLoopGuard;
 };
 
 /** At most this many Private_Sessions per human nick (across agents). */
@@ -95,10 +98,13 @@ export class SessionManager {
   readonly #privates = new Map<string, Promise<PrivateEntry | undefined>>();
   readonly #resetCredits: (sender: string, agent: string) => unknown;
   readonly #reviving = new Map<string, Promise<Session | undefined>>();
+  /** runner-services Requirement 11: Agent lines reach other Agents only when bounded. */
+  readonly #loopGuard: AgentLoopGuard;
   #nextPromptId = 1;
 
   constructor(deps: SessionManagerDeps) {
     this.#d = deps;
+    this.#loopGuard = deps.loopGuard ?? new AgentLoopGuard();
     this.#resetCredits = createResetCreditsHandler({
       ledger: deps.ledger,
       modeOf: (channel, nick) => deps.host.modeOf(channel, nick),
@@ -132,6 +138,7 @@ export class SessionManager {
           reason: messageOf(err),
         });
       }
+      this.#forgetIfNoOpenSession(session.channel);
     }
     this.closePrivateSessions("process-exit", agent).catch((err: unknown) => {
       this.#d.logger.error("private session close after process exit failed", {
@@ -199,6 +206,12 @@ export class SessionManager {
 
   removeChannelSession(agent: string, channel: string): void {
     this.#channelSessions.delete(inviteKey(agent, channel));
+    this.#forgetIfNoOpenSession(channel);
+  }
+
+  /** runner-services Req 11.5: no open Session left in the channel, so its loop counts go. */
+  #forgetIfNoOpenSession(channel: string): void {
+    if (this.sessionsOf(channel).every((s) => s.state === "closed")) this.#loopGuard.forgetChannel(channel);
   }
 
   channelSession(agent: string, channel: string): Session | undefined {
@@ -243,6 +256,8 @@ export class SessionManager {
     agent?: string,
   ): Promise<void> {
     const a = agent === undefined ? undefined : irc_lower(agent);
+    // Requirement 11.5: the loop guard's counts are forgotten when the runner shuts down.
+    if (reason === "shutdown" && a === undefined) this.#loopGuard.clear();
     const closing: Promise<void>[] = [];
     for (const [key, pending] of [...this.#privates]) {
       if (a !== undefined && !key.startsWith(`${a}\0`)) continue;
@@ -282,14 +297,20 @@ export class SessionManager {
     }
     this.#d.channelLog.add(channel, { nick: from, text, ts: this.#d.clock.now() });
 
+    const sender = this.#d.host.modeOf(channel, from);
+    const senderIsAgent = this.#d.registry.lookup(from) !== undefined;
+    // runner-services Req 11.4: only a member with +v or +o who is not a Known_Agent resets the
+    // channel's counts, and it does so before anything else (also when no Session is open yet).
+    // Unmoded nicks and agents never reset.
+    const resets = !senderIsAgent && sender !== undefined && (sender.op || sender.voice);
+    if (resets) this.#loopGuard.humanSpoke(channel);
+
     const sessions = this.sessionsOf(channel);
     if (sessions.length === 0) {
       this.#ignored("channel message", "no Session in the channel", { channel, from });
       return;
     }
 
-    const sender = this.#d.host.modeOf(channel, from);
-    const senderIsAgent = this.#d.registry.lookup(from) !== undefined;
     const built = buildChannelPrompt({
       channel,
       nick: from,
@@ -314,12 +335,17 @@ export class SessionManager {
         });
         continue;
       }
+      // runner-services Req 11.1, 11.3, 11.6: decided before a prompt id, a revival or a process.
+      if (senderIsAgent && !this.#agentLineAllowed(channel, from, session.agent, text)) continue;
       const prompt = this.#prompt(built.text);
       if (session.state === "closed" && this.#canRevive(session)) {
         // The Session keeps rejecting (Req 6.12); a new one takes the prompt (Req 9.15).
         void this.#revive(session).then((fresh) => {
           if (fresh !== undefined) fresh.enqueue(prompt);
           else {
+            // Req 11.3: an agent prompt counts only when the revival succeeded. The count was taken
+            // at decision time (so concurrent lines cannot overshoot the limit) and is given back here.
+            if (senderIsAgent) this.#loopGuard.release(channel, session.agent);
             this.#d.logger.warn("prompt dropped: agent could not be started", {
               agent: session.agent,
               channel,
@@ -331,6 +357,23 @@ export class SessionManager {
       }
       session.enqueue(prompt);
     }
+  }
+
+  /** Loop guard for an Agent's line offered to another Agent; logs every drop (once per limit episode). */
+  #agentLineAllowed(channel: string, from: string, recipient: string, text: string): boolean {
+    const decision = this.#loopGuard.decide(channel, recipient, text);
+    if (decision === "deliver") return true;
+    if (decision === "not-mentioned") {
+      this.#d.logger.debug("no prompt: agent line does not mention the agent", { agent: recipient, from, channel });
+    } else if (this.#loopGuard.firstLimitHit(channel, recipient)) {
+      this.#d.logger.info("agent reply limit reached", {
+        agent: recipient,
+        from,
+        channel,
+        limit: this.#loopGuard.limit,
+      });
+    }
+    return false;
   }
 
   /** A closed Session is revived only while the Agent is still a member and can be respawned. */

@@ -1,3 +1,4 @@
+import { isServiceNick } from "@seance/irc-protocol";
 import type { IrcMessage } from "@seance/irc-protocol";
 import { channelKey, keyOf, queryKey } from "./casemap.js";
 import { getOwn, withEntry, withoutEntry } from "./record.js";
@@ -157,6 +158,11 @@ function onChat(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResul
     return done(appendStatus(state, { kind: "notice", text: `-${server}- ${raw}` }, nowMs));
   }
   const from = nickOf(msg.prefix);
+  // runner-services Req 8.1: a ChanServ / NickServ notice to the own nick belongs to Status, never
+  // to a query window. Channel notices take the channel path below; a PRIVMSG is unchanged.
+  if (isNotice && isServiceNick(from) && !isChannelName(target) && isOwnNick(state, target)) {
+    return done(appendStatus(state, { kind: "notice", text: raw, from }, nowMs));
+  }
   const own = isOwnNick(state, from);
   const cls = classifyLine(
     isNotice ? { command: "NOTICE", from, text: raw } : { command: "PRIVMSG", from, text: raw },

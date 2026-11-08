@@ -50,7 +50,12 @@ export interface HostEvents {
     target?: string;
   };
   "irc.kick": { channel: string; by: string; target: string; reason: string };
+  /** A client finished registration (runner-services Req 3); no host, user or address. */
+  "irc.register": { nick: string; virtual: boolean };
 }
+
+/** The network services (runner-services Req 1); the same spellings as `SERVICE_NICKS`. */
+export type ServiceName = "ChanServ" | "NickServ";
 
 export interface IrcHost {
   readonly serverName: string;
@@ -72,4 +77,10 @@ export interface IrcHost {
   modeOf(channel: string, nick: string): HostMembership | undefined;
   /** Server-prefixed NOTICE to one client (D8); false when the nick is not connected. */
   noticeTo(nick: string, text: string): boolean;
+  /**
+   * `NOTICE` from `<service>!<service>@services.<server>` to a channel (every member, modes
+   * bypassed) or a registered nick (runner-services Req 2). False when the target does not exist.
+   * Never published as `irc.message`; never throws.
+   */
+  serviceNotice(service: ServiceName, target: string, text: string): boolean;
 }

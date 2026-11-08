@@ -77,6 +77,10 @@ The other two triggers use the same path: the invite pipeline sends `worktree re
 | D10 | `IrcServer` exposes a readonly `services` member; `runner-wiring.ts` adapts it to the `IrcHost.serviceNotice` port. | The runner never imports `@seance/ircd`; the adapter's return annotation turns any port drift into a typecheck error. |
 | D11 | All notice wording lives in pure functions in the Runner (`services/notices.ts`). | One place to test, one place to change `CREDITS_WORD`, and the Ircd stays free of product text. |
 | D12 | New dependencies of existing components (`services` in the invite controller, `chanServ` and `creditsOf` in the exorcist) are optional. | Existing tests and embedders keep working without change; the notice code runs only when the runner wires it. |
+| D13 | The agent loop guard (Requirement 11) lives in `SessionManager.onChannelMessage`, the only place where a channel line becomes a prompt; its decision is the pure `AgentLoopGuard` in `session/agent-loop-guard.ts`. | Counting at prompt delivery is the one point the runner controls: a reply is split into several `PRIVMSG` lines per sentence, so counting output lines would count sentences, not replies. Deciding before `#prompt`/`#revive` means a dropped line costs no process, no credits and no prompt id. |
+| D14 | A mention is the recipient's nick as a whole word after IRC formatting is stripped. Formatting is removed as whole sequences (`\x03` with its colour digits, then the other C0 controls), not by `stripControls`. | The runner colours every agent line (`\x03` + two digits). `stripControls` leaves the digits, so `\x0312reviewer: ok` would read `12reviewer` and never match. |
+| D15 | The limit counts per (recipient Agent, channel) and resets only on a `PRIVMSG` from a `+v`/`+o` member who is not a Known_Agent; the reset runs before the "no Session" early return. (Amended after review: it used to reset on any non-agent line.) | An unmoded nick or a bot could otherwise restart a loop at will by saying anything. A voiced or op human is someone the channel trusts to speak; resetting first keeps a later invite from inheriting stale counts. |
+| D16 | A "deliver" decision counts at once; a prompt routed through a revival gives its count back (`AgentLoopGuard.release`) when the revival fails. A channel's counts are dropped when its last open Session is removed or closed. | Counting only after the asynchronous revival would let several agent lines that arrive meanwhile all pass the check and overshoot the limit; take-then-release keeps the bound and still leaves only delivered prompts counted. |
 
 ## Components and Interfaces
 
@@ -118,7 +122,7 @@ export interface IrcHost { /* ... */ serviceNotice(service: ServiceName, target:
 
 ```ts
 export const CREDITS_WORD = "used"; // Open Point 1
-export const NOTICE_MAX_BYTES = 400;
+export const NOTICE_MAX_BYTES = 300; // was 400: with the 91-byte longest prefix and 99-byte channel only 310 bytes remain (Property 1)
 export function worktreeReady(dir: string, sha: string): string;
 export function sessionEnded(o: { cancelled: boolean; sha: string }): string;
 export function filesReverted(o: { files: number; credits: number }): string | undefined; // undefined when both are zero
@@ -235,6 +239,37 @@ With a fake `WorktreeManager`, `worktree ready` is sent iff `created === true` a
 For any service nick variant, text and own nick, a service `NOTICE` to the own nick appends exactly one `notice` line to Status, keeps `order` unchanged and opens no query window.
 
 **Validates: Requirements 8.1, 8.2, 8.3**
+
+### Property 7: Agent loop guard
+
+For any sequence of channel events over a few channels and Agents (a line from a voiced or op human, from an unmoded human, or an Agent line that mentions a random subset of nicks, case, colour and `~` variants included), with a fixed set of Agents holding Sessions: an Agent is prompted by an Agent line only when the line mentions it; between two resetting lines (voiced or op humans only) in a channel each Agent receives at most `AGENT_REPLY_LIMIT` Agent prompts in that channel; an unmoded human line never resets; and the routing decisions equal those of a reference model that keeps a plain count per (agent, channel). The guard never holds more entries than (agent, channel) pairs seen. The pure part is checked on `AgentLoopGuard`, the reset rule on `SessionManager` with a fake host.
+
+**Validates: Requirements 11.1, 11.3, 11.4, 11.5**
+
+## Agent loop guard
+
+```ts
+// apps/runner/src/session/agent-loop-guard.ts (pure)
+export const AGENT_REPLY_LIMIT = 3;
+/** True when `text`, with IRC formatting removed, contains `nick` as a whole word (rfc1459 case-mapping). */
+export function mentionsNick(text: string, nick: string): boolean;
+export type LoopDecision = "deliver" | "not-mentioned" | "limit";
+export class AgentLoopGuard {
+  constructor(limit?: number);
+  /** A line from a voiced or op human in `channel`: every count of the channel goes back to zero. */
+  humanSpoke(channel: string): void;
+  /** Gives back one count whose prompt never reached a Session (failed revival, D16). */
+  release(channel: string, recipient: string): void;
+  /** For an Agent line to `recipient`: decides and, on "deliver", counts it. */
+  decide(channel: string, recipient: string, text: string): LoopDecision;
+  /** True once per limit episode, for the log (Requirement 11.3). */
+  firstLimitHit(channel: string, recipient: string): boolean;
+  forgetChannel(channel: string): void;
+  clear(): void;
+}
+```
+
+`SessionManager.onChannelMessage`: right after the channel log, a line from a `+v`/`+o` member who is not a Known_Agent calls `guard.humanSpoke(channel)` (before the "no Session" return); every other line leaves the counts alone. An Agent line asks `guard.decide(...)` per Session after the existing mode check and before `#prompt`; `not-mentioned` logs at debug, `limit` logs once at info (`agent reply limit reached`). A failed revival calls `guard.release(channel, agent)` (D16). `removeChannelSession` and a process exit call `guard.forgetChannel(channel)` when no open Session is left. Shutdown calls `guard.clear()`. `mentionsNick` reads word boundaries from the formatting-stripped text before case-mapping, because `irc_lower` turns `~` into `^`.
 
 ## Error handling
 

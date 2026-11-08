@@ -85,6 +85,35 @@ describe("WorktreeManager create, reuse, reset", () => {
     });
   });
 
+  it("reports the reset (runner-services Req 6.2, 6.3): 0 files on a clean tree, the short HEAD sha", async () => {
+    await withEnv(undefined, async ({ manager }) => {
+      const info = await manager.ensure("#dev");
+      const head = (await git(info.realPath, "rev-parse", "--short=7", "HEAD")).trim();
+      expect(await manager.shortHead("#dev")).toBe(head);
+      expect(await manager.reset("#dev")).toEqual({ target: head, filesReverted: 0 });
+    });
+  });
+
+  it("counts modified and untracked files (every file of an untracked directory) before the reset", async () => {
+    await withEnv(undefined, async ({ manager }) => {
+      const info = await manager.ensure("#dev");
+      await writeFile(join(info.realPath, "README.md"), "changed\n");
+      await writeFile(join(info.realPath, "new.txt"), "x");
+      await mkdir(join(info.realPath, "untracked-dir"));
+      await writeFile(join(info.realPath, "untracked-dir", "a"), "x");
+      await writeFile(join(info.realPath, "untracked-dir", "b"), "x");
+      const report = await manager.reset("#dev");
+      expect(report.filesReverted).toBe(4);
+      expect(report.target).toMatch(/^[0-9a-f]{7}$/);
+    });
+  });
+
+  it("shortHead is undefined for a channel without a worktree", async () => {
+    await withEnv(undefined, async ({ manager }) => {
+      expect(await manager.shortHead("#nowhere")).toBeUndefined();
+    });
+  });
+
   it("re-adds an existing branch when the worktree directory is gone", async () => {
     await withEnv(undefined, async ({ repo, manager }) => {
       const info = await manager.ensure("#dev");

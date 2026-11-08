@@ -30,11 +30,23 @@ function fit(text: string): string {
   return out;
 }
 
-function status(entry: AgentSnapshot, open: readonly ChannelSnapshot[]): string {
+/** The value of the `status:` line of `WHOIS`. */
+export type AgentStatus = "idle" | "prompting" | "cooldown" | "away";
+
+function status(entry: AgentSnapshot, open: readonly ChannelSnapshot[]): AgentStatus {
   if (open.some((c) => c.state === "prompting")) return "prompting";
   if (open.some((c) => c.state === "cooldown")) return "cooldown";
   if (entry.away !== undefined) return "away";
   return "idle";
+}
+
+/**
+ * The `status:` of `renderWhois` for one Agent (runner-services Req 4.2): the NickServ roster and
+ * `WHOIS` always agree. An Agent without a snapshot entry (never invited) is `idle`.
+ */
+export function agentStatus(entry: AgentSnapshot | undefined): AgentStatus {
+  if (entry === undefined) return "idle";
+  return status(entry, [...entry.channels.values()].filter((c) => c.state !== "closed"));
 }
 
 /** Orders by `irc_lower(name)` using code-unit comparison (locale independent). */

@@ -32,6 +32,9 @@ import type { Session } from "./session/session.js";
 import type { SessionStore } from "./session/session-store.js";
 import { createShutdown } from "./shutdown.js";
 import type { ShutdownReport } from "./shutdown.js";
+import { agentsOnline } from "./services/notices.js";
+import { createServices } from "./services/services.js";
+import { agentStatus } from "./whois/render.js";
 import { WhoisSnapshot } from "./whois/snapshot.js";
 import { createGitRunner } from "./worktree/git.js";
 import { WorktreeManager } from "./worktree/worktree-manager.js";
@@ -156,6 +159,8 @@ export function createRunner(opts: RunnerOptions): Runner {
     const notifyOps = (channel: string, text: string): void => {
       opNotice(host, logger, humanOpNicks, channel, text);
     };
+    // runner-services: ChanServ / NickServ notices, each sent where its fact is observed.
+    const services = createServices({ host, logger });
 
     // Forward references: the ledger and the manager need each other.
     let sessions: SessionManager;
@@ -255,6 +260,10 @@ export function createRunner(opts: RunnerOptions): Runner {
       closeHarnessSession: async (session) => {
         await harnessSessions.get(session)?.close();
       },
+      chanServ: (channel, text) => {
+        services.chanServ(channel, text);
+      },
+      creditsOf: (agent, channel) => ledger.amount(agent, channel),
     });
     const triggers = createExorcismTriggers({
       host,
@@ -299,6 +308,7 @@ export function createRunner(opts: RunnerOptions): Runner {
       logger,
       opNotice: notifyOps,
       isBlocked,
+      services: { chanServ: services.chanServ, workspaces: config.workspaces },
       secrets: [config.kiroApiKey],
       onHarnessSession: (session, harnessSession) => {
         harnessSessions.set(session, harnessSession);
@@ -318,6 +328,12 @@ export function createRunner(opts: RunnerOptions): Runner {
       host.subscribe("irc.message", (e) => {
         if (shuttingDown) return;
         sessionManager.onChannelMessage(e);
+      }),
+      // runner-services Req 4: NickServ greets a human once, with the roster as WHOIS sees it.
+      host.subscribe("irc.register", (e) => {
+        if (!started || shuttingDown || e.virtual) return;
+        const roster = registry.all().map((p) => ({ nick: p.nick, status: agentStatus(snapshot.get(p.nick)) }));
+        services.nickServ(e.nick, agentsOnline(roster));
       }),
       // Modes are read live through `host.modeOf`; the event is only traced.
       host.subscribe("irc.mode", (e) => {

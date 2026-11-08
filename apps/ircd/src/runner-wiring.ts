@@ -50,5 +50,8 @@ export function createIrcHost(server: IrcServer): IrcHost {
       });
       return true;
     },
+    serviceNotice(service, target, text) {
+      return server.services.notice(service, target, text);
+    },
   };
 }

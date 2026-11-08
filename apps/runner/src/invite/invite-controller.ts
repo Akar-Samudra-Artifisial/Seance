@@ -15,6 +15,7 @@ import { Session } from "../session/session.js";
 import type { SessionManager } from "../session/session-manager.js";
 import { inviteKey } from "../session/session-manager.js";
 import type { SessionStore } from "../session/session-store.js";
+import { worktreeNoticeDir, worktreeReady } from "../services/notices.js";
 import { renderWhois } from "../whois/render.js";
 import type { WhoisSnapshot } from "../whois/snapshot.js";
 import type { WorktreeInfo, WorktreeManager } from "../worktree/worktree-manager.js";
@@ -35,7 +36,12 @@ export type InviteControllerDeps = {
   readonly inviters: AllowList;
   readonly gate: Pick<InviteGate, "decide" | "release">;
   readonly sessions: Pick<SessionManager, "addChannelSession" | "channelSession" | "registerAgent">;
-  readonly worktrees: Pick<WorktreeManager, "ensure" | "guardBeforePrompt">;
+  readonly worktrees: Pick<WorktreeManager, "ensure" | "guardBeforePrompt"> & Partial<Pick<WorktreeManager, "shortHead">>;
+  /**
+   * ChanServ voice and the workspaces root for `worktree ready` (runner-services Req 5); optional
+   * (design D12). `workspaces` only feeds `worktreeNoticeDir`, never IRC directly.
+   */
+  readonly services?: { readonly chanServ: (channel: string, text: string) => boolean; readonly workspaces: string };
   readonly harness: Pick<AgentHarness, "openSession">;
   readonly snapshot: WhoisSnapshot;
   readonly ledger: Pick<CreditLedger, "amount" | "recordMetering">;
@@ -230,6 +236,7 @@ export class InviteController {
       } catch (err) {
         throw new StepError("worktree", err);
       }
+      if (info.created) await this.#worktreeReady(channel);
       check();
 
       try {
@@ -440,6 +447,26 @@ export class InviteController {
         },
       );
     });
+  }
+
+  /**
+   * Req 5.1 to 5.5: one ChanServ line when this pipeline created the channel's worktree. No line
+   * when the sha cannot be read (no placeholder); a failure never stops the pipeline.
+   */
+  async #worktreeReady(channel: string): Promise<void> {
+    const d = this.#d;
+    const services = d.services;
+    if (services === undefined || d.worktrees.shortHead === undefined) return;
+    try {
+      const sha = await d.worktrees.shortHead(channel);
+      if (sha === undefined) {
+        d.logger.warn("worktree ready notice skipped: the short sha could not be read", { channel });
+        return;
+      }
+      services.chanServ(channel, worktreeReady(worktreeNoticeDir(services.workspaces, channel), sha));
+    } catch (err) {
+      d.logger.error("worktree ready notice failed", { channel, reason: messageOf(err) });
+    }
   }
 
   #noticeInviter(inviter: string, text: string): void {

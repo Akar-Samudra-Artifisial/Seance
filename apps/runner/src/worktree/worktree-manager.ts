@@ -37,6 +37,14 @@ export type WorktreeInfo = {
   readonly created: boolean;
 };
 
+/** What a reset did: the commit it moved to and how many Dirty_Files it reverted. */
+export type ResetReport = {
+  /** Seven-character sha of the worktree `HEAD` after the reset. */
+  readonly target: string;
+  /** Records of `git status --porcelain=v1 -z --untracked-files=all --no-renames` before the reset. */
+  readonly filesReverted: number;
+};
+
 export type GuardResult = { readonly ok: true } | { readonly ok: false; readonly paths: readonly string[] };
 
 export type WorktreeManagerOptions = {
@@ -146,8 +154,12 @@ export class WorktreeManager {
     return { path, realPath, branch, created };
   }
 
-  /** Discards uncommitted and untracked files; keeps the branch. */
-  async reset(channel: string): Promise<void> {
+  /**
+   * Discards uncommitted and untracked files; keeps the branch. Reports what it did
+   * (runner-services Req 6.2, 6.3): the short sha the worktree now points at, and the number of
+   * Dirty_Files counted just before the reset.
+   */
+  async reset(channel: string): Promise<ResetReport> {
     const path = join(this.#root, sanitizeChannel(channel));
     const realPath = await resolveInside(this.#root, path, channel);
     if ((await this.#toplevel(channel, realPath)) !== realPath) {
@@ -155,14 +167,38 @@ export class WorktreeManager {
     }
     // Commits that touch AGENTS.md or .kiro are discarded: the branch goes back to its base.
     const target = (await this.#committedHits(channel, realPath)).length > 0 ? await this.#base(channel, realPath) : "HEAD";
-    await this.#git.locked(async () => {
+    return this.#git.locked(async () => {
       try {
+        const status = await this.#git.run([
+          "-C",
+          realPath,
+          "status",
+          "--porcelain=v1",
+          "-z",
+          "--untracked-files=all",
+          "--no-renames",
+        ]);
+        const filesReverted = status.stdout.split("\0").filter((r) => r !== "").length;
         await this.#git.run(["-C", realPath, "reset", "--hard", target]);
         await this.#git.run(["-C", realPath, "clean", "-fd"]);
+        const short = (await this.#git.run(["-C", realPath, "rev-parse", "--short=7", "HEAD"])).stdout.trim();
+        return { target: short, filesReverted };
       } catch (err) {
         throw new WorktreeError(channel, "reset", message(err));
       }
     });
+  }
+
+  /** Seven-character sha of the worktree `HEAD`; undefined when it cannot be read (Req 5.3). */
+  async shortHead(channel: string): Promise<string | undefined> {
+    try {
+      const path = join(this.#root, sanitizeChannel(channel));
+      const realPath = await resolveInside(this.#root, path, channel);
+      const sha = (await this.#git.run(["-C", realPath, "rev-parse", "--short=7", "HEAD"])).stdout.trim();
+      return /^[0-9a-f]{7,40}$/.test(sha) ? sha : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Scans before a prompt; on a hit resets, removes the entries and reports them. */

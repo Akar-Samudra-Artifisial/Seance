@@ -43,8 +43,19 @@ export type IrcInviteEvent = {
   readonly ts: number;
 };
 
+/**
+ * A client finished registration (runner-services Req 3): after the welcome burst and MOTD,
+ * once per client. Carries no host, user, password or address.
+ */
+export type IrcRegisterEvent = {
+  readonly nick: string;
+  /** True for in-process (agent) clients. */
+  readonly virtual: boolean;
+};
+
 export type EventMap = {
   readonly "irc.invite": IrcInviteEvent;
+  readonly "irc.register": IrcRegisterEvent;
   readonly "irc.message": IrcMessageEvent;
   readonly "irc.mode": IrcModeEvent;
   readonly "irc.kick": IrcKickEvent;

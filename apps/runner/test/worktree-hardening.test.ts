@@ -91,8 +91,10 @@ describe("committed agent config", () => {
       await manager.reset("#dev");
       expect((await git(info.realPath, "rev-parse", "HEAD")).trim()).not.toBe(base);
       await agentCommits(info.realPath, ".kiro/hooks/x.json");
-      await manager.reset("#dev");
+      const report = await manager.reset("#dev");
       expect((await git(info.realPath, "rev-parse", "HEAD")).trim()).toBe(base);
+      // runner-services Req 6.2: the report names the base it went back to.
+      expect(report.target).toBe(base.slice(0, 7));
     });
   });
 });
