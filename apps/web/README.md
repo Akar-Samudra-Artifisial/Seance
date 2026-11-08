@@ -8,9 +8,9 @@ The layout follows the Figma mockup (see [docs/KIRO_USAGE.md](../../docs/KIRO_US
 
 At 1440x900 the regions match Frame_01 to the pixel box (3 px frame, title 22, menu 20, toolbar 32, topic 24, chat 686, input 24, tray 28, switchbar 26, status 21). The sizes live once in `app/globals.css` (`--layout-*`) and in `src/layout/metrics.ts`; a test keeps them equal.
 
-- **Title bar**: app candle, title and caption buttons. The title is `Séance — [#chan (+mnt): topic]` for a channel, `Séance — [Status: nick (+i) on host]` for the status window and `Séance — [nick]` for a query. Empty topics and empty mode strings are left out. The document title is the same text. Minimise and maximise are disabled; close quits when connected.
+- **Title bar**: app candle, title and caption buttons. The title is `Séance — [#chan (+mnt): topic]` for a channel, `Séance — [Status: nick (+i) on host]` for the status window and `Séance — [nick]` for a query. Empty topics and empty mode strings are left out. The document title is the same text. Minimise and maximise are inert ("Not available in a browser tab"); close quits when connected and is inert, with a reason, otherwise.
 - **Menu bar**: the active window's icon at the left, then File, View, Favorites, Tools, Commands, Window, Help in fixed slots, with `Alt+<letter>` mnemonics and arrow-key navigation, and the active window's minimise, restore and close buttons at the right. Items that need an argument put the command into the input line (for example `/join #`) instead of opening a dialog.
-- **Toolbar**: connect | options | channel list, agents | logs | theme, plus the `Theme: Ghost` label.
+- **Toolbar**: connect | options | channel list, agents | logs | theme, plus the `Theme: Ghost` or `Theme: Classic` label. Channel list opens the channel list dialog; Toggle theme switches the theme.
 - **Maximised window**: the active window fills the frame with no title bar of its own (its title is in the title bar). A channel window shows the topic field, the chat pane with an always-visible Win95 scrollbar, and the nick list. Minimised windows move to a tray above the switchbar and stay in the switchbar; click the bar to restore. The status window cannot be closed.
 - **Switchbar**: one button per window (unread in navy, mention in orange) and a credits panel at the right end. The counter sums the latest `total` per agent from `320` WHOIS lines like `credits: #dev 9.60 / total 12.00`. It reads `credits: 0.0` until such a line arrives.
 - **Status bar**: `Connected to <host>` plus ` (TLS)` for `wss:`, then ` as <nick>`, `lag <s>s`, and `<a> agents · <w> away · <o> ops`. Lag comes from a `PING :seance-lag-<n>` sent every 30 s; it reads `lag –` before the first reply.
@@ -31,7 +31,19 @@ The client sends `MODE <channel>` once after joining and keeps channel flags (su
 
 ### Disabled items
 
-These carry `aria-disabled` and do nothing: the "No favorites yet" item of Favorites, Options, Channel list, the theme toggle, the title bar minimise and maximise buttons, and the menu bar restore button while the window is not minimised.
+Every disabled or inert toolbar, menu and title bar control carries `aria-disabled` (or `disabled`), a `title` and an `aria-description` that say why: "Coming soon" (Options, the "No favorites yet" item), "Disconnect first" (Connect while connected), "Connect first", "Switch to a channel window first", "Already the last window", "Already the first window", "The Status window cannot be closed", "Not available in a browser tab" (title bar minimise and maximise) and the restore button while the window is not minimised. A test renders the controls in six client states and fails on any disabled control without a reason.
+
+### Channel list
+
+The toolbar button and Commands → Channel list… send `LIST` and open a dialog (Figma frame 05). It shows "Loading…" until `323`, filters by text (name or topic), minimum agents and "Hide channels without a topic" when you press Apply filter, sorts by a column header (ascending, descending, server order), and joins the chosen channel on Enter, double-click or Join. At most 500 rows are kept. The Agents column is counted in the client: for channels you have not joined it sends `NAMES` (batched) and counts the known agents (`coder`, `reviewer`, `researcher`), the same definition as the nick list; until a count arrives it shows "—" and the Min agents filter ignores that row. The server's `322` format is unchanged.
+
+### Themes
+
+Ghost (dark, default) and Classic (light, Figma frame 06). Switch with the toolbar button or View → Ghost theme / Classic theme. Classic is a set of CSS custom properties under `html[data-theme="classic"]` in `app/globals.css`; only the theme name is stored in `localStorage` (`seance.theme`), and any other stored value is ignored. Colours that fail 4.5:1 in the frame are darkened and listed in the spec design (`.kiro/specs/web-client-extras/design.md`).
+
+### Keyboard shortcuts
+
+Help → Keyboard shortcuts lists them. The list is generated from `src/shortcuts/shortcuts.ts`, which the real handlers (Alt+digit, menu mnemonics, input line keys) also use.
 
 ### Responsive layout
 
@@ -120,7 +132,7 @@ The `flows` project runs the behaviour specs. Five pixel projects (`desktop-1440
   pnpm --filter @seance/web exec playwright test -c e2e/playwright.config.ts --update-snapshots
   ```
 
-- The Figma comparison at 1440x900 uses `e2e/figma/01-main-1440x900.png` (Frame_01 exported from Figma at 1x) with `maxDiffPixelRatio: 0.0157` (measured 0.0131 plus 20 %; see design Open Point 7). Without the file the test is skipped with "Figma export missing". After an intended visual change, re-measure it: set `FIGMA_MAX_DIFF_RATIO` in `e2e/pixel.spec.ts` to 0, read the ratio from the failure, then set it back to measured + 20 %.
+- The Figma comparison at 1440x900 uses `e2e/figma/01-main-1440x900.png` (Frame_01 exported from Figma at 1x) with `maxDiffPixelRatio: 0.0157` (measured 0.0131 plus 20 %; see design Open Point 7). Without the file the test is skipped with "Figma export missing". Frame 06 (Classic) works the same way with `e2e/figma/06-classic-1440x900.png` and `FIGMA_MAX_DIFF_RATIO_06`; the export is committed (Figma REST export of node 1:1623) and its limit is 0.0156 (measured 0.01298 on 2026-11-08, plus 20 %). After an intended visual change, re-measure it: set `FIGMA_MAX_DIFF_RATIO` in `e2e/pixel.spec.ts` to 0, read the ratio from the failure, then set it back to measured + 20 %.
 
 ## Icons
 

@@ -52,21 +52,44 @@ describe("Toolbar", () => {
     expect(buttons).toHaveLength(6);
     for (const b of buttons) {
       expect(b.getAttribute("aria-label")).toBeTruthy();
-      expect(b.getAttribute("title")).toBe(b.getAttribute("aria-label"));
+      // web-client-extras R5: a disabled button explains itself in the tooltip ("<label>: <reason>").
+      const label = b.getAttribute("aria-label") ?? "";
+      if (b.getAttribute("aria-disabled") === "true") {
+        expect(b.getAttribute("title")).toMatch(new RegExp(`^${label}: .+`));
+        expect(b.getAttribute("aria-description")).toBeTruthy();
+      } else {
+        expect(b.getAttribute("title")).toBe(label);
+      }
       expect(b.getAttribute("style")).toBeNull();
       expect(b.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     }
     expect(screen.getByText("Theme: Ghost")).toBeTruthy();
   });
 
-  it("disables options, channel list and theme with aria-disabled and ignores clicks", () => {
+  // web-client-extras: Toggle theme now works (R3), so it left this list; Agents joined it outside a channel.
+  it("disables options, channel list and agents with aria-disabled and ignores clicks", () => {
     const store = setup(false);
-    for (const name of ["Options", "Channel list", "Toggle theme"]) {
+    for (const name of ["Options", "Channel list", "Agents"]) {
       const b = screen.getByRole("button", { name });
       expect(b.getAttribute("aria-disabled")).toBe("true");
       fireEvent.click(b);
     }
     expect(store.getState().ui.connectRequests).toBe(0);
+  });
+
+  it("keeps Options disabled even when connected, and enables the channel list", () => {
+    setup(true);
+    expect(screen.getByRole("button", { name: "Options" }).getAttribute("aria-description")).toBe("Coming soon");
+    expect(screen.getByRole("button", { name: "Channel list" }).getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("toggle theme switches the theme and the label", () => {
+    const store = setup(false);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle theme" }));
+    expect(store.getState().ui.theme).toBe("classic");
+    expect(screen.getByText("Classic", { exact: false })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle theme" }));
+    expect(store.getState().ui.theme).toBe("ghost");
   });
 
   it("connect requests the Connect_Dialog", () => {
@@ -83,7 +106,7 @@ describe("Toolbar", () => {
   });
 
   it("agents focuses the Nick_List", () => {
-    setup(false);
+    setup(true); // in a channel window
     const list = document.createElement("ul");
     list.id = "nick-list";
     list.tabIndex = 0;

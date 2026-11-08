@@ -19,8 +19,11 @@ function resetWindow(win: Window): Window {
 export function resetForReconnect(state: ClientState): ClientState {
   const windows = nullRecord<Window>();
   for (const [key, win] of Object.entries(state.windows)) windows[key] = resetWindow(win);
+  // The channel list belongs to one session (web-client-extras Req 1.10).
+  const { list: _list, ...kept } = state;
+  void _list;
   return {
-    ...state,
+    ...kept,
     phase: "connecting",
     windows,
     whoisPending: nullRecord(),

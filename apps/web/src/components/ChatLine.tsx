@@ -240,7 +240,7 @@ export function ChatLine(props: {
   }
   const markers = markersFor(line.kind, false);
   const row = line.mention
-    ? "border-mention-bar bg-ghost-orange/20"
+    ? "border-mention-bar bg-mention-fill"
     : line.kind === "exorcised-kick"
       ? "border-ghost-purple bg-ghost-purple/10"
       : "border-transparent";

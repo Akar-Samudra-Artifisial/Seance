@@ -17,6 +17,8 @@ interface ToolbarButton {
   readonly icon: (props: IconProps) => ReactNode;
   readonly label: string;
   readonly disabled: boolean;
+  /** Why the button is disabled (tooltip and `aria-description`); required when `disabled`. */
+  readonly reason?: string;
   readonly run: () => void;
   /** Left margin: 4 px for the first button, 3 px after a separator, 1 px between channels and agents. */
   readonly offset: string;
@@ -47,6 +49,9 @@ export function Toolbar(): ReactNode {
   const minimised = useClientStore((s) => s.ui.minimised);
   const overlayOpen = useClientStore((s) => s.ui.nickOverlayOpen);
   const setNickOverlay = useClientStore((s) => s.setNickOverlay);
+  const theme = useClientStore((s) => s.ui.theme);
+  const toggleTheme = useClientStore((s) => s.toggleTheme);
+  const openChannelList = useClientStore((s) => s.openChannelList);
   const inChannel = useClientStore((s) => s.client.windows[s.client.activeKey]?.kind === "channel");
   const compact = useCompact();
   const [focusIndex, setFocusIndex] = useState(0);
@@ -64,6 +69,7 @@ export function Toolbar(): ReactNode {
       label: canReconnect ? "Reconnect" : "Connect",
       // Nothing to connect while a session is live.
       disabled: registered,
+      reason: "Disconnect first",
       offset: "ml-1",
       run: () => {
         if (canReconnect) reconnect();
@@ -71,23 +77,34 @@ export function Toolbar(): ReactNode {
       },
     },
     sep("sep-1"),
-    { kind: "button", id: "options", icon: ToolOptions, label: "Options", disabled: true, offset: "ml-[3px]", run: () => undefined },
+    {
+      kind: "button",
+      id: "options",
+      icon: ToolOptions,
+      label: "Options",
+      disabled: true,
+      reason: "Coming soon",
+      offset: "ml-[3px]",
+      run: () => undefined,
+    },
     sep("sep-2"),
     {
       kind: "button",
       id: "channels",
       icon: ToolChannels,
       label: "Channel list",
-      disabled: true,
+      disabled: !registered,
+      reason: "Connect first",
       offset: "ml-[3px]",
-      run: () => undefined,
+      run: openChannelList,
     },
     {
       kind: "button",
       id: "agents",
       icon: ToolAgents,
       label: "Agents",
-      disabled: false,
+      disabled: !inChannel,
+      reason: "Switch to a channel window first",
       offset: "ml-px",
       domId: AGENTS_BUTTON_ID,
       ...(compact && inChannel ? { expanded: overlayOpen } : {}),
@@ -125,9 +142,9 @@ export function Toolbar(): ReactNode {
       id: "theme",
       icon: ToolTheme,
       label: "Toggle theme",
-      disabled: true,
+      disabled: false,
       offset: "ml-[3px]",
-      run: () => undefined,
+      run: toggleTheme,
     },
   ];
   const buttons = items.filter((item): item is ToolbarButton => item.kind === "button");
@@ -175,12 +192,14 @@ export function Toolbar(): ReactNode {
           const index = buttonIndex;
           const Glyph = item.icon;
           return (
+            // eslint-disable-next-line jsx-a11y/role-supports-aria-props -- aria-description is a global ARIA 1.3 attribute that the plugin does not know yet
             <button
               key={item.id}
               id={item.domId}
               type="button"
               aria-label={item.label}
-              title={item.label}
+              title={item.disabled && item.reason !== undefined ? `${item.label}: ${item.reason}` : item.label}
+              aria-description={item.disabled ? item.reason : undefined}
               aria-disabled={item.disabled ? "true" : undefined}
               aria-expanded={item.expanded}
               aria-controls={item.expanded === true ? NICK_OVERLAY_ID : undefined}
@@ -200,7 +219,7 @@ export function Toolbar(): ReactNode {
         })}
       </div>
       {/* Frame_01: label box 1 px below the button tops (cap top at y 55), not centred. */}
-      <span className="ml-auto mr-[33px] mt-px hidden self-start whitespace-nowrap leading-4 md:inline">Theme: Ghost</span>
+      <span className="ml-auto mr-[33px] mt-px hidden self-start whitespace-nowrap leading-4 md:inline">Theme: {theme === "ghost" ? "Ghost" : "Classic"}</span>
     </div>
   );
 }

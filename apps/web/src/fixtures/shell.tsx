@@ -9,7 +9,7 @@ import { createClientStore } from "../store/client-store.js";
 import type { ClientStore } from "../store/client-store.js";
 import { ClientStoreProvider } from "../store/react.js";
 import type { SocketCloseInfo, WebSocketLike } from "../store/socket.js";
-import { createClientStorage } from "../store/storage.js";
+import { THEME_KEY, createClientStorage } from "../store/storage.js";
 import { FIGMA_01_AFTER, FIGMA_01_MAIN, FIXTURE_MARKER, stepTime } from "./figma-01-main.js";
 import type { FixtureScript, FixtureStep } from "./figma-01-main.js";
 
@@ -23,6 +23,24 @@ class FixtureSocket implements WebSocketLike {
   close(): void {}
 }
 
+/**
+ * Storage backend of the fixture: everything reads as empty except the theme name, so the Classic
+ * baseline can select its theme (localStorage `seance.theme`) the way a user would.
+ */
+function themeOnlyBackend(): { getItem(key: string): string | null; setItem(key: string, value: string): void } {
+  return {
+    getItem: (key) => {
+      if (key !== THEME_KEY) return null;
+      try {
+        return globalThis.localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    setItem: () => undefined,
+  };
+}
+
 type StoreApi = ReturnType<typeof createClientStore>;
 
 const noopSubscribe = (): (() => void) => () => undefined;
@@ -33,7 +51,7 @@ export function createFixtureStore(script: FixtureScript = FIGMA_01_MAIN): Store
   let clock = stepTime(script.steps[0]?.at ?? "23:38:00");
   const store = createClientStore({
     createSocket: () => socket,
-    storage: createClientStorage({ getItem: () => null, setItem: () => undefined }, [script.serverUrl]),
+    storage: createClientStorage(themeOnlyBackend(), [script.serverUrl]),
     now: () => clock,
     // Timers never fire: no ping, no reconnect, no paste timeout in a still picture.
     setTimeout: () => 0,

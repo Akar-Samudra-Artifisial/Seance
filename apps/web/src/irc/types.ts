@@ -109,6 +109,31 @@ export interface WhoisPending {
   readonly idle?: { readonly seconds: number; readonly signon: number };
 }
 
+/** One validated `322` reply (web-client-extras Req 1.4). */
+export interface ListRow {
+  /** Channel name as sent; no spaces, at most LIST_NAME_MAX characters. */
+  readonly name: string;
+  readonly users: number;
+  /** Raw topic with control codes; untrusted. Show it through `plain()` / `IrcText`. */
+  readonly topic: string;
+  /** Known_Agent members; null while unknown (shown as "—"). */
+  readonly agents: number | null;
+}
+
+/** State of the Channel_List_Dialog's data. Keys of `pendingNames` and `counting` are `channelKey()`. */
+export interface ChannelList {
+  readonly status: "loading" | "ready" | "failed";
+  readonly rows: readonly ListRow[];
+  /** More than LIST_ROWS_MAX rows arrived; the extra ones were dropped. */
+  readonly truncated: boolean;
+  readonly requestedAt: number;
+  readonly listedAt?: number;
+  /** Channels whose Known_Agent count was requested with NAMES and has not finished. */
+  readonly pendingNames: readonly string[];
+  /** Running Known_Agent counts for channels in `pendingNames`. */
+  readonly counting: Readonly<Record<string, number>>;
+}
+
 export interface PasteState {
   /** Owned by the Store timer, mirrored for the UI. */
   readonly queue: readonly IrcMessage[];
@@ -144,6 +169,8 @@ export interface ClientState {
   readonly expectingNames: readonly string[];
   /** Own user modes, e.g. `+iw`; "" when unknown. */
   readonly userModes: string;
+  /** Channel list data; absent until the first request. While `loading`, 321/322/323 land here. */
+  readonly list?: ChannelList;
 }
 
 export const BUFFER_CAP = 1000;
@@ -153,3 +180,8 @@ export const PASTE_MAX_LINES = 5;
 export const PASTE_INTERVAL_MS = 500;
 export const LINE_MAX_BYTES = 512;
 export const EXORCISED_MAX = 20;
+export const LIST_ROWS_MAX = 500;
+export const LIST_NAME_MAX = 200;
+export const LIST_TOPIC_MAX = 512;
+/** Longest `NAMES` line the list sends; the 512-byte limit minus CRLF and slack. */
+export const NAMES_BATCH_MAX_BYTES = 400;

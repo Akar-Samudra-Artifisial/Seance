@@ -36,6 +36,7 @@ import {
   onUserModeReply,
 } from "./reducer.modes.js";
 import { isErrorNumeric, onEndOfWhois, onErrorNumeric, onList, onWhoisReply } from "./reducer.whois.js";
+import { countListNames, finishListNames, onListReply } from "./reducer.list.js";
 import { exorcismText } from "./selectors.js";
 import { EXORCISED_MAX } from "./types.js";
 import type { ClientState, Window } from "./types.js";
@@ -133,10 +134,12 @@ function onNames(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResu
   const names = msg.params[3] ?? "";
   if (channel === undefined) return statusLine(state, msg, nowMs);
   const key = channelKey(channel);
-  if (getOwn(state.windows, key) === undefined) return done(state);
-  let next = updateWindow(state, key, (w) => ({ ...w, members: mergeMembers(w.members, parseNames(names)) }));
-  if (state.expectingNames.includes(key)) {
-    next = appendTo(next, state.activeKey, { kind: "local", text: `Users on ${channel}: ${names}` }, nowMs);
+  // The channel list counts Known_Agents of channels it asked about (design: Agents column).
+  const counted = countListNames(state, msg);
+  if (getOwn(counted.windows, key) === undefined) return done(counted);
+  let next = updateWindow(counted, key, (w) => ({ ...w, members: mergeMembers(w.members, parseNames(names)) }));
+  if (counted.expectingNames.includes(key)) {
+    next = appendTo(next, counted.activeKey, { kind: "local", text: `Users on ${channel}: ${names}` }, nowMs);
   }
   return done(next);
 }
@@ -145,7 +148,8 @@ function onEndOfNames(state: ClientState, msg: IrcMessage): ReduceResult {
   const channel = msg.params[1];
   if (channel === undefined) return done(state);
   const key = channelKey(channel);
-  return done({ ...state, expectingNames: state.expectingNames.filter((k) => k !== key) });
+  const counted = finishListNames(state, msg);
+  return done({ ...counted, expectingNames: counted.expectingNames.filter((k) => k !== key) });
 }
 
 function onChat(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult {
@@ -406,9 +410,15 @@ function route(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult
       return done(onWhoisReply(onAwayReply(state, msg), msg, nowMs));
     case "318":
       return done(onEndOfWhois(state, msg, nowMs));
+    case "321":
     case "322":
-    case "323":
-      return done(onList(state, msg, nowMs));
+    case "323": {
+      // web-client-extras: while a list request is loading the rows go to the Channel_List_Dialog.
+      const step = onListReply(state, msg, nowMs);
+      if (step !== undefined) return done(step.state, false, step.send);
+      // 321 has no Status line of its own (the ircd does not send it); keep the old default routing.
+      return msg.command === "321" ? statusLine(state, msg, nowMs) : done(onList(state, msg, nowMs));
+    }
     case "001":
       return onWelcome(state, msg, nowMs);
     case "PING": {

@@ -11,6 +11,8 @@ export type MenuEntry =
       readonly label: string;
       /** Unsupported or unavailable: rendered `aria-disabled`, inert when activated. */
       readonly disabled: boolean;
+      /** Why the item is disabled; shown as `title` and `aria-description` (web-client-extras R5). */
+      readonly reason?: string | undefined;
       /** Set for checkbox items; the item then gets `role="menuitemcheckbox"`. */
       readonly checked?: boolean;
       readonly run: () => void;
@@ -130,6 +132,8 @@ export function MenuPopup(props: MenuPopupProps): ReactNode {
             role={entry.checked === undefined ? "menuitem" : "menuitemcheckbox"}
             aria-checked={entry.checked}
             aria-disabled={entry.disabled ? "true" : undefined}
+            title={entry.disabled ? entry.reason : undefined}
+            aria-description={entry.disabled ? entry.reason : undefined}
             tabIndex={-1}
             onClick={() => {
               if (entry.disabled) return;

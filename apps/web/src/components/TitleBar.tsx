@@ -18,6 +18,9 @@ export function hostOf(serverUrl: string): string {
   }
 }
 
+/** Why the window controls of the app title bar do nothing: the page lives in a browser tab. */
+const BROWSER_TAB = "Not available in a browser tab";
+
 /** Application title bar. Also keeps `document.title` equal to the displayed text. */
 export function TitleBar(): ReactNode {
   // The selector returns a string, so a new chat line leaves the selection equal and skips the render.
@@ -46,15 +49,15 @@ export function TitleBar(): ReactNode {
       <span className="ml-2 min-w-0 flex-1 truncate">
         <IrcText text={title} />
       </span>
-      <CaptionButton kind="min" label="Minimise" inert />
-      <CaptionButton kind="max" label="Maximise" inert />
+      <CaptionButton kind="min" label="Minimise" description={BROWSER_TAB} inert />
+      <CaptionButton kind="max" label="Maximise" description={BROWSER_TAB} inert />
       <CaptionButton
         kind="close"
         label="Close"
         className="ml-0.5"
-        onClick={() => {
-          if (connected) quit();
-        }}
+        inert={!connected}
+        description={connected ? undefined : "Not connected"}
+        onClick={quit}
       />
     </div>
   );

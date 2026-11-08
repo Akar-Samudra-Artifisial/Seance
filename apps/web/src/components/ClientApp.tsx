@@ -7,8 +7,10 @@ import { createClientStore } from "../store/client-store.js";
 import { ClientStoreProvider, useClientStore } from "../store/react.js";
 import { createBrowserAudio } from "../store/audio.js";
 import { createBrowserSocket } from "../store/socket.js";
+import { windowSwitchIndex } from "../shortcuts/shortcuts.js";
 import { createBrowserStorage } from "../store/storage.js";
 import { ChannelWindow } from "./ChannelWindow.js";
+import { ChannelListDialog } from "./ChannelListDialog.js";
 import { ConnectDialog } from "./ConnectDialog.js";
 import { InputLine } from "./InputLine.js";
 import { useCompact, useVisualViewport } from "./layout-hooks.js";
@@ -16,6 +18,7 @@ import { MenuBar } from "./MenuBar.js";
 import { Mdi } from "./Mdi.js";
 import { MinimisedTray } from "./MinimisedTray.js";
 import { QueryWindow } from "./QueryWindow.js";
+import { ShortcutsDialog } from "./ShortcutsDialog.js";
 import { SkipLink } from "./SkipLink.js";
 import { StatusBar } from "./StatusBar.js";
 import { UnreadAnnouncer } from "./UnreadAnnouncer.js";
@@ -23,6 +26,7 @@ import { Switchbar } from "./Switchbar.js";
 import { TitleBar } from "./TitleBar.js";
 import { Toolbar } from "./Toolbar.js";
 import { StatusWindow } from "./StatusWindow.js";
+import { ThemeSync } from "./ThemeSync.js";
 
 export interface ClientAppProps {
   readonly defaultUrl: string;
@@ -40,19 +44,12 @@ const EMPTY_STATUS: Window = {
 
 const noopSubscribe = (): (() => void) => () => undefined;
 
-/** Alt+1..9 → nth window; uses `code` because Alt changes `key` on some layouts. */
-function windowIndexOf(event: KeyboardEvent): number | null {
-  if (!event.altKey || event.ctrlKey || event.metaKey) return null;
-  const match = /^(?:Digit|Numpad)([1-9])$/.exec(event.code) ?? /^([1-9])$/.exec(event.key);
-  return match?.[1] === undefined ? null : Number(match[1]);
-}
-
 export function Shell(): ReactNode {
   const active = useClientStore((s) => s.client.windows[s.client.activeKey]);
   const activateByIndex = useClientStore((s) => s.activateByIndex);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      const n = windowIndexOf(event);
+      const n = windowSwitchIndex(event);
       if (n === null) return;
       event.preventDefault();
       activateByIndex(n);
@@ -96,6 +93,9 @@ export function Shell(): ReactNode {
       <Switchbar />
       <StatusBar />
       <ConnectDialog />
+      <ChannelListDialog />
+      <ShortcutsDialog />
+      <ThemeSync />
     </div>
   );
 }

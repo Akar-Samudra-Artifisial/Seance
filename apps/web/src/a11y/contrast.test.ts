@@ -15,7 +15,15 @@ function parseTokens(source: string): ReadonlyMap<string, string> {
   return tokens;
 }
 
-const tokens = parseTokens(css);
+// The Classic block overrides tokens under html[data-theme="classic"]; read it apart from the Ghost set.
+const CLASSIC_MARKER = "html[data-theme=\"classic\"]";
+const classicAt = css.indexOf(CLASSIC_MARKER);
+const tokens = parseTokens(classicAt === -1 ? css : css.slice(0, classicAt));
+/** Ghost tokens with the Classic overrides applied: what the page uses under data-theme=classic. */
+const classicTokens: ReadonlyMap<string, string> = new Map([
+  ...tokens,
+  ...(classicAt === -1 ? [] : parseTokens(css.slice(classicAt))),
+]);
 
 function channel(v: number): number {
   const s = v / 255;
@@ -91,5 +99,77 @@ describe("WCAG contrast of documented token pairs", () => {
 
   it("flags irc-4 red on the chrome face as non-compliant (why errors use irc-5)", () => {
     expect(contrast(tok("irc-4"), tok("chrome-face"))).toBeLessThan(BODY);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// web-client-extras R3.4: every text/background pair of the Classic theme reaches 4.5:1.
+
+function classicTok(name: string): string {
+  const v = classicTokens.get(name);
+  if (v === undefined) throw new Error(`token --color-${name} not found for the Classic theme`);
+  return v;
+}
+
+/** `fg` at `alpha` over `bg`, as hex. */
+function over(fg: string, bg: string, alpha: number): string {
+  const a = Number.parseInt(fg.slice(1), 16);
+  const b = Number.parseInt(bg.slice(1), 16);
+  const mix = (shift: number): string =>
+    Math.round(((a >> shift) & 255) * alpha + ((b >> shift) & 255) * (1 - alpha))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${mix(16)}${mix(8)}${mix(0)}`;
+}
+
+const CLASSIC_TEXT = [
+  "ghost-text",
+  "ghost-orange",
+  "ghost-green",
+  "ghost-purple",
+  "link-blue",
+  "timestamp-dim",
+  "action-purple",
+  "event-green",
+  "tool-grey",
+  "away-grey",
+  "nick-coder",
+  "nick-reviewer",
+  "nick-researcher",
+  "nick-human",
+  ...Array.from({ length: 16 }, (_, i) => `irc-fg-${i}`),
+] as const;
+
+describe("WCAG contrast of the Classic theme", () => {
+  it("overrides the surfaces with the Figma frame 06 values", () => {
+    expect(classicTok("ghost-bg")).toBe("#ffffff");
+    expect(classicTok("mention-fill")).toBe("#ffe2b0");
+    // Chrome is identical to Ghost (frame 06 uses the same title bar, toolbar and status bar).
+    expect(classicTok("chrome-face")).toBe(tok("chrome-face"));
+  });
+
+  it.each(CLASSIC_TEXT)("%s reaches 4.5:1 on the white chat surface", (name) => {
+    expect(contrast(classicTok(name), classicTok("ghost-bg"))).toBeGreaterThanOrEqual(BODY);
+  });
+
+  it.each(CLASSIC_TEXT)("%s reaches 4.5:1 on the mention fill", (name) => {
+    expect(contrast(classicTok(name), classicTok("mention-fill"))).toBeGreaterThanOrEqual(BODY);
+  });
+
+  it("the accent reaches 4.5:1 on its own 20 % fill (exorcised lines)", () => {
+    const fill = over(classicTok("ghost-orange"), classicTok("ghost-bg"), 0.2);
+    expect(contrast(classicTok("ghost-orange"), fill)).toBeGreaterThanOrEqual(BODY);
+  });
+
+  it("the mention bar reaches 3:1 on white (non-text)", () => {
+    expect(contrast(classicTok("mention-bar"), classicTok("ghost-bg"))).toBeGreaterThanOrEqual(LARGE_OR_UI);
+  });
+
+  it("focus ring on the white chat surface reaches 3:1", () => {
+    expect(contrast(classicTok("ghost-orange"), classicTok("ghost-bg"))).toBeGreaterThanOrEqual(LARGE_OR_UI);
+  });
+
+  it("selected list row (white on navy) reaches 4.5:1", () => {
+    expect(contrast(classicTok("chrome-highlight"), classicTok("title-from"))).toBeGreaterThanOrEqual(BODY);
   });
 });

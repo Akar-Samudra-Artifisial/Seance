@@ -5,6 +5,8 @@ import { useShallow } from "zustand/react/shallow";
 import { plain } from "../irc/index.js";
 import { OverflowChevrons } from "../icons/index.js";
 import { MENU_OVERFLOW, MENU_RESERVE, MENU_SLOTS } from "../layout/metrics.js";
+import { MENU_DEFS, menuIndexForMnemonic, mnemonicOf } from "../shortcuts/shortcuts.js";
+import type { MenuId } from "../shortcuts/shortcuts.js";
 import { useClientStore } from "../store/react.js";
 import { CaptionButton } from "./CaptionButton.js";
 import { useFit } from "./layout-hooks.js";
@@ -55,6 +57,10 @@ export function MenuBar(): ReactNode {
   const minimised = useClientStore((s) => s.ui.minimised);
   const mentionSound = useClientStore((s) => s.ui.mentionSound);
   const setMentionSound = useClientStore((s) => s.setMentionSound);
+  const theme = useClientStore((s) => s.ui.theme);
+  const setTheme = useClientStore((s) => s.setTheme);
+  const openChannelList = useClientStore((s) => s.openChannelList);
+  const openShortcuts = useClientStore((s) => s.openShortcuts);
   const setActiveWindow = useClientStore((s) => s.setActiveWindow);
   const activateByIndex = useClientStore((s) => s.activateByIndex);
   const closeWindow = useClientStore((s) => s.closeWindow);
@@ -79,188 +85,194 @@ export function MenuBar(): ReactNode {
   const active = activeKind === undefined ? undefined : { kind: activeKind, name: activeName ?? "" };
   const inChannel = registered && active?.kind === "channel";
   const index = order.indexOf(activeKey);
-  const needsArgs = (prefix: string, enabled: boolean, id: string, label: string): MenuEntry => ({
+  const why = (enabled: boolean, reason: string): { readonly disabled: boolean; readonly reason?: string } =>
+    enabled ? { disabled: false } : { disabled: true, reason };
+  const needsArgs = (prefix: string, enabled: boolean, id: string, label: string, reason: string): MenuEntry => ({
     kind: "item",
     id,
     label,
-    disabled: !enabled,
+    ...why(enabled, reason),
     run: () => {
       insertCommand(prefix);
     },
   });
-  const command = (text: string, enabled: boolean, id: string, label: string): MenuEntry => ({
+  const command = (text: string, enabled: boolean, id: string, label: string, reason: string): MenuEntry => ({
     kind: "item",
     id,
     label,
-    disabled: !enabled,
+    ...why(enabled, reason),
     run: () => {
       submitInput(text);
     },
   });
-  const unsupported = (id: string, label: string): MenuEntry => ({
+  const unsupported = (id: string, label: string, reason: string): MenuEntry => ({
     kind: "item",
     id,
     label,
     disabled: true,
+    reason,
     run: () => undefined,
   });
+  const NOT_CONNECTED = "Connect first";
+  const NOT_IN_CHANNEL = registered ? "Switch to a channel window first" : NOT_CONNECTED;
+  const NO_CLOSE = "The Status window cannot be closed";
 
-  const menus: readonly Menu[] = [
-    {
-      id: "file",
-      label: "File",
-      mnemonic: 0,
-      disabled: false,
-      entries: [
-        {
-          kind: "item",
-          id: "connect",
-          label: "Connect…",
-          disabled: registered,
-          run: requestConnectDialog,
+  const reconnectReason = !hasConnected
+    ? "Connect first"
+    : phase === "registered"
+      ? "Already connected"
+      : "Already connecting";
+
+  const entries: Readonly<Record<MenuId, readonly MenuEntry[]>> = {
+    file: [
+      {
+        kind: "item",
+        id: "connect",
+        label: "Connect…",
+        ...why(!registered, "Disconnect first"),
+        run: requestConnectDialog,
+      },
+      {
+        kind: "item",
+        id: "reconnect",
+        label: "Reconnect",
+        ...why(hasConnected && (phase === "disconnected" || phase === "failed"), reconnectReason),
+        run: reconnect,
+      },
+      {
+        kind: "item",
+        id: "close",
+        label: "Close window",
+        ...why(active !== undefined && active.kind !== "status", NO_CLOSE),
+        run: () => {
+          closeWindow(activeKey);
         },
-        {
-          kind: "item",
-          id: "reconnect",
-          label: "Reconnect",
-          disabled: !hasConnected || (phase !== "disconnected" && phase !== "failed"),
-          run: reconnect,
+      },
+      sep("file-sep"),
+      { kind: "item", id: "quit", label: "Quit", ...why(registered, NOT_CONNECTED), run: quit },
+    ],
+    view: [
+      {
+        kind: "item",
+        id: "mention-sound",
+        label: "Mention sound",
+        checked: mentionSound,
+        disabled: false,
+        run: () => {
+          setMentionSound(!mentionSound);
         },
-        {
-          kind: "item",
-          id: "close",
-          label: "Close window",
-          disabled: active === undefined || active.kind === "status",
-          run: () => {
-            closeWindow(activeKey);
-          },
+      },
+      sep("view-sep-theme"),
+      {
+        kind: "item",
+        id: "theme-ghost",
+        label: "Ghost theme",
+        checked: theme === "ghost",
+        disabled: false,
+        run: () => {
+          setTheme("ghost");
         },
-        sep("file-sep"),
-        { kind: "item", id: "quit", label: "Quit", disabled: !registered, run: quit },
-      ],
-    },
-    {
-      id: "view",
-      label: "View",
-      mnemonic: 0,
-      disabled: false,
-      entries: [
-        {
-          kind: "item",
-          id: "mention-sound",
-          label: "Mention sound",
-          checked: mentionSound,
-          disabled: false,
-          run: () => {
-            setMentionSound(!mentionSound);
-          },
+      },
+      {
+        kind: "item",
+        id: "theme-classic",
+        label: "Classic theme",
+        checked: theme === "classic",
+        disabled: false,
+        run: () => {
+          setTheme("classic");
         },
-        sep("view-sep"),
-        {
-          kind: "item",
-          id: "next",
-          label: "Next window",
-          disabled: index < 0 || index >= order.length - 1,
-          run: () => {
-            activateByIndex(index + 2);
-          },
+      },
+      sep("view-sep"),
+      {
+        kind: "item",
+        id: "next",
+        label: "Next window",
+        ...why(index >= 0 && index < order.length - 1, "Already the last window"),
+        run: () => {
+          activateByIndex(index + 2);
         },
-        {
-          kind: "item",
-          id: "previous",
-          label: "Previous window",
-          disabled: index <= 0,
-          run: () => {
-            activateByIndex(index);
-          },
+      },
+      {
+        kind: "item",
+        id: "previous",
+        label: "Previous window",
+        ...why(index > 0, "Already the first window"),
+        run: () => {
+          activateByIndex(index);
         },
-      ],
-    },
+      },
+    ],
     // R5.1: opens like the others; its only item is inert until favorites exist.
-    {
-      id: "favorites",
-      label: "Favorites",
-      mnemonic: 1,
-      disabled: false,
-      entries: [unsupported("no-favorites", "No favorites yet")],
-    },
-    {
-      id: "tools",
-      label: "Tools",
-      mnemonic: 0,
-      disabled: false,
-      entries: [
-        needsArgs(
-          active?.kind === "query" ? `/whois ${active.name}` : "/whois ",
-          registered,
-          "whois",
-          "Whois…",
-        ),
-        unsupported("options", "Options…"),
-      ],
-    },
-    {
-      id: "commands",
-      label: "Commands",
-      mnemonic: 0,
-      disabled: false,
-      entries: [
-        needsArgs("/join #", registered, "join", "Join…"),
-        command("/part", inChannel, "part", "Part"),
-        needsArgs("/query ", registered, "query", "Query…"),
-        command("/names", inChannel, "names", "Names"),
-        needsArgs("/topic ", inChannel, "topic", "Topic…"),
-        needsArgs("/away ", registered, "away", "Away…"),
-        command("/away", registered, "back", "Back"),
-        sep("commands-sep"),
-        { kind: "item", id: "cmd-quit", label: "Quit", disabled: !registered, run: quit },
-      ],
-    },
-    {
-      id: "window",
-      label: "Window",
-      mnemonic: 0,
-      disabled: false,
-      entries: [
-        ...order.flatMap((key, at): MenuEntry[] => {
-          const name = names[at];
-          if (name === undefined) return [];
-          return [
-            {
-              kind: "item",
-              id: `win-${key}`,
-              label: plain(name),
-              checked: key === activeKey,
-              disabled: false,
-              run: () => {
-                if (minimised.includes(key)) restoreWindow(key);
-                else setActiveWindow(key);
-              },
+    favorites: [unsupported("no-favorites", "No favorites yet", "Coming soon")],
+    tools: [
+      needsArgs(
+        active?.kind === "query" ? `/whois ${active.name}` : "/whois ",
+        registered,
+        "whois",
+        "Whois…",
+        NOT_CONNECTED,
+      ),
+      unsupported("options", "Options…", "Coming soon"),
+    ],
+    commands: [
+      needsArgs("/join #", registered, "join", "Join…", NOT_CONNECTED),
+      {
+        kind: "item",
+        id: "channel-list",
+        label: "Channel list…",
+        ...why(registered, NOT_CONNECTED),
+        run: openChannelList,
+      },
+      command("/part", inChannel, "part", "Part", NOT_IN_CHANNEL),
+      needsArgs("/query ", registered, "query", "Query…", NOT_CONNECTED),
+      command("/names", inChannel, "names", "Names", NOT_IN_CHANNEL),
+      needsArgs("/topic ", inChannel, "topic", "Topic…", NOT_IN_CHANNEL),
+      needsArgs("/away ", registered, "away", "Away…", NOT_CONNECTED),
+      command("/away", registered, "back", "Back", NOT_CONNECTED),
+      sep("commands-sep"),
+      { kind: "item", id: "cmd-quit", label: "Quit", ...why(registered, NOT_CONNECTED), run: quit },
+    ],
+    window: [
+      ...order.flatMap((key, at): MenuEntry[] => {
+        const name = names[at];
+        if (name === undefined) return [];
+        return [
+          {
+            kind: "item",
+            id: `win-${key}`,
+            label: plain(name),
+            checked: key === activeKey,
+            disabled: false,
+            run: () => {
+              if (minimised.includes(key)) restoreWindow(key);
+              else setActiveWindow(key);
             },
-          ];
-        }),
-        sep("window-sep"),
-        {
-          kind: "item",
-          id: "window-close",
-          label: "Close window",
-          disabled: active === undefined || active.kind === "status",
-          run: () => {
-            closeWindow(activeKey);
           },
+        ];
+      }),
+      sep("window-sep"),
+      {
+        kind: "item",
+        id: "window-close",
+        label: "Close window",
+        ...why(active !== undefined && active.kind !== "status", NO_CLOSE),
+        run: () => {
+          closeWindow(activeKey);
         },
-      ],
-    },
-    {
-      id: "help",
-      label: "Help",
-      mnemonic: 0,
-      disabled: false,
-      // The client has no /help text yet, so the item stays inert.
-      entries: [unsupported("shortcuts", "Keyboard shortcuts")],
-    },
-  ];
-
+      },
+    ],
+    help: [
+      {
+        kind: "item",
+        id: "shortcuts",
+        label: "Keyboard shortcuts",
+        disabled: false,
+        run: openShortcuts,
+      },
+    ],
+  };
+  const menus: readonly Menu[] = MENU_DEFS.map((def) => ({ ...def, disabled: false, entries: entries[def.id] }));
 
   const count = menus.length;
   const hasOverflow = visible < count;
@@ -314,7 +326,7 @@ export function MenuBar(): ReactNode {
       if (match?.[1] === undefined) return;
       // On macOS Option+letter types characters (é, ø, …); leave them to the Input_Line.
       if (isApplePlatform() && event.target instanceof HTMLElement && event.target.id === "input-line") return;
-      const at = menus.findIndex((m) => m.label.charAt(m.mnemonic).toUpperCase() === match[1]);
+      const at = menuIndexForMnemonic(match[1]);
       if (at === -1) return;
       event.preventDefault();
       openMenu(at, "first");
@@ -433,7 +445,7 @@ export function MenuBar(): ReactNode {
                 aria-expanded={isOpen}
                 aria-controls={isOpen ? `menu-${menu.id}-list` : undefined}
                 aria-disabled={menu.disabled ? "true" : undefined}
-                aria-keyshortcuts={`Alt+${menu.label.charAt(menu.mnemonic).toUpperCase()}`}
+                aria-keyshortcuts={`Alt+${mnemonicOf(menu)}`}
                 tabIndex={barIndex === i ? 0 : -1}
                 onFocus={() => {
                   setBarIndex(i);
@@ -515,6 +527,7 @@ export function MenuBar(): ReactNode {
           kind="restore"
           label="Restore active window"
           title={isMinimised ? undefined : RESTORE_TITLE}
+          description={isMinimised ? undefined : RESTORE_TITLE}
           inert={!isMinimised}
           onClick={() => {
             restoreWindow(activeKey);
@@ -525,6 +538,7 @@ export function MenuBar(): ReactNode {
           label="Close active window"
           className="ml-0.5"
           disabled={!canClose}
+          description={canClose ? undefined : "The Status window cannot be closed"}
           onClick={() => {
             closeWindow(activeKey);
           }}

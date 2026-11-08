@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { completeNick } from "../irc/index.js";
 import type { CompletionCycle } from "../irc/index.js";
+import { INPUT_KEYS } from "../shortcuts/shortcuts.js";
 import { useClientStore } from "../store/react.js";
 
 export function InputLine(): ReactNode {
@@ -49,7 +50,7 @@ export function InputLine(): ReactNode {
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.key === "Tab") {
+    if (event.key === INPUT_KEYS.complete) {
       event.preventDefault();
       const input = event.currentTarget;
       const nicks = Object.values(members ?? {}).map((m) => m.nick);
@@ -63,9 +64,9 @@ export function InputLine(): ReactNode {
     if (event.key !== "Shift" && event.key !== "Control" && event.key !== "Alt" && event.key !== "Meta") {
       cycle.current = null;
     }
-    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    if (event.key === INPUT_KEYS.historyUp || event.key === INPUT_KEYS.historyDown) {
       event.preventDefault();
-      const next = navigateHistory(event.key === "ArrowUp" ? "up" : "down", event.currentTarget.value);
+      const next = navigateHistory(event.key === INPUT_KEYS.historyUp ? "up" : "down", event.currentTarget.value);
       pendingCaret.current = next.length;
       setText(next);
     }

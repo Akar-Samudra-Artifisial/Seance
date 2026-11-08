@@ -44,6 +44,8 @@
   --color-tool-grey: #7d7d7d;
   --color-away-grey: #7e7e87;
   --color-mention-bar: #c8761f;
+  /* Row fill of a mention line: the accent at 20 %, as before; Classic uses the Figma frame 06 fill. */
+  --color-mention-fill: color-mix(in oklab, var(--color-ghost-orange) 20%, transparent);
 
   --color-nick-coder: #3b78ff;
   --color-nick-reviewer: #4caf50;
@@ -87,6 +89,51 @@
   --color-irc-fg-13: #ff00ff;
   --color-irc-fg-14: #7f7f7f;
   --color-irc-fg-15: #d2d2d2;
+}
+
+/* Classic theme (Figma 06 Classic, node 1:1623): light chat surfaces, same chrome. A token set, not a
+   second stylesheet: Tailwind utilities read these variables, so `html[data-theme="classic"]` recolours
+   the chat surfaces without touching a component. Chrome, title bars and bevels are identical to Ghost
+   and are not overridden. Values come from the frame; the ones marked "lifted" had to be darkened to
+   reach 4.5:1 on white and on the mention fill (design.md, "Classic colours"). */
+html[data-theme="classic"] {
+  --color-ghost-bg: #ffffff;
+  --color-ghost-text: #000000;
+  --color-ghost-orange: #9f4900; /* accent for focus and kick lines; lifted from #c45a00 for its 20 % fill */
+  --color-ghost-green: #007800; /* lifted from #009300 */
+  --color-ghost-purple: #7b3fb5;
+
+  --color-link-blue: #0b4fd6;
+  --color-timestamp-dim: #676767; /* lifted from #7f7f7f: 4.0:1 -> 5.66:1 */
+  --color-action-purple: #9c009c;
+  --color-event-green: #007800; /* lifted from #009300: 4.06:1 -> 5.70:1 */
+  --color-tool-grey: #676767; /* lifted from #7f7f7f */
+  --color-away-grey: #676767; /* lifted from #a0a0a0: 2.6:1 -> 5.66:1 */
+  --color-mention-bar: #c45a00;
+  --color-mention-fill: #ffe2b0;
+
+  --color-nick-coder: #0b4fd6;
+  --color-nick-reviewer: #2b752f; /* lifted from #2e7d32 for the mention fill */
+  --color-nick-researcher: #7b3fb5;
+  --color-nick-human: #a74c00; /* lifted from #c45a00: 4.37:1 -> 5.71:1 */
+
+  /* IRC colours without a background, recomputed for white by scripts/irc-palette.mjs --classic. */
+  --color-irc-fg-0: #666666; /* lifted from #ffffff: 1.00:1 -> 4.58:1 */
+  --color-irc-fg-1: #000000;
+  --color-irc-fg-2: #00007f;
+  --color-irc-fg-3: #007700; /* lifted from #009300: 3.24:1 -> 4.61:1 */
+  --color-irc-fg-4: #ce0000; /* lifted from #ff0000: 3.19:1 -> 4.62:1 */
+  --color-irc-fg-5: #7f0000;
+  --color-irc-fg-6: #9c009c;
+  --color-irc-fg-7: #b63e00; /* lifted from #fc7f00: 2.05:1 -> 4.56:1 */
+  --color-irc-fg-8: #6e6700; /* lifted from #ffff00: 1.07:1 -> 4.65:1 */
+  --color-irc-fg-9: #007700; /* lifted from #00fc00: 1.12:1 -> 4.61:1 */
+  --color-irc-fg-10: #007272; /* lifted from #009393: 3.00:1 -> 4.59:1 */
+  --color-irc-fg-11: #007174; /* lifted from #00ffff: 1.00:1 -> 4.64:1 */
+  --color-irc-fg-12: #0000fc;
+  --color-irc-fg-13: #b400b7; /* lifted from #ff00ff: 2.50:1 -> 4.62:1 */
+  --color-irc-fg-14: #656565; /* lifted from #7f7f7f: 3.20:1 -> 4.65:1 */
+  --color-irc-fg-15: #676767; /* lifted from #d2d2d2: 1.21:1 -> 4.51:1 */
 }
 
 /* Frame_01 layout (web-client-pixel-match R1). Mirrored by src/layout/metrics.ts; a test keeps

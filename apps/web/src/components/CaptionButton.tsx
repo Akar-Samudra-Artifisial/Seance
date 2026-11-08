@@ -33,6 +33,8 @@ export function CaptionButton(props: {
   readonly kind: CaptionKind;
   readonly label: string;
   readonly title?: string | undefined;
+  /** Why the button is disabled or inert; also the tooltip when no `title` is given. */
+  readonly description?: string | undefined;
   /** Native disabled: not focusable (used where the old button was `disabled`). */
   readonly disabled?: boolean | undefined;
   /** `aria-disabled`: focusable but inert. */
@@ -43,10 +45,12 @@ export function CaptionButton(props: {
   const [Raised, Pressed] = ICONS[props.kind];
   const live = props.disabled !== true && props.inert !== true;
   return (
+    // eslint-disable-next-line jsx-a11y/role-supports-aria-props -- aria-description is a global ARIA 1.3 attribute that the plugin does not know yet
     <button
       type="button"
       aria-label={props.label}
-      title={props.title}
+      title={props.title ?? props.description}
+      aria-description={props.description}
       disabled={props.disabled === true ? true : undefined}
       aria-disabled={props.inert === true ? "true" : undefined}
       onClick={(event) => {

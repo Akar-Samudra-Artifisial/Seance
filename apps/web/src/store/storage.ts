@@ -16,9 +16,22 @@ export interface StoredPrefs {
   readonly serverUrl: string | null;
 }
 
-/** Only nick and server URL are persisted. There is deliberately no password field. */
+export const THEME_KEY = "seance.theme";
+export const THEMES = ["ghost", "classic"] as const;
+export type Theme = (typeof THEMES)[number];
+
+/** True for exactly the two theme names; anything else read from storage is ignored. */
+export function isTheme(value: unknown): value is Theme {
+  return value === "ghost" || value === "classic";
+}
+
+/** Only nick, server URL and the theme name are persisted. There is deliberately no password field. */
 export interface ClientStorage {
   read(): StoredPrefs;
+  /** The stored theme name, or null when absent, invalid or unreadable. */
+  readTheme(): Theme | null;
+  /** Throws when the backend refuses the write (quota, private mode). */
+  writeTheme(theme: Theme): void;
   /** Throws when the backend refuses the write (quota, private mode). */
   write(prefs: { readonly nick: string; readonly serverUrl: string }): void;
 }
@@ -28,6 +41,21 @@ export function createClientStorage(
   allowedOrigins: readonly string[],
 ): ClientStorage {
   return {
+    readTheme() {
+      if (backend === null) return null;
+      try {
+        const raw = backend.getItem(THEME_KEY);
+        return isTheme(raw) ? raw : null;
+      } catch {
+        // An unreadable backend behaves like an empty one (the default theme applies).
+        return null;
+      }
+    },
+    writeTheme(theme) {
+      if (backend === null) throw new Error("localStorage is not available");
+      if (!isTheme(theme)) throw new Error(`refusing to store theme "${String(theme)}"`);
+      backend.setItem(THEME_KEY, theme);
+    },
     read() {
       if (backend === null) return { nick: null, serverUrl: null };
       let rawNick: string | null = null;

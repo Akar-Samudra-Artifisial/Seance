@@ -52,6 +52,11 @@ export {
   titleOf,
 } from "./selectors.js";
 export { resetForReconnect } from "./reset.js";
+export type { ChannelList, ListRow } from "./types.js";
+export { LIST_ROWS_MAX } from "./types.js";
+export type { RowFilter, SortColumn, SortDirection, SortState } from "./channel-list.js";
+export { NO_FILTER, batchNames, filterRows, nextSort, parseListRow, sortRows, summarise } from "./channel-list.js";
+export { failList, startList } from "./reducer.list.js";
 export type { Completion, CompletionCycle } from "./complete.js";
 export { completeNick } from "./complete.js";
 export type { EchoLine, InputContext, InputResult, LocalAction } from "./command-parser.js";

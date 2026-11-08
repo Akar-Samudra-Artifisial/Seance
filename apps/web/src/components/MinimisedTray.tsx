@@ -62,6 +62,8 @@ export function MinimisedBar(props: { readonly window: Window; readonly title: s
           title={`Close ${title}`}
           className="ml-0.5"
           disabled={win.kind === "status"}
+          // web-client-extras Req 5.1: same reason as the menu bar close button.
+          description={win.kind === "status" ? "The Status window cannot be closed" : undefined}
           onClick={() => {
             closeWindow(win.key);
           }}

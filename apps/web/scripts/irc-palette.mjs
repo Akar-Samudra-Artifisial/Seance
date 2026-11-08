@@ -1,11 +1,16 @@
 // Computes readable foreground shades of the 16 IRC colours on the ghost background.
 //
-//   node scripts/irc-palette.mjs
+//   node scripts/irc-palette.mjs            (ghost background, lightness raised)
+//   node scripts/irc-palette.mjs --classic   (white and the mention fill, lightness lowered)
 //
 // For each colour below 4.5:1 on #0b0b0f, keep OKLCH hue and chroma and raise lightness in
 // 0.01 steps until the ratio is met (channels clamped to sRGB). Prints CSS lines for
 // `--color-irc-fg-N` and the TypeScript array for src/irc/colors.ts. Not run at build time.
-const BG = "#0b0b0f";
+const CLASSIC = process.argv.includes("--classic");
+// Classic: a colour must reach the floor on the white chat surface and on the mention fill.
+const BGS = CLASSIC ? ["#ffffff", "#ffe2b0"] : ["#0b0b0f"];
+const BG = BGS[0];
+const worst = (hex) => Math.min(...BGS.map((bg) => contrast(hex, bg)));
 const PALETTE = [
   "#ffffff", "#000000", "#00007f", "#009300", "#ff0000", "#7f0000", "#9c009c", "#fc7f00",
   "#ffff00", "#00fc00", "#009393", "#00ffff", "#0000fc", "#ff00ff", "#7f7f7f", "#d2d2d2",
@@ -51,8 +56,15 @@ function fromOklch([L, C, H]) {
 }
 
 const out = PALETTE.map((hex, i) => {
-  if (contrast(hex, BG) >= FLOOR) return { i, hex, from: null };
+  if (worst(hex) >= FLOOR) return { i, hex, from: null };
   const [L, C, H] = toOklch(hex);
+  if (CLASSIC) {
+    for (let step = L; step >= -0.0001; step -= 0.01) {
+      const candidate = fromOklch([Math.max(step, 0), C, H]);
+      if (worst(candidate) >= FLOOR) return { i, hex: candidate, from: hex };
+    }
+    return { i, hex: "#000000", from: hex };
+  }
   for (let step = L; step <= 1.0001; step += 0.01) {
     const candidate = fromOklch([step, C, H]);
     if (contrast(candidate, BG) >= FLOOR) return { i, hex: candidate, from: hex };
@@ -61,7 +73,7 @@ const out = PALETTE.map((hex, i) => {
 });
 
 for (const o of out) {
-  const note = o.from === null ? "" : ` /* lifted from ${o.from}: ${contrast(o.from, BG).toFixed(2)}:1 -> ${contrast(o.hex, BG).toFixed(2)}:1 */`;
+  const note = o.from === null ? "" : ` /* lifted from ${o.from}: ${worst(o.from).toFixed(2)}:1 -> ${worst(o.hex).toFixed(2)}:1 */`;
   console.log(`  --color-irc-fg-${o.i}: ${o.hex};${note}`);
 }
-console.log(`export const IRC_FG = [${out.map((o) => JSON.stringify(o.hex)).join(", ")}] as const;`);
+if (!CLASSIC) console.log(`export const IRC_FG = [${out.map((o) => JSON.stringify(o.hex)).join(", ")}] as const;`);

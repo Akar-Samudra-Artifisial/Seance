@@ -5,6 +5,7 @@ import type { StoreApi } from "zustand/vanilla";
 import { validateServerUrl } from "../config/connect-src.js";
 import {
   EMPTY_HISTORY,
+  failList,
   FRAME_MAX_BYTES,
   decodeFrames,
   initialState,
@@ -16,6 +17,7 @@ import {
   pushHistory,
   reduce,
   resetForReconnect,
+  startList,
   stepConnection,
 } from "../irc/index.js";
 import type { ClientState, ConnectParams, History, HistoryDirection, InputContext, LineKind } from "../irc/index.js";
@@ -24,7 +26,7 @@ import { getOwn, nullRecord, withEntry, withoutEntry } from "../irc/record.js";
 import { appendStatus, appendTo, openWindow, rememberClosed } from "../irc/reducer.route.js";
 import type { LineSpec } from "../irc/reducer.route.js";
 import type { CreateSocket, WebSocketLike } from "./socket.js";
-import type { ClientStorage } from "./storage.js";
+import type { ClientStorage, Theme } from "./storage.js";
 
 /** Host, port and TLS flag (`wss:` only) of a server URL; falls back to the raw text for non-URLs. */
 function describeEndpoint(serverUrl: string): { readonly host: string; readonly port: string; readonly tls: boolean } {
@@ -81,6 +83,12 @@ export interface UiState {
   readonly connectRequests: number;
   /** Compact layout: the nick list overlay is open (web-client-pixel-match R11.4). */
   readonly nickOverlayOpen: boolean;
+  /** The Channel_List_Dialog is open (web-client-extras R1). */
+  readonly channelListOpen: boolean;
+  /** The Keyboard shortcuts dialog is open (R4). */
+  readonly shortcutsOpen: boolean;
+  /** Colour theme; the stored name is validated when read (R3). */
+  readonly theme: Theme;
 }
 
 export interface ClientStore {
@@ -115,9 +123,27 @@ export interface ClientStore {
   clearDraft(): void;
   /** Ask the Connect_Dialog to open again (Toolbar, menu). */
   requestConnectDialog(): void;
+  /** Send LIST and open the Channel_List_Dialog; no-op unless registered. */
+  openChannelList(): void;
+  /** Send LIST again for the open dialog. */
+  refreshChannelList(): void;
+  closeChannelList(): void;
+  /** Join a listed channel and close the dialog. */
+  joinFromList(channel: string): void;
+  openShortcuts(): void;
+  closeShortcuts(): void;
+  setTheme(theme: Theme): void;
+  /**
+   * Apply the stored theme name, if any, without writing it back. Called once after hydration by
+   * ThemeSync, so the first client render stays Ghost like the server render (review finding 7).
+   */
+  loadStoredTheme(): void;
+  toggleTheme(): void;
 }
 
 const LAG_INTERVAL_MS = 30_000;
+/** The channel list gives up waiting for 323 after this long (R1.5). */
+export const LIST_TIMEOUT_MS = 15_000;
 const LAG_PREFIX = "seance-lag-";
 const CLOSE_TOO_BIG = 1009;
 const CLOSE_NORMAL = 1000;
@@ -219,6 +245,31 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
     const enqueue = (msgs: readonly IrcMessage[]): void => {
       update((c) => ({ ...c, paste: { ...c.paste, queue: [...c.paste.queue, ...msgs] } }));
       if (pasteTimer === null) sendNextQueued();
+    };
+
+    // Channel list timeout: the Store owns the timer; a late 323 after it fired is ignored.
+    let listTimer: unknown = null;
+    const stopListTimer = (): void => {
+      if (listTimer !== null) {
+        deps.clearTimeout(listTimer);
+        listTimer = null;
+      }
+    };
+    const requestList = (s: WebSocketLike): void => {
+      stopListTimer();
+      update((c) => startList(c, deps.now()));
+      if (!sendMessage(s, { command: "LIST", params: [] })) {
+        update(failList);
+        return;
+      }
+      listTimer = deps.setTimeout(() => {
+        listTimer = null;
+        update(failList);
+      }, LIST_TIMEOUT_MS);
+    };
+    const closeListUi = (): void => {
+      stopListTimer();
+      if (get().ui.channelListOpen) set((st) => ({ ui: { ...st.ui, channelListOpen: false } }));
     };
 
     // Lag timer: the Store owns the timer, the outstanding token and its send time (Requirement 6.5).
@@ -381,6 +432,8 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
 
     const onClose = (s: WebSocketLike, code: number): void => {
       if (socket !== s) return;
+      closeListUi();
+      update(failList);
       socket = null;
       framer = new LineFramer();
       const before = get().client.phase;
@@ -405,8 +458,10 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       const serverChanged = params.serverUrl !== url;
       url = params.serverUrl;
       update((c) => {
-        const { connectError: _dropped, ...rest } = c;
+        // A new connection starts without the old session's channel list.
+        const { connectError: _dropped, list: _list, ...rest } = c;
         void _dropped;
+        void _list;
         const idle: ClientState = {
           ...rest,
           ...(serverChanged ? { credits: nullRecord<number>() } : {}),
@@ -441,6 +496,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
     };
 
     const closeAfterQuit = (sendQuit: boolean): void => {
+      closeListUi();
       const s = socket;
       const phase = get().client.phase;
       if (sendQuit && s !== null && (phase === "registered" || phase === "registering")) {
@@ -480,6 +536,10 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         draft: null,
         connectRequests: 0,
         nickOverlayOpen: false,
+        channelListOpen: false,
+        shortcutsOpen: false,
+        // Always Ghost at creation, like the server render; ThemeSync applies the stored name after hydration.
+        theme: "ghost",
       },
 
       connect(params) {
@@ -658,6 +718,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       },
 
       dispose() {
+        stopListTimer();
         if (pasteTimer !== null) {
           deps.clearTimeout(pasteTimer);
           pasteTimer = null;
@@ -709,6 +770,56 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
           }
         }
         set((s) => ({ ui: { ...s.ui, mentionSound: enabled } }));
+      },
+
+      openChannelList() {
+        const s = socket;
+        if (s === null || get().client.phase !== "registered") return;
+        set((st) => ({ ui: { ...st.ui, channelListOpen: true } }));
+        requestList(s);
+      },
+
+      refreshChannelList() {
+        const s = socket;
+        if (s === null || get().client.phase !== "registered") return;
+        requestList(s);
+      },
+
+      closeChannelList() {
+        closeListUi();
+      },
+
+      joinFromList(channel) {
+        closeListUi();
+        get().submitInput(`/join ${channel}`);
+      },
+
+      openShortcuts() {
+        set((st) => ({ ui: { ...st.ui, shortcutsOpen: true } }));
+      },
+
+      closeShortcuts() {
+        if (get().ui.shortcutsOpen) set((st) => ({ ui: { ...st.ui, shortcutsOpen: false } }));
+      },
+
+      setTheme(theme) {
+        if (get().ui.theme === theme) return;
+        set((st) => ({ ui: { ...st.ui, theme } }));
+        try {
+          deps.storage.writeTheme(theme);
+        } catch (err) {
+          status("error", `error: saving the theme failed: ${errorMessage(err)}`);
+        }
+      },
+
+      loadStoredTheme() {
+        const stored = deps.storage.readTheme();
+        if (stored === null || stored === get().ui.theme) return;
+        set((st) => ({ ui: { ...st.ui, theme: stored } }));
+      },
+
+      toggleTheme() {
+        get().setTheme(get().ui.theme === "ghost" ? "classic" : "ghost");
       },
 
       setNickOverlay(open) {

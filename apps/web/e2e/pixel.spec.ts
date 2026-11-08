@@ -5,10 +5,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import type { Locator, Page } from "@playwright/test";
+import type { Locator, Page, TestInfo } from "@playwright/test";
 import { webOrigin } from "./harness/env.js";
 
 const FIGMA_EXPORT = resolve(dirname(fileURLToPath(import.meta.url)), "figma/01-main-1440x900.png");
+// web-client-extras R3.5: frame 06 Classic. The export is a manual step (the tools cannot write the PNG).
+const FIGMA_EXPORT_06 = resolve(dirname(fileURLToPath(import.meta.url)), "figma/06-classic-1440x900.png");
 const FIXTURE_PATH = "/fixtures/01-main";
 const MASK_COLOUR = "#FF00FF";
 /**
@@ -17,8 +19,20 @@ const MASK_COLOUR = "#FF00FF";
  * re-measure, set 0 and read the ratio from the failure message.
  */
 const FIGMA_MAX_DIFF_RATIO = 0.0157;
+/**
+ * Frame 06 (Classic), web-client-extras task 7.2: measured 16,827 of 1,296,000 pixels (0.01298) on
+ * 2026-11-08 with macOS Chromium, the Figma REST export of node 1:1623 and the Classic masks below;
+ * limit = measured + 20 %. To re-measure, set 0 and read the pixel count from the failure message.
+ */
+const FIGMA_MAX_DIFF_RATIO_06 = 0.0156;
 
-async function openFixture(page: Page): Promise<void> {
+async function openFixture(page: Page, theme?: "classic"): Promise<void> {
+  if (theme !== undefined) {
+    // The stored theme name is how a user selects Classic; the fixture store reads only this key.
+    await page.addInitScript((name) => {
+      window.localStorage.setItem("seance.theme", name);
+    }, theme);
+  }
   await page.addInitScript(() => {
     const w = window as unknown as { __cspViolations: string[] };
     w.__cspViolations = [];
@@ -48,6 +62,63 @@ function liftedMasks(page: Page): Locator[] {
   ];
 }
 
+interface FigmaCompare {
+  readonly exportPath: string;
+  /** Snapshot name; the masked export is written to the path toHaveScreenshot reads for it. */
+  readonly snapshot: string;
+  readonly masks: Locator[];
+  readonly maxDiffPixelRatio: number;
+}
+
+/** Compares the page with a Figma export after painting the same mask boxes on both images. */
+async function compareWithFigma(page: Page, testInfo: TestInfo, opts: FigmaCompare): Promise<void> {
+  const masks = opts.masks;
+  // Playwright paints masks on the actual screenshot only. The export is the expected image, so the
+  // same boxes are painted on a copy of it, placed where toHaveScreenshot looks for this name.
+  const boxes = (
+    await Promise.all(
+      masks.map((m) =>
+        m.evaluateAll((els) =>
+          els.map((e) => {
+            const r = e.getBoundingClientRect();
+            return [r.x, r.y, r.width, r.height] as const;
+          }),
+        ),
+      ),
+    )
+  ).flat();
+  const exportUrl = `data:image/png;base64,${readFileSync(opts.exportPath).toString("base64")}`;
+  const maskedExport = await page.evaluate(
+    async ({ src, boxes, colour }) => {
+      const img = new Image();
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej(new Error("Figma export did not decode"));
+        img.src = src;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (ctx === null) throw new Error("no 2d context");
+      ctx.drawImage(img, 0, 0);
+      ctx.fillStyle = colour;
+      for (const [x, y, w, h] of boxes) ctx.fillRect(x, y, w, h);
+      return canvas.toDataURL("image/png").split(",")[1] ?? "";
+    },
+    { src: exportUrl, boxes, colour: MASK_COLOUR },
+  );
+  const target = testInfo.snapshotPath(opts.snapshot);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, Buffer.from(maskedExport, "base64"));
+  // Design Open Point 7: measured ratio plus 20 percent.
+  await expect(page).toHaveScreenshot(opts.snapshot, {
+    maxDiffPixelRatio: opts.maxDiffPixelRatio,
+    mask: masks,
+    maskColor: MASK_COLOUR,
+  });
+}
+
 test.describe("Frame_01 fixture", () => {
   test.beforeEach(async ({ page }) => {
     await openFixture(page);
@@ -60,50 +131,11 @@ test.describe("Frame_01 fixture", () => {
   test("matches the Figma export at 1440x900 (R14.2)", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop-1440", "Figma comparison is for 1440x900 only");
     test.skip(!existsSync(FIGMA_EXPORT), "Figma export missing");
-    const masks = liftedMasks(page);
-    // Playwright paints masks on the actual screenshot only. The export is the expected image, so the
-    // same boxes are painted on a copy of it, placed where toHaveScreenshot looks for this name.
-    const boxes = (
-      await Promise.all(
-        masks.map((m) =>
-          m.evaluateAll((els) =>
-            els.map((e) => {
-              const r = e.getBoundingClientRect();
-              return [r.x, r.y, r.width, r.height] as const;
-            }),
-          ),
-        ),
-      )
-    ).flat();
-    const exportUrl = `data:image/png;base64,${readFileSync(FIGMA_EXPORT).toString("base64")}`;
-    const maskedExport = await page.evaluate(
-      async ({ src, boxes, colour }) => {
-        const img = new Image();
-        await new Promise<void>((res, rej) => {
-          img.onload = () => res();
-          img.onerror = () => rej(new Error("Figma export did not decode"));
-          img.src = src;
-        });
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext("2d");
-        if (ctx === null) throw new Error("no 2d context");
-        ctx.drawImage(img, 0, 0);
-        ctx.fillStyle = colour;
-        for (const [x, y, w, h] of boxes) ctx.fillRect(x, y, w, h);
-        return canvas.toDataURL("image/png").split(",")[1] ?? "";
-      },
-      { src: exportUrl, boxes, colour: MASK_COLOUR },
-    );
-    const target = testInfo.snapshotPath("figma-01-main.png");
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, Buffer.from(maskedExport, "base64"));
-    // Design Open Point 7: measured ratio plus 20 percent.
-    await expect(page).toHaveScreenshot("figma-01-main.png", {
+    await compareWithFigma(page, testInfo, {
+      exportPath: FIGMA_EXPORT,
+      snapshot: "figma-01-main.png",
+      masks: liftedMasks(page),
       maxDiffPixelRatio: FIGMA_MAX_DIFF_RATIO,
-      mask: masks,
-      maskColor: MASK_COLOUR,
     });
   });
 
@@ -203,5 +235,53 @@ test.describe("Frame_01 fixture", () => {
     await page.keyboard.press("Escape");
     await expect(overlay).toBeHidden();
     await expect(agents).toBeFocused();
+  });
+});
+
+/** Colours lifted on purpose in Classic (design.md, "Classic colours"); masked in the Figma comparison. */
+function classicLiftedMasks(page: Page): Locator[] {
+  return [
+    ...liftedMasks(page),
+    page.locator("[role=log] .text-event-green"),
+    page.locator("[role=log] .text-nick-human"),
+    page.locator("[role=log] .text-nick-reviewer"),
+    page.locator("[role=log] .text-tool-grey"),
+  ];
+}
+
+test.describe("Frame_06 Classic fixture (web-client-extras R3.5)", () => {
+  test.beforeEach(async ({ page }) => {
+    await openFixture(page, "classic");
+  });
+
+  test("applies the Classic token set", async ({ page }) => {
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "classic");
+    const surface = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--color-ghost-bg").trim(),
+    );
+    // The production CSS minifier may write the white as #fff.
+    expect(["#fff", "#ffffff"]).toContain(surface);
+    // The label is hidden in Compact, so only its presence is checked.
+    await expect(page.getByText("Theme: Classic")).toHaveCount(1);
+  });
+
+  test("matches the app baseline", async ({ page }) => {
+    await expect(page).toHaveScreenshot("06-classic.png", { fullPage: false });
+  });
+
+  test("raises no CSP violation", async ({ page }) => {
+    const violations = await page.evaluate(() => (window as unknown as { __cspViolations: string[] }).__cspViolations);
+    expect(violations).toEqual([]);
+  });
+
+  test("matches the Figma export at 1440x900", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "desktop-1440", "Figma comparison is for 1440x900 only");
+    test.skip(!existsSync(FIGMA_EXPORT_06), "Figma export of frame 06 missing (save it as e2e/figma/06-classic-1440x900.png)");
+    await compareWithFigma(page, testInfo, {
+      exportPath: FIGMA_EXPORT_06,
+      snapshot: "figma-06-classic.png",
+      masks: classicLiftedMasks(page),
+      maxDiffPixelRatio: FIGMA_MAX_DIFF_RATIO_06,
+    });
   });
 });
