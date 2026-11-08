@@ -8,11 +8,11 @@ Figma file: `GFgFsC9HEkntrirqCmJP5I` (Séance). Layout values come from one Figm
 
 ### Findings that shape the requirements
 
-1. **The `[hh:mm] -` lines are the WHOIS separators.** In the screenshot they sit right before and right after the WHOIS block. They come from `WhoisLines.tsx` (`sep-top`, `sep-bottom`). They are not empty chat lines and not agent output. Frame 04 draws exactly these two rows (`[23:48] -`, nodes 1:3541 and 1:3550). Frame 01 has no WHOIS. This spec removes them as asked (Requirement 9) and records that frame 04 shows them.
+1. **The `[hh:mm] -` lines are the WHOIS separators, and they are intended.** In the screenshot they sit right before and right after the WHOIS block. They come from `WhoisLines.tsx` (`sep-top`, `sep-bottom`). They are not empty chat lines and not agent output. Frame 04 draws exactly these two rows (`[23:48] -`, nodes 1:3541 and 1:3550). Frame 01 has no WHOIS. The product owner decided on 2026-11-08 that they stay exactly as Frame 04 draws them (Requirement 9); the earlier request to remove them was withdrawn.
 2. **Today's channels already behave as `+nt`.** `canSpeak` rejects every non-member (so "no external messages" is always on) and `TOPIC` is op-only (so "topic lock" is always on), but `MODE +n` and `+t` answer `472`. Requirement 12 turns these two behaviours into real flags that default to on.
 3. **The e2e stack builds the production bundle** (`next build`, `NODE_ENV=production`) into the same `.next` directory a deployment would use. A fixture gated by `NODE_ENV=test` would not exist in that bundle. Requirement 14 uses a build-time switch and a separate output directory instead.
 4. **The repo lifts three Figma text colours for contrast** (`timestamp-dim` `#8a8578` for Figma `#7a756b`, `away-grey` `#7e7e87` for `#5f5f66`, and the inactive caption). Pixel comparison against Figma will show small colour differences in those texts. They stay, because `.kiro/steering/web-ui.md` requires 4.5:1 and the Figma values fail it.
-5. **Figma's human nick colour is `#e08a2e`** (frame 01, 00 Style guide "human · orange"), while the steering rule and `--color-nick-human` say `#c8761f`. Requirement 6 keeps the token and lists the difference.
+5. **Figma's human nick colour is `#e08a2e`** (frame 01, 00 Style guide "human · orange"), while the steering rule and `--color-nick-human` said `#c8761f`. The product owner decided on 2026-11-08 to adopt the Figma value: `--color-nick-human` and `.kiro/steering/web-ui.md` change to `#e08a2e` (Requirement 6.5). Its contrast on `#0b0b0f` is 7.34:1, above the 4.5:1 floor. The accent orange `#c8761f` (mentions, notices, `-ChanServ-`) is a different token and does not change.
 6. **The Figma icon files are composites for a few controls.** `scrollbar-vertical.svg` and `scrollbar-horizontal.svg` are fixed-length drawings (arrows plus a thumb); `credits-candle.svg` contains baked `<text>` and an inline `style`; `caption-buttons.svg` repeats the three button files. The app needs slices of them (Requirement 3).
 7. **The frame has 2 px gaps between regions and a 3 px outer bevel**, which the current layout does not reproduce (Requirement 1).
 
@@ -90,7 +90,7 @@ Figma file: `GFgFsC9HEkntrirqCmJP5I` (Séance). Layout values come from one Figm
 
 #### Acceptance Criteria
 
-1. THE Client SHALL render every icon of the Icon_Set from React components in `apps/web/src/components/icons/`, one component per file, generated from the committed SVGs without changing a path, a coordinate or a colour.
+1. THE Client SHALL render every icon of the Icon_Set from React components in `apps/web/src/icons/` (outside `src/components/`, whose static test forbids hex colours), one component per file, generated from the committed SVGs without changing a path, a coordinate or a colour.
 2. EACH component SHALL: use the file's `viewBox` and drop `width` and `height` (the size comes from a class); add `shape-rendering="crispEdges"`; add `aria-hidden="true"` and `focusable="false"`; contain no `style` attribute, no `<text>` and no `xmlns` duplicates in React output.
 3. A component SHALL use `currentColor` only where the source has exactly one fill colour and that colour is the foreground (`mdi-child-channel` `#000080`, `switch-channel` black). Multi-colour icons keep their own colours.
 4. THE composite files SHALL be sliced as follows, each slice with unchanged path data:
@@ -111,7 +111,7 @@ Figma file: `GFgFsC9HEkntrirqCmJP5I` (Séance). Layout values come from one Figm
 1. THE toolbar SHALL contain, in this order, with 2x22 sunken separators where `|` stands: `connect` `|` `options` `|` `channel list` `agents` `|` `logs` `|` `theme toggle`. `channel list` and `agents` SHALL sit 1 px apart, with no separator between them.
 2. EACH button SHALL be 26x24, 4 px from the toolbar's top. The first button SHALL start 4 px from the left. A separator SHALL start 4 px after the button before it, and the next button SHALL start 3 px after the separator. The separator SHALL be 1 px lower than the buttons and 22 px high.
 3. THE glyph SHALL be centred in the button (Frame_01 offsets: connect glyph at 8,5; options at 5,4; channel list at 7.5,5.5; agents at 7.4,5.4; logs at 7.5,5.5; theme at 7,6).
-4. THE label `Theme: Ghost` SHALL end 3 px from the right edge (Desktop and Medium); it SHALL be hidden in Compact.
+4. THE label `Theme: Ghost` SHALL end 33 px from the right edge of the toolbar (Frame_01 measurement) (Desktop and Medium); it SHALL be hidden in Compact.
 5. THE order of the existing actions SHALL stay: connect/reconnect, options (disabled), channels (disabled), agents (focus the nick list; in Compact it toggles the overlay of Requirement 11), logs (Status), theme (disabled).
 6. THE buttons SHALL keep `role="toolbar"` roving focus, `aria-label` and `title`, and the `aria-disabled` pattern.
 
@@ -135,7 +135,7 @@ Figma file: `GFgFsC9HEkntrirqCmJP5I` (Séance). Layout values come from one Figm
 2. WHEN the Client receives `341 RPL_INVITING` for an invitation it sent, it SHALL append `*** <own nick> invited <target>` as kind `invite` to the channel window named by the reply (Status when that window is closed). WHEN it receives an `INVITE` addressed to itself, the existing line SHALL also use kind `invite` and the Event_Token.
 3. THE word list of Requirement 6.1 SHALL be one constant used by `ChatLine` and by a test; there SHALL be no second list.
 4. THE Event_Token SHALL meet the Contrast_Floor on `#0b0b0f` (a test already exists and stays).
-5. THE human nick SHALL keep the token `--color-nick-human` (`#c8761f`); the Frame_01 value `#e08a2e` is recorded as a known difference, not applied.
+5. THE human nick colour SHALL be `#e08a2e` (Frame_01 and 00 Style guide "human · orange"). `--color-nick-human` in `app/globals.css` and the human-nick rows of `.kiro/steering/web-ui.md` SHALL change to it; the accent orange `#c8761f` (mentions, notices, `-ChanServ-`, focus ring) SHALL NOT change. THE contrast test SHALL keep the pair `nick-human` on `ghost-bg` at 4.5:1 or more (the value is 7.34:1).
 
 ### Requirement 7: Chat pane and scrollbar
 
@@ -160,16 +160,16 @@ Figma file: `GFgFsC9HEkntrirqCmJP5I` (Séance). Layout values come from one Figm
 2. THE active button SHALL be bold and sunken; a button with unread lines SHALL use `#000080` text; a button with a mention SHALL use the accent orange. These existing rules stay.
 3. THE credits panel SHALL be a 160x22 sunken panel with the candle slice at 7,6 (10x10), the text `credits: ` in IBM Plex Mono 13 from x 22, and the value in bold, in HTML, with the value formatted with one decimal as before. It SHALL carry `role="status"` semantics as today.
 
-### Requirement 9: No separator-only lines
+### Requirement 9: WHOIS separators stay; no empty chat lines
 
-**User Story:** As a user, I want chat lines to carry text.
+**User Story:** As a user, I want the WHOIS block as the mockup draws it, and I want chat lines to carry text.
 
 #### Acceptance Criteria
 
-1. THE Client SHALL NOT render the `sep-top` and `sep-bottom` rows of the WHOIS block. The block starts at the first field row and ends at `End of /WHOIS list.`.
-2. THE reducer SHALL NOT append a `message`, `action`, `notice`, `tool`, `tool-denied` or `local` line whose text has no visible character after IRC formatting and control stripping. MOTD (`motd`) blank rows and `numeric` rows are exempt, because blank MOTD rows are part of the server's art.
-3. A property test SHALL assert 9.2 for arbitrary text built from control codes and whitespace, and a unit test SHALL assert 9.1.
-4. `design.md` SHALL record that Frame_01 04 draws both separators and how to restore them (two rows in `WhoisLines`).
+1. THE Client SHALL keep the two separator rows of the WHOIS block exactly as Frame 04 draws them (nodes 1:3541 and 1:3550): a row `[hh:mm] -` directly before the first field row and a row `[hh:mm] -` directly after `End of /WHOIS list.`, with the timestamp in the dim token. `WhoisLines` SHALL NOT change for this requirement.
+2. THE reducer SHALL NOT append a `message`, `action`, `notice`, `tool`, `tool-denied` or `local` line whose text has no visible character after IRC formatting and control stripping. MOTD (`motd`) blank rows, `numeric` rows and the WHOIS block are exempt, because blank MOTD rows are part of the server's art and the separators are intended.
+3. A property test SHALL assert 9.2 for arbitrary text built from control codes and whitespace, and a unit test SHALL pin the two separator rows of 9.1 (first and last row of the block are `-` rows, nothing else renders as a bare `-` line).
+4. `design.md` SHALL record the decision to keep the separators and that Frame_01 has no WHOIS.
 
 ### Requirement 10: Readable IRC colours
 
@@ -177,7 +177,7 @@ Figma file: `GFgFsC9HEkntrirqCmJP5I` (Séance). Layout values come from one Figm
 
 #### Acceptance Criteria
 
-1. FOR every IRC foreground colour index 0 to 15 used without a background, THE rendered colour on `#0b0b0f` SHALL have a contrast ratio of at least 4.5:1. Colours that fail today (at least 1, 2, 5, 6, 12 and any other the test finds) SHALL be replaced in `--color-irc-N` by the nearest lighter shade of the same hue, found by a script and committed as hex values, with a comment naming the original.
+1. FOR every IRC foreground colour index 0 to 15 used without a background, THE rendered colour on `#0b0b0f` SHALL have a contrast ratio of at least 4.5:1. Colours that fail today (at least 1, 2, 5, 6, 12 and any other the test finds) SHALL be rendered with a separate token `--color-irc-fg-N` holding the nearest lighter shade of the same hue, found by a script and committed as hex values, with a comment naming the original. `--color-irc-N` keeps the classic value for backgrounds and colour pairs (so a black background stays black).
 2. FOR a colour code with a background, THE Client SHALL pick the foreground class from `text-irc-<fg>`, `text-irc-0` and `text-irc-1` so that the pair meets 4.5:1, using the original `fg` when it already does, otherwise the one of white and black with the higher ratio. The function SHALL be pure (`readableClass(fg, bg)`) and return a class name from a fixed list; no inline style.
 3. THE colour used for the agent reply colour `\x0312` SHALL meet 4.5:1 after the change.
 4. A test SHALL compute the ratio for all 16 foregrounds on the ghost background and for all 256 pairs through `readableClass`, and fail below 4.5.
@@ -242,7 +242,7 @@ Figma file: `GFgFsC9HEkntrirqCmJP5I` (Séance). Layout values come from one Figm
 #### Acceptance Criteria
 
 1. A Playwright spec SHALL open the Fixture at 1440x900, 1024x768, 768x1024, 390x844 and 360x740 (the last two with `isMobile` and `hasTouch`), with timezone `UTC`, locale `en-US`, reduced motion, caret hidden, fonts loaded (`document.fonts.ready`), and assert `toHaveScreenshot` for each.
-2. FOR 1440x900 the baseline SHALL be the Figma_Export, with `maxDiffPixelRatio` set from the first measured run plus a margin and recorded in `design.md`. The spec SHALL mask the regions whose text colour is deliberately lifted (timestamps, the nick list footer, the away nick) and the caret. The other four baselines SHALL be generated from the Client and committed.
+2. FOR 1440x900 a Figma comparison test SHALL use the Figma_Export as the baseline, with `maxDiffPixelRatio` set from the first measured run plus a margin and recorded in `design.md`; WHEN the Figma_Export file does not exist that test SHALL be skipped with the reason "Figma export missing" (it is a manual input). The spec SHALL mask the regions whose text colour is deliberately lifted (timestamps, the nick list footer, the away nick) and the caret. A baseline generated from the Client SHALL also exist for 1440x900, as for the other four sizes, so every size is always covered.
 3. A scripted check at each size SHALL assert no horizontal overflow (Requirement 11.1) and, on failure, print the selectors of the elements whose right edge is beyond the viewport.
 4. A scripted check on the touch sizes SHALL assert the 32x32 hit area of Requirement 11.6.
 5. THE spec SHALL assert region geometry at 1440x900 with `boundingBox()` for the nine regions of Requirement 1 (±1 px).

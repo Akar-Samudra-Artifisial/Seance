@@ -88,7 +88,7 @@ export function onRegistrationComplete(ctx: RouterContext, client: Client): void
     Numerics.RPL_CREATED,
     `This server was created ${(ctx.createdAt ?? DEFAULT_CREATED_AT).toISOString()}`,
   );
-  numeric(ctx, client, Numerics.RPL_MYINFO, ctx.serverName, SERVER_VERSION, "o", "ov");
+  numeric(ctx, client, Numerics.RPL_MYINFO, ctx.serverName, SERVER_VERSION, "o", "mntov");
   numeric(
     ctx,
     client,

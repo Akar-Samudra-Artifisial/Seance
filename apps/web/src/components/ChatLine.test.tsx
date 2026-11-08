@@ -21,7 +21,8 @@ describe("ChatLine", () => {
       exorcism: { agent: "Coder", kicker: "\x02op\x02", reason: "\x034bad\x03 code" },
     });
     expect(c.textContent).toBe("[00:00] *** Coder has been exorcised by op (bad code)");
-    expect(c.querySelector(".text-irc-4")?.textContent).toBe("bad");
+    // R10.1 (web-client-pixel-match): a colour without a background uses the readable shade.
+    expect(c.querySelector(".text-irc-fg-4")?.textContent).toBe("bad");
     expect(c.querySelector(".font-bold")?.textContent).toBe("exorcised");
     expect(c.querySelector(".line-through")?.textContent).toBe("Coder");
     expect(c.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe("exorcised");
@@ -66,7 +67,8 @@ describe("ChatLine", () => {
 
   it("maps colour codes and nick colours to fixed classes", () => {
     const c = renderLine({ ...base, from: "reviewer", text: "\x0304,12hi" });
-    expect(c.querySelector(".text-irc-4.bg-irc-12")?.textContent).toBe("hi");
+    // R10.2 (web-client-pixel-match): red on blue is 2.2:1, so the text falls back to white.
+    expect(c.querySelector(".text-chrome-highlight.bg-irc-12")?.textContent).toBe("hi");
     expect(c.querySelector(".text-nick-reviewer")?.textContent).toBe("reviewer");
     expect(c.querySelector("[style]")).toBeNull();
     const h = renderLine({ ...base, from: "alice", text: "x" });

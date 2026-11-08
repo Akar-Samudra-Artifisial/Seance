@@ -11,7 +11,7 @@ export function SkipLink(): ReactNode {
         event.preventDefault();
         document.getElementById("input-line")?.focus();
       }}
-      className="sr-only focus:not-sr-only focus:bg-chrome-face focus:px-2 focus:py-0.5 focus:text-chrome-outline"
+      className="sr-only focus:not-sr-only focus:absolute focus:left-1 focus:top-1 focus:z-30 focus:bg-chrome-face focus:px-2 focus:py-0.5 focus:text-chrome-outline"
     >
       Skip to message input
     </a>

@@ -26,7 +26,7 @@ export function TopicBar(props: {
     <p
       aria-label="Channel topic"
       title={full}
-      className="bevel-sunken h-6 truncate whitespace-nowrap bg-ghost-bg px-1 font-chat text-sm leading-6 text-ghost-text"
+      className="bevel-field h-(--layout-topic) shrink-0 truncate whitespace-nowrap bg-ghost-bg px-2 font-chat text-sm leading-(--layout-topic) text-ghost-text"
     >
       <span className="text-ghost-orange">
         <IrcText text={channel} />

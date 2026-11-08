@@ -3,7 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { plain } from "../irc/index.js";
+import { OverflowChevrons } from "../icons/index.js";
+import { MENU_OVERFLOW, MENU_RESERVE, MENU_SLOTS } from "../layout/metrics.js";
 import { useClientStore } from "../store/react.js";
+import { CaptionButton } from "./CaptionButton.js";
+import { useFit } from "./layout-hooks.js";
+import { ChildIcon } from "./MdiChild.js";
 import { MenuPopup } from "./MenuPopup.js";
 import type { InitialFocus, MenuEntry } from "./MenuPopup.js";
 
@@ -20,10 +25,16 @@ interface Menu {
 const sep = (id: string): MenuEntry => ({ kind: "separator", id });
 
 const barButtonClass =
-  "h-5 px-2 font-chrome text-xs text-chrome-outline hover:bg-title-from hover:text-chrome-highlight focus-visible:bg-title-from focus-visible:text-chrome-highlight aria-expanded:bg-title-from aria-expanded:text-chrome-highlight aria-disabled:text-chrome-shadow aria-disabled:hover:bg-chrome-face aria-disabled:hover:text-chrome-shadow";
+  // Frame_01 sets the menu text at the top of the 20 px bar (cap top at y 29, not centred).
+  "hit-target h-5 px-2 pb-[7px] text-left font-chrome text-xs leading-[13px] text-chrome-outline hover:bg-title-from hover:text-chrome-highlight focus-visible:bg-title-from focus-visible:text-chrome-highlight aria-expanded:bg-title-from aria-expanded:text-chrome-highlight aria-disabled:text-chrome-shadow aria-disabled:hover:bg-chrome-face aria-disabled:hover:text-chrome-shadow";
 
-const childButtonClass =
-  "bevel-raised flex h-3.5 w-4 items-center justify-center bg-chrome-face font-chrome text-xs leading-none text-chrome-outline focus-visible:outline-2 focus-visible:outline-chrome-outline disabled:text-chrome-shadow";
+/** Slot widths of R5.2 as static classes (File..Help); the order matches MENU_SLOTS. */
+const SLOT_CLASS = ["w-[42px]", "w-[42px]", "w-[75px]", "w-[49px]", "w-[69px]", "w-[56px]", "w-[56px]"] as const;
+
+/** `open.index` of the `»` list itself (Compact). */
+const OVERFLOW = -1;
+
+const RESTORE_TITLE = "Restore (this client keeps one maximised window)";
 
 /** True on macOS and iOS, where Option+letter produces text. */
 function isApplePlatform(): boolean {
@@ -59,6 +70,10 @@ export function MenuBar(): ReactNode {
   const [open, setOpen] = useState<{ readonly index: number; readonly focus: InitialFocus } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const barRef = useRef<HTMLDivElement>(null);
+  const overflowRef = useRef<HTMLButtonElement>(null);
+  // Menus that fit; the rest go into the `»` list (R11.4). All fit from about 520 px up.
+  const visible = useFit(barRef, MENU_SLOTS, MENU_RESERVE, MENU_OVERFLOW);
 
   const registered = phase === "registered";
   const active = activeKind === undefined ? undefined : { kind: activeKind, name: activeName ?? "" };
@@ -161,7 +176,14 @@ export function MenuBar(): ReactNode {
         },
       ],
     },
-    { id: "favorites", label: "Favorites", mnemonic: 1, disabled: true, entries: [] },
+    // R5.1: opens like the others; its only item is inert until favorites exist.
+    {
+      id: "favorites",
+      label: "Favorites",
+      mnemonic: 1,
+      disabled: false,
+      entries: [unsupported("no-favorites", "No favorites yet")],
+    },
     {
       id: "tools",
       label: "Tools",
@@ -239,24 +261,36 @@ export function MenuBar(): ReactNode {
     },
   ];
 
+
+  const count = menus.length;
+  const hasOverflow = visible < count;
+  /** The bar button that stands for menu `i`: its own button, or `»` when the menu is in the overflow. */
+  const buttonFor = (i: number): HTMLButtonElement | null =>
+    i < visible ? (buttonRefs.current[i] ?? null) : overflowRef.current;
+
   const focusBar = (i: number): void => {
     setBarIndex(i);
-    buttonRefs.current[i]?.focus();
+    buttonFor(i)?.focus();
   };
   const openMenu = (i: number, focus: InitialFocus): void => {
+    if (i === OVERFLOW) {
+      setBarIndex(visible);
+      setOpen({ index: OVERFLOW, focus });
+      return;
+    }
     const menu = menus[i];
     if (menu === undefined) return;
     setBarIndex(i);
     if (menu.disabled) {
       setOpen(null);
-      buttonRefs.current[i]?.focus();
+      buttonFor(i)?.focus();
       return;
     }
     setOpen({ index: i, focus });
   };
   const close = (restoreFocus: boolean): void => {
     setOpen(null);
-    if (restoreFocus) buttonRefs.current[barIndex]?.focus();
+    if (restoreFocus) buttonFor(barIndex)?.focus();
   };
 
   // Outside click closes the open menu.
@@ -292,13 +326,14 @@ export function MenuBar(): ReactNode {
     // Re-bound every render: the handler closes over this render's menus and state.
   });
 
+  /** `i` is the menu the focused bar button stands for; `»` passes `OVERFLOW`. */
   const onBarKeyDown = (event: KeyboardEvent<HTMLButtonElement>, i: number): void => {
-    const count = menus.length;
+    const from = i === OVERFLOW ? Math.max(barIndex, visible) : i;
     switch (event.key) {
       case "ArrowRight":
       case "ArrowLeft": {
         event.preventDefault();
-        const next = (i + (event.key === "ArrowRight" ? 1 : count - 1)) % count;
+        const next = (from + (event.key === "ArrowRight" ? 1 : count - 1)) % count;
         if (open === null) focusBar(next);
         else openMenu(next, "first");
         return;
@@ -338,12 +373,52 @@ export function MenuBar(): ReactNode {
     openMenu(i, event.detail === 0 ? "first" : "menu");
   };
 
-  const canClose = active !== undefined && active.kind !== "status";
+  const popupFor = (i: number, menu: Menu, focus: InitialFocus, align: "left" | "right" = "left"): ReactNode => (
+    <MenuPopup
+      id={`menu-${menu.id}-list`}
+      align={align}
+      label={menu.label}
+      entries={menu.entries}
+      initialFocus={focus}
+      onClose={close}
+      onSwitch={(direction) => {
+        openMenu((i + direction + count) % count, "first");
+      }}
+      onActivate={(run) => {
+        // Close and restore focus first so an item that moves focus (prefill, dialog) wins.
+        close(true);
+        run();
+      }}
+    />
+  );
 
+  // The `»` list: one item per hidden menu; choosing one opens that menu under `»`.
+  const overflowEntries: readonly MenuEntry[] = menus.slice(visible).map((menu, at) => ({
+    kind: "item",
+    id: `more-${menu.id}`,
+    label: menu.label,
+    disabled: menu.disabled,
+    // State only (no refs): the chosen menu opens under `»`, which keeps standing for it.
+    run: () => {
+      setBarIndex(visible + at);
+      setOpen({ index: visible + at, focus: "first" });
+    },
+  }));
+
+  const canClose = active !== undefined && active.kind !== "status";
+  const isMinimised = minimised.includes(activeKey);
+  const openHidden = open !== null && open.index >= visible ? open : null;
+  const hiddenMenu = openHidden === null ? undefined : menus[openHidden.index];
+
+  // Frame_01: child icon at x5 y3; menus from x20 in fixed slots; child buttons 16x14 at y3, ending 2 px
+  // from the right edge with a 2 px gap before close (R2.2, R5.2).
   return (
-    <div className="flex h-5 items-center justify-between bg-chrome-face font-chrome">
-      <div ref={rootRef} role="menubar" aria-label="Main menu" className="flex">
-        {menus.map((menu, i) => {
+    <div ref={barRef} className="flex h-(--layout-menu) shrink-0 items-start bg-chrome-face font-chrome">
+      <span className="ml-[5px] mt-[3px] flex shrink-0">
+        {activeKind === undefined ? <span className="block size-3.5" /> : <ChildIcon kind={activeKind} />}
+      </span>
+      <div ref={rootRef} role="menubar" aria-label="Main menu" className="ml-px flex min-w-0">
+        {menus.slice(0, visible).map((menu, i) => {
           const isOpen = open?.index === i;
           return (
             <div key={menu.id} className="relative">
@@ -373,65 +448,87 @@ export function MenuBar(): ReactNode {
                   // While a menu is open, hovering a neighbour switches to it like Win95.
                   if (open !== null && open.index !== i && !menu.disabled) openMenu(i, "menu");
                 }}
-                className={barButtonClass}
+                className={`${barButtonClass} ${SLOT_CLASS[i] ?? ""}`}
               >
                 {menu.label.slice(0, menu.mnemonic)}
                 <u>{menu.label.charAt(menu.mnemonic)}</u>
                 {menu.label.slice(menu.mnemonic + 1)}
               </button>
-              {isOpen ? (
-                <MenuPopup
-                  id={`menu-${menu.id}-list`}
-                  label={menu.label}
-                  entries={menu.entries}
-                  initialFocus={open.focus}
-                  onClose={close}
-                  onSwitch={(direction) => {
-                    openMenu((i + direction + menus.length) % menus.length, "first");
-                  }}
-                  onActivate={(run) => {
-                    // Close and restore focus first so an item that moves focus (prefill, dialog) wins.
-                    close(true);
-                    run();
-                  }}
-                />
-              ) : null}
+              {isOpen ? popupFor(i, menu, open.focus) : null}
             </div>
           );
         })}
+        {hasOverflow ? (
+          <div className="relative">
+            <button
+              ref={overflowRef}
+              type="button"
+              role="menuitem"
+              id="menu-overflow"
+              aria-label="More menus"
+              aria-haspopup="menu"
+              aria-expanded={open !== null && (open.index === OVERFLOW || open.index >= visible)}
+              aria-controls={open?.index === OVERFLOW ? "menu-overflow-list" : undefined}
+              tabIndex={barIndex >= visible ? 0 : -1}
+              onClick={(event) => {
+                onBarClick(event, OVERFLOW);
+              }}
+              onKeyDown={(event) => {
+                onBarKeyDown(event, OVERFLOW);
+              }}
+              className={`${barButtonClass} flex w-6 items-center justify-center px-0`}
+            >
+              <OverflowChevrons className="block size-4" />
+            </button>
+            {open?.index === OVERFLOW ? (
+              <MenuPopup
+                id="menu-overflow-list"
+                align="right"
+                label="More menus"
+                entries={overflowEntries}
+                initialFocus={open.focus}
+                onClose={close}
+                onSwitch={(direction) => {
+                  openMenu(direction === 1 ? 0 : visible - 1, "first");
+                }}
+                onActivate={(run) => {
+                  setOpen(null);
+                  run();
+                }}
+              />
+            ) : null}
+            {openHidden !== null && hiddenMenu !== undefined
+              ? popupFor(openHidden.index, hiddenMenu, openHidden.focus, "right")
+              : null}
+          </div>
+        ) : null}
       </div>
-      <div role="group" aria-label="Active window controls" className="flex gap-0.5 pr-1">
-        <button
-          type="button"
-          aria-label="Minimise active window"
+      <div role="group" aria-label="Active window controls" className="ml-auto mr-0.5 mt-[3px] flex shrink-0">
+        <CaptionButton
+          kind="min"
+          label="Minimise active window"
           onClick={() => {
             minimiseWindow(activeKey);
           }}
-          className={childButtonClass}
-        >
-          <span aria-hidden="true">_</span>
-        </button>
-        <button
-          type="button"
-          aria-label="Restore active window"
+        />
+        <CaptionButton
+          kind="restore"
+          label="Restore active window"
+          title={isMinimised ? undefined : RESTORE_TITLE}
+          inert={!isMinimised}
           onClick={() => {
             restoreWindow(activeKey);
           }}
-          className={childButtonClass}
-        >
-          <span aria-hidden="true">□</span>
-        </button>
-        <button
-          type="button"
-          aria-label="Close active window"
+        />
+        <CaptionButton
+          kind="close"
+          label="Close active window"
+          className="ml-0.5"
           disabled={!canClose}
           onClick={() => {
             closeWindow(activeKey);
           }}
-          className={childButtonClass}
-        >
-          <span aria-hidden="true">×</span>
-        </button>
+        />
       </div>
     </div>
   );

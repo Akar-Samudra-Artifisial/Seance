@@ -29,6 +29,8 @@ export interface MenuPopupProps {
   readonly onSwitch: (direction: -1 | 1) => void;
   /** Enter, Space or click on an enabled item. */
   readonly onActivate: (run: () => void) => void;
+  /** Edge of the anchor the list aligns to; `right` keeps the Compact `»` lists inside the viewport. */
+  readonly align?: "left" | "right" | undefined;
 }
 
 const itemClass =
@@ -116,7 +118,7 @@ export function MenuPopup(props: MenuPopupProps): ReactNode {
       aria-label={props.label}
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="bevel-raised absolute left-0 top-full z-20 min-w-44 bg-chrome-face p-0.5"
+      className={`bevel-raised absolute ${props.align === "right" ? "right-0" : "left-0"} top-full z-20 min-w-44 bg-chrome-face p-0.5`}
     >
       {props.entries.map((entry) =>
         entry.kind === "separator" ? (

@@ -53,6 +53,15 @@ export function classifyLine(input: ClassifyInput): Classification {
 }
 
 /**
+ * `***` lines drawn in the event green (`--color-event-green`, 00 Style guide "Chat line types").
+ * Kick and exorcism lines keep their own styles. The single list for ChatLine and its tests.
+ */
+export const EVENT_LINE_KINDS: readonly LineKind[] = ["join", "part", "quit", "nick", "mode", "topic", "invite"];
+
+/** Kinds whose line is dropped when its text has no visible character (web-client-pixel-match R9.2). */
+export const GATED_KINDS: readonly LineKind[] = ["message", "action", "notice", "tool", "tool-denied", "local"];
+
+/**
  * Text markers rendered next to colour so state never depends on colour alone (R14.10).
  * Event lines no longer need a "[kick]" marker: their "*** ... was kicked" text says it.
  */

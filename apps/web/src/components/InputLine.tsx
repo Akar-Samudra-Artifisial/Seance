@@ -72,7 +72,8 @@ export function InputLine(): ReactNode {
   };
 
   return (
-    <form onSubmit={onSubmit} className="flex bg-chrome-face p-1">
+    // Input field (R1.1, R1.5): 24 px, two-step sunken bevel, text 8 px from the left, orange caret.
+    <form onSubmit={onSubmit} className="mt-0.5 flex shrink-0 bg-chrome-face">
       <input
         id="input-line"
         ref={inputRef}
@@ -85,7 +86,7 @@ export function InputLine(): ReactNode {
         aria-label="Message or command"
         autoComplete="off"
         spellCheck={false}
-        className="bevel-sunken w-full bg-ghost-bg px-1 py-0.5 font-chat text-[15px] text-ghost-text focus-visible:outline-2 focus-visible:outline-ghost-orange"
+        className="bevel-field h-(--layout-input) w-full min-w-0 bg-ghost-bg px-2 py-0 font-chat text-[15px] leading-(--layout-input) text-ghost-text pointer-coarse:h-8 pointer-coarse:leading-8 caret-ghost-orange focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ghost-orange"
       />
     </form>
   );

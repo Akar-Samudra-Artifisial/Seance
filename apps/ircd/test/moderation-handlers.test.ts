@@ -63,7 +63,9 @@ function setup() {
 }
 
 describe("MODE handler (gaps)", () => {
-  it("applies a multi-change string in order, one broadcast and one event per change", () => {
+  // web-client-pixel-match R12.5 changed this: one grouped MODE per command, listing only the
+  // changes that altered state (`-m` on a channel without `+m` is dropped), events likewise.
+  it("applies a multi-change string in order, one grouped broadcast, one event per effective change", () => {
     const { add, run, clear, channels, modes } = setup();
     const alice = add("1", "alice");
     const bob = add("2", "bob");
@@ -74,18 +76,40 @@ describe("MODE handler (gaps)", () => {
     run(alice, "MODE", "#t", "+ov-m", "bob", "bob");
 
     const origin = "alice!alice@host";
-    expect(bob.sent).toEqual([
-      { prefix: origin, command: "MODE", params: ["#t", "+o", "bob"] },
-      { prefix: origin, command: "MODE", params: ["#t", "+v", "bob"] },
-      { prefix: origin, command: "MODE", params: ["#t", "-m"] },
-    ]);
+    expect(bob.sent).toEqual([{ prefix: origin, command: "MODE", params: ["#t", "+ov", "bob", "bob"] }]);
     expect(alice.sent).toEqual(bob.sent);
     expect(channels.isOp("#t", "2")).toBe(true);
     expect(modes).toEqual([
       { channel: "#t", by: "alice", mode: "o", adding: true, target: "bob" },
       { channel: "#t", by: "alice", mode: "v", adding: true, target: "bob" },
-      { channel: "#t", by: "alice", mode: "m", adding: false },
     ]);
+  });
+
+  it("accepts +mnt as one command, one MODE line, and reports the flags in 324", () => {
+    const { add, run, clear, channels, modes } = setup();
+    const alice = add("1", "alice");
+    run(alice, "JOIN", "#t");
+    run(alice, "MODE", "#t", "-nt");
+    clear(alice);
+    modes.length = 0;
+
+    run(alice, "MODE", "#t", "+mnt");
+    expect(alice.sent).toEqual([{ prefix: "alice!alice@host", command: "MODE", params: ["#t", "+mnt"] }]);
+    expect(channels.get("#t")?.modes).toEqual({ moderated: true, noExternal: true, topicLock: true });
+    expect(modes).toEqual([{ channel: "#t", by: "alice", mode: "m", adding: true }]);
+
+    clear(alice);
+    run(alice, "MODE", "#t");
+    expect(alice.sent).toEqual([{ prefix: "irc.test", command: "324", params: ["alice", "#t", "+mnt"] }]);
+  });
+
+  it("broadcasts nothing for a command that changes nothing", () => {
+    const { add, run, clear } = setup();
+    const alice = add("1", "alice");
+    run(alice, "JOIN", "#t");
+    clear(alice);
+    run(alice, "MODE", "#t", "+nt");
+    expect(alice.sent).toEqual([]);
   });
 
   it("-o removes operator status and publishes the event", () => {
@@ -119,7 +143,8 @@ describe("MODE handler (gaps)", () => {
     run(alice, "JOIN", "#t");
     clear(alice);
     run(alice, "MODE", "#t");
-    expect(alice.sent).toEqual([{ prefix: "irc.test", command: "324", params: ["alice", "#t", "+"] }]);
+    // web-client-pixel-match R12.1: a new channel is `+nt`.
+    expect(alice.sent).toEqual([{ prefix: "irc.test", command: "324", params: ["alice", "#t", "+nt"] }]);
   });
 
   it("a voiced non-op gets 482 and nothing changes", () => {

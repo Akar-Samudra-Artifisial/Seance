@@ -4,11 +4,9 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { titleOf } from "../irc/index.js";
 import { useClientStore } from "../store/react.js";
-import { Icon } from "./Icon.js";
+import { AppCandle } from "../icons/index.js";
+import { CaptionButton } from "./CaptionButton.js";
 import { IrcText } from "./Spans.js";
-
-const captionClass =
-  "bevel-raised flex h-3.5 w-4 items-center justify-center bg-chrome-face font-chrome text-[11px] leading-none text-chrome-outline focus-visible:outline-2 focus-visible:outline-chrome-outline aria-disabled:text-chrome-shadow";
 
 /** Host part of the server URL for the status title; falls back to the raw text when it is not a URL. */
 export function hostOf(serverUrl: string): string {
@@ -37,32 +35,27 @@ export function TitleBar(): ReactNode {
     ? "bg-linear-to-r from-title-inactive-from to-title-inactive-to text-title-inactive-text"
     : "bg-linear-to-r from-title-from to-title-to text-chrome-highlight";
 
+  // Frame_01: candle 10x16 at x6, title at x24, buttons 16x14 at x1382/1398/1416 (2 px gap before close).
   return (
     <div
       data-testid="title-bar"
       data-active={modalOpen ? "false" : "true"}
-      className={`flex h-[22px] shrink-0 items-center gap-1 px-1 font-chrome text-xs font-bold ${surface}`}
+      className={`flex h-[22px] shrink-0 items-center pl-1.5 pr-0.5 font-chrome text-xs font-bold ${surface}`}
     >
-      <Icon name="status" />
-      <span className="min-w-0 flex-1 truncate">
+      <AppCandle />
+      <span className="ml-2 min-w-0 flex-1 truncate">
         <IrcText text={title} />
       </span>
-      <button type="button" aria-label="Minimise" aria-disabled="true" className={captionClass}>
-        <span aria-hidden="true">_</span>
-      </button>
-      <button type="button" aria-label="Maximise" aria-disabled="true" className={captionClass}>
-        <span aria-hidden="true">□</span>
-      </button>
-      <button
-        type="button"
-        aria-label="Close"
-        className={captionClass}
+      <CaptionButton kind="min" label="Minimise" inert />
+      <CaptionButton kind="max" label="Maximise" inert />
+      <CaptionButton
+        kind="close"
+        label="Close"
+        className="ml-0.5"
         onClick={() => {
           if (connected) quit();
         }}
-      >
-        <span aria-hidden="true">×</span>
-      </button>
+      />
     </div>
   );
 }

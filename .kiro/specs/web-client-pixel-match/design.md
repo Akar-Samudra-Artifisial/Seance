@@ -86,7 +86,7 @@ flowchart LR
 
 Heights add up: 3+22+20+32+2+24+2+686+2+24+2+28+2+26+1+21+3 = 900.
 
-Toolbar x positions (frame-relative): connect 7, separator 37, options 42, separator 72, channel list 77, agents 104, separator 134, logs 139, separator 169, theme 174, label ends at 1437−3.
+Toolbar x positions (frame-relative): connect 7, separator 37, options 42, separator 72, channel list 77, agents 104, separator 134, logs 139, separator 169, theme 174, label ends at 1437−33.
 
 Menu x positions: File 31, View 73, Favorites 115, Tools 190, Commands 239, Window 308, Help 364.
 
@@ -96,38 +96,38 @@ Chat colours in Frame_01 (all from the design context): event `#6a9955`, action 
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | One CSS grid shell with row sizes from layout tokens, not margins per component. | The 2 px gaps and the optional tray row then follow from `grid-template-rows`, and the sum is testable. |
+| D1 | A flex column shell: each region has its token height and a `mt-0.5` (2 px) or `mt-px` (status bar) gap class; the chat row is `flex-1`. (Changed from a CSS grid during implementation.) | Rows that are absent (topic for Status and query, the tray) take their gap with them, so no grid template has to change; the sum stays testable (P7) and the region boxes are pinned by the 1440 e2e check. |
 | D2 | The child header is deleted; the menu bar carries the child icon and buttons. | This is how Frame_01 draws a maximised child. The Client always has exactly one maximised child, so no mode switch is needed. |
 | D3 | The topic field moves from `ChannelWindow` into the shell. | With no child frame the topic field is a full-width row under the toolbar. Status and query windows have no such row. |
 | D4 | Icon components are generated from the SVG files by a script, and the generated files are committed. | Fidelity is checkable (P1), review sees the diff, and no SVG loader or dependency is needed. |
 | D5 | The scrollbar stays the native `::-webkit-scrollbar`, with arrow buttons, pressed states and thumb as CSS `background-image` data URIs built from the sliced Figma paths. | Native scrolling, wheel, touch and keyboard keep working; the look is exact in Chromium and Safari. Firefox keeps the `scrollbar-color` fallback. CSP `img-src` already allows `data:`. |
-| D6 | The thumb uses `border-image` 9-slice from the Figma thumb (16x40, 2 px edge). If Chromium ignores `border-image` on the thumb, the fallback is a stack of three `background-image` layers. | Settled in spike 0.3 before code. |
-| D7 | The WHOIS separator rows are removed (as asked). Frame 04 has them. | The request says to stop rendering them; the Open Point records the mockup difference. |
+| D6 | The thumb uses a 4-layer inset `box-shadow` with the Figma thumb's 2 px edge colours (changed from the planned `border-image` 9-slice; see Open Point 6). | Works on any thumb length with no image, and reuses the bevel tokens. |
+| D7 | The WHOIS separator rows stay exactly as today (`sep-top`, `sep-bottom` in `WhoisLines`). | Frame 04 draws them (1:3541, 1:3550); decided by the product owner on 2026-11-08. The empty-line gate (D8) runs in the reducer, so it cannot touch them. |
 | D8 | The "no empty lines" rule lives in the reducer, not in `ChatLine`. | A line that is never stored cannot take a row, count as unread or trigger a sound. |
 | D9 | Contrast fixes change the `--color-irc-N` tokens for the ghost surface, and a pure `readableClass(fg, bg)` handles colour pairs. | No inline style is allowed, so the choice must end in a class name from a fixed list. |
 | D10 | Channel flags `n` and `t` default to on. | This is how the server already behaves. Defaulting them off would let outsiders write to channels that agents read. |
 | D11 | The fixture route exists only in a build made with `SEANCE_E2E_FIXTURES=1`, through `pageExtensions`, and that build goes to its own `distDir`. | `NODE_ENV=test` is never set in a production bundle, and the e2e stack builds production. A page extension keeps the route and its code out of every normal build. |
 | D12 | `visualViewport` height goes to `--app-height` through `documentElement.style.setProperty`. | CSP restricts inline style attributes and `<style>` elements, not CSSOM writes; the static test only forbids `style={`. The e2e CSP spec verifies it. |
-| D13 | The 1440x900 baseline is the Figma_Export, with masks for the lifted colours. | It is the only way to claim "pixel-close to Figma" with a test. |
-| D14 | Menu slot widths are fixed on Desktop and Medium, natural on Compact. | Slot widths reproduce the Figma text positions exactly; Compact needs the space. |
+| D13 | At 1440x900 a separate test compares with the Figma_Export (masks for the lifted colours) and skips with a reason while the export file is missing; an app baseline covers 1440x900 like the other sizes. | The Figma comparison is the only way to claim "pixel-close to Figma" with a test, but the export is a manual input (task 0.1), so it must not block the suite. |
+| D14 | Menu slot widths (42, 42, 75, 49, 69, 56, 56) are the same at every width; on Compact `useFit` moves the menus that do not fit into the `»` list. | One set of widths keeps `fitCount` and the drawn bar identical; the `»` list already gives Compact the space it needs. |
 
 ## Components and Interfaces
 
 ### Layout
 
 - `app/globals.css`: a `@theme` block `--layout-*` with the nine heights, the 3 px frame, the 2 px gap, the nick list widths (181, 140, 240) and breakpoints used in classes (`md` 768, `lg` 1024). Utilities `.bevel-frame`, `.bevel-field` (sunken two-step), `.bevel-etched` stay the single source of bevel styling.
-- `ClientApp.tsx` `Shell`: `div.bevel-frame` with `grid` rows `auto auto auto auto minmax(0,1fr) auto auto auto auto` and `h-(--app-height)`; every cell has `min-w-0`.
-- `MdiChild.tsx`: reduced to the `section` wrapper with `aria-label`; no header. `childTitleOf` is deleted if unused (the tray uses its own title helper, kept).
-- `ChannelWindow.tsx`: renders only chat and nick list; `TopicField` is mounted by the shell from the active window.
-- `TopicBar.tsx` → `TopicField.tsx` (rename): sunken field, channel / `(modes)` / topic spans as in R2.6.
-- `MenuBar.tsx`: left `ChildIcon`, menus with slot widths, `OverflowMenu` (Compact), right `ChildButtons` with pressed states. Menu list data moves to `menus.ts` so the fit function and the component share it.
+- `ClientApp.tsx` `Shell`: `div.bevel-frame` flex column (D1) with `p-(--layout-frame)` and `h-[var(--app-height,100dvh)]`; closes the nick overlay when the active window or the breakpoint changes.
+- `MdiChild.tsx`: reduced to the `section` wrapper with `aria-label`; no header. `childTitleOf` stays (the tray uses it); `ChildIcon` picks the 14 px child icon.
+- `ChannelWindow.tsx`: topic field, then the chat row (chat pane and nick list, or the Compact overlay). See Open Point 10.
+- `TopicBar.tsx` (name kept): sunken field, channel / `(modes)` / topic spans as in R2.6.
+- `CaptionButton.tsx` (new): one 16x14 button drawn by the Figma button icon, swapping to the pressed drawing on `:active`; used by the title bar, the menu bar and the tray.
+- `MenuBar.tsx`: left child icon, menus with slot widths, the `»` overflow (Compact), right child buttons. Slot widths and reserve live in `src/layout/metrics.ts` (`MENU_SLOTS`, `MENU_RESERVE`, `MENU_OVERFLOW`).
 - `Toolbar.tsx`: item list `connect | options | channels agents | logs | theme`, separators as a distinct item kind, 26x24 buttons, offsets by classes.
 - `MinimisedTray.tsx`: bar 176x24.
 - `Switchbar.tsx`, `CreditsCounter.tsx`: new icons and the 160x22 panel.
 - `StatusBar.tsx`: panel grid by widths; Compact hides lag and filler.
 - `NickOverlay.tsx` (new, Compact): the `aside` and its open state `ui.nickOverlayOpen` in the store, toggled by the toolbar agents button. Closing on Escape, outside tap and window change.
-- `useVisualViewport.ts` (new): sets `--app-height`; no-op when `visualViewport` is missing.
-- `useFit.ts` (new): given container width and item widths, returns the count that fits; uses `ResizeObserver` when present, otherwise one measurement.
+- `src/components/layout-hooks.ts` (new): `useVisualViewport` sets `--app-height` (no-op when `visualViewport` is missing); `useFit` returns the count that fits using `fitCount` from `src/layout/fit.ts`, with `ResizeObserver` when present and window `resize` otherwise; `useCompact` reads the Compact media query.
 
 ### Pressed and disabled look (Figma components 1:5054 to 1:5092)
 
@@ -167,7 +167,7 @@ export function groupChanges(
 
 ## Icons
 
-Source of truth: `apps/web/design/figma-icons/*.svg` (committed). The script `apps/web/scripts/gen-icons.mjs` writes `src/components/icons/*.tsx` and `src/components/icons/index.ts`.
+Source of truth: `apps/web/design/figma-icons/*.svg` (committed). The script `apps/web/scripts/gen-icons.mjs` writes `src/icons/*.tsx`, `src/icons/index.ts`, `src/icons/sources.ts` and `app/scrollbar.css`. The components live in `src/icons/`, not `src/components/icons/`, because they keep the Figma hex colours verbatim and `static-safety.test.ts` forbids hex under `src/components/`; the ESLint hex rule has a matching narrow exception for `src/icons/**` and `src/irc/colors.ts`.
 
 | File | Component | Size | Colour rule | Used by |
 |---|---|---|---|---|
@@ -213,7 +213,11 @@ A single constant `EVENT_LINE_KINDS = ["join","part","quit","nick","mode","topic
 
 ### No empty lines
 
-`appendTo`/`appendStatus` call `hasVisibleText(spec.text)` (pure, from `irc/formatter`) for kinds `message`, `action`, `notice`, `tool`, `tool-denied`, `local`; an invisible line returns the state unchanged. `WhoisLines` loses `sep-top` and `sep-bottom`.
+`appendTo`/`appendStatus` call `hasVisibleText(spec.text)` (pure, from `irc/formatter`) for kinds `message`, `action`, `notice`, `tool`, `tool-denied`, `local`; an invisible line returns the state unchanged. `WhoisLines` keeps `sep-top` and `sep-bottom`; a unit test pins them.
+
+### Human nick colour
+
+`--color-nick-human` becomes `#e08a2e` (7.34:1 on `#0b0b0f`). `--color-ghost-orange` (`#c8761f`) stays for mentions, notices, kick lines and the focus ring. `.kiro/steering/web-ui.md` changes the "Accent orange ... human nicks" row so that it no longer names human nicks, and the `Humans` row of the nick colour table to `#e08a2e`.
 
 ### Readable colours
 
@@ -245,7 +249,7 @@ Channel `#fix-bug-123`, topic `Fix NPE on login when email is null`, modes `+mnt
 
 | Project | Viewport | Flags | Baseline |
 |---|---|---|---|
-| `desktop-1440` | 1440x900 | | Figma_Export `e2e/figma/01-main-1440x900.png` |
+| `desktop-1440` | 1440x900 | | generated; plus a separate Figma comparison against `e2e/figma/01-main-1440x900.png`, skipped with "Figma export missing" while that file is absent |
 | `desktop-1024` | 1024x768 | | generated |
 | `medium-768` | 768x1024 | | generated |
 | `compact-390` | 390x844 | `isMobile`, `hasTouch`, DPR 3 | generated |
@@ -253,7 +257,7 @@ Channel `#fix-bug-123`, topic `Fix NPE on login when email is null`, modes `+mnt
 
 Common: `timezoneId: "UTC"`, `locale: "en-US"`, `reducedMotion: "reduce"`, `colorScheme: "light"`, wait for `document.fonts.ready`, `caret: "hide"`, `animations: "disabled"`.
 
-Procedure to set the tolerance at 1440x900: run once with `maxDiffPixelRatio: 1`, read the measured ratio from the report, set the limit to that value plus 20 percent, write the number into this file (Open Point 7), then keep it. Masks: timestamp column, nick list footer, the away nick row, the status bar lag text (colour lifted for contrast, Finding 4).
+Procedure to set the tolerance at 1440x900: run once with `maxDiffPixelRatio: 1`, read the measured ratio from the report, set the limit to that value plus 20 percent, write the number into this file (Open Point 7), then keep it. Masks: timestamp column, nick list footer, the away nick row, the status bar lag text (colour lifted for contrast, Finding 4). The human nick is no longer masked: its colour now matches Figma.
 
 Platform: baselines are generated on the maintainer's macOS Chromium (Playwright 1.65). `snapshotPathTemplate` has no platform suffix. Another OS needs `--update-snapshots` once, and the 1440 comparison to Figma then uses the larger tolerance of that OS; this is Open Point 5.
 
@@ -362,12 +366,37 @@ The layout tokens sum to 900 with the tray and to 870 without it.
 
 ## Open Points
 
-1. **WHOIS separators.** Frame 04 draws `[23:48] -` above and below the WHOIS block (nodes 1:3541, 1:3550). They are removed here as requested. To restore them, re-add the two `row(...)` calls in `WhoisLines`.
-2. **Default `+nt`.** New channels report `+nt`, so the title shows `(+nt)` after the first join and `(+mnt)` after `+m`. The Figma flow (`bayu sets mode: +mnt` as the first mode line) assumes a channel that starts with none. If you want that exact sequence, defaults must be off and `n`/`t` enforcement must be conditional, which opens channels to outside messages by default. I recommend keeping the defaults on.
-3. **Human nick colour.** Figma uses `#e08a2e`, the steering and token use `#c8761f`. The token stays; the difference is visible in the 1440 comparison (masked).
-4. **Menu slot widths.** Derived from the Figma x positions; the last width (Help) is text width plus 31 px, chosen. Tell me if the mockup should rule instead.
-5. **Baseline platform.** macOS baselines only. A Linux CI would need its own set.
-6. **Scrollbar thumb.** `border-image` on `::-webkit-scrollbar-thumb` is to be confirmed in spike 0.3; Safari and Chromium differ in places.
-7. **1440 tolerance.** Unknown until the first measured run; the number is written here when known: _not yet measured_.
-8. **Restore button.** Disabled in the maximised state. If a floating-window mode is wanted later, it needs its own spec.
-9. **Compact nick list.** An overlay opened by the toolbar button. A swipe gesture is not included.
+Decisions of 2026-11-08 (product owner): points 1, 2, 3 and 4 to 9 are closed as listed. Only the measured value of point 7 is still to be written in.
+
+1. **WHOIS separators.** Decided: kept exactly as Frame 04 draws them (nodes 1:3541, 1:3550). The earlier request to remove them was withdrawn.
+2. **Default `+nt`.** Decided: kept. New channels report `+nt`, so the title shows `(+nt)` after the first join and `(+mnt)` after `+m`; the Figma sequence with `+mnt` as the first mode line is a known difference.
+3. **Human nick colour.** Decided: `#e08a2e` from Figma, in the token and in the steering (7.34:1).
+4. **Menu slot widths.** Accepted: derived from the Figma x positions; Help is text width plus 31 px.
+5. **Baseline platform.** Accepted: macOS Chromium baselines only.
+6. **Scrollbar (spike 0.3, 2026-11-08).** Static page in Playwright's Chromium (1.65, scrollbars shown) with two variants:
+   - `::-webkit-scrollbar-button:single-button` draws **no** arrow buttons in Chromium.
+   - The plain `::-webkit-scrollbar-button` (with `display: block`), `:vertical:start:decrement` and `:vertical:end:increment` draws the Figma arrows, also when nothing overflows; `:start:increment` and `:end:decrement` are hidden. `globals.css` uses this form.
+   - The thumb is a 4-layer inset `box-shadow` (white, light, shadow, black) instead of `border-image`; it draws the Figma 2 px edge on any thumb length. Track `#dcdcdc`.
+   - Not verified: the pressed arrows (`:active`), because a synthetic mouse-down in headless Chromium does not reach the scrollbar (the box did not scroll either), and Safari (WebKit is not installed in this environment). Both stay for the manual check.
+7. **1440 tolerance.** Measured on 2026-11-08 (macOS Chromium, Playwright 1.65, masks below): **22,083 of 1,296,000 pixels differ, ratio 0.01704**. Limit: **`maxDiffPixelRatio: 0.0205`** (measured + 20 %), in `e2e/pixel.spec.ts` (`FIGMA_MAX_DIFF_RATIO`). The ratio was read from a run with the limit set to 0, because a passing run at 1 does not report it. Masks: timestamp column (also covers the session-start row, which uses the dim token), nick list footer, away nick row, lag panel. Playwright paints masks on the actual screenshot only, so the test paints the same boxes in `#FF00FF` on its copy of the export. Re-measure after any intended visual change.
+10. **Topic field placement (D3).** Implemented inside `ChannelWindow` (first row of the window section), not mounted by the shell. With no child frame the drawn result is the same full-width row under the toolbar, absent for Status and query, and the topic stays inside the window's labelled region.
+11. **Tray bar buttons.** Frame_01 draws minimise, maximise and close on the minimised bar. The Client shows restore, maximise (also restores, since the client keeps one maximised window) and close, because minimising a minimised window does nothing. Open: follow Figma's drawing or keep restore.
+12. **Gap list after the Figma export (task 0.4, 2026-11-08).** Compared the 1440 fixture with `e2e/figma/01-main-1440x900.png` region by region (share of differing pixels before the fixes: total 11.1 %, tray 91 %, status 34 %, toolbar 8 %, chat 9 %).
+    - Fixed in this pass, all inside existing requirements:
+      - Chat text started at x 20: the ChatLine mention bar (3 px plus 4 px) came on top of the 8 px padding. It now starts at x 13 (R1, measurements table).
+      - The arrow buttons were missing (spike result above, R7.2).
+      - Menu text sat 4 px low; it is now at the top of the bar as drawn.
+      - The `Theme: Ghost` label sat 3 px low.
+      - The etched line between menu bar and toolbar was missing.
+      - The tray row background is now `#808080` (the empty MDI area).
+      - The fixture now holds the typed command `/kick coder scope creep` in the input line, as Frame_01 shows.
+    - Open, not covered by a requirement (decide before changing):
+      - a. `-tool-` rows: Figma shows `-tool- <text>` in the dim token, upright. The Client shows `[tool] using tool: <text>` in italic grey (the `[tool]` marker and the runner wording).
+      - b. Notices (`-ChanServ- …`, `-coder- …`): Figma colours only the `-nick-` prefix orange and the text in the text token. The Client colours the whole row orange.
+      - c. Chat prefixes: Figma shows the mode at the time of the message (`<+coder>` before the `+o`). The Client uses the current mode (`<@coder>`).
+      - d. Wording: `Session start: Fri Nov 06 23:38:02 2026` against `Session start: 2026-11-06 23:38`; `coder is back (gone 00:01:48)` against `coder is back`.
+      - e. Status bar: Figma reads `Connected to seance.local:6697 (TLS) as bayu`. The Client follows web-client-polish R6.2 (` (TLS)` appended at the end). Panel edges differ by 1 to 3 px.
+      - f. Tray bar: Figma's title is the window name only (`Status`), in white on a grey gradient. The Client shows the child title (`Status: bayu on …`) in black on the inactive gradient, a contrast decision. The buttons are covered by point 11.
+      - g. Switchbar text sits about 2 px further right in Figma.
+8. **Restore button.** Accepted: disabled in the maximised state.
+9. **Compact nick list.** Accepted: overlay opened by the toolbar button, no swipe gesture.

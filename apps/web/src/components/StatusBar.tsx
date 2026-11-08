@@ -7,7 +7,9 @@ import type { ConnectionPhase } from "../irc/index.js";
 import { useClientStore } from "../store/react.js";
 import { hostOf } from "./TitleBar.js";
 
-const panelClass = "bevel-sunken whitespace-nowrap px-1";
+/** Sunken 1 px panel (shadow top/left, highlight bottom/right); text 6 px in; truncates. */
+const panelClass =
+  "min-w-0 basis-0 truncate whitespace-nowrap px-1.5 shadow-[inset_1px_1px_0_var(--color-chrome-shadow),inset_-1px_-1px_0_var(--color-chrome-highlight)]";
 
 const PHASE_TEXT: Readonly<Record<Exclude<ConnectionPhase, "registered">, string>> = {
   disconnected: "Disconnected",
@@ -36,16 +38,22 @@ export function StatusBar(): ReactNode {
       : PHASE_TEXT[phase];
   const lagText = lag === null ? "lag –" : `lag ${lag.toFixed(2)}s`;
 
+  // R1.6: at 1434 px the panels are 562, 140, 258 and the rest (461), 3 px apart. Grow factors in the
+  // same ratio from a zero basis give those widths exactly and scale them on Medium (R11.3).
+  // Compact keeps the connection and agents panels only (R11.4).
   return (
-    <div role="status" className="flex gap-0.5 bg-chrome-face px-0.5 py-0.5 font-chrome text-xs text-chrome-outline">
-      <span className={`${panelClass} flex-[2]`}>{connection}</span>
-      <span aria-live="off" className={`${panelClass} flex-1`}>
+    <div
+      role="status"
+      className="mt-px flex h-(--layout-status) shrink-0 gap-[3px] bg-chrome-face px-0.5 font-chrome text-xs leading-(--layout-status) text-chrome-outline"
+    >
+      <span className={`${panelClass} grow-[562]`}>{connection}</span>
+      <span aria-live="off" className={`${panelClass} hidden grow-[140] md:block`}>
         {lagText}
       </span>
-      <span className={`${panelClass} flex-1`}>
+      <span className={`${panelClass} grow-[258]`}>
         {`${String(counts.agents)} agents · ${String(counts.away)} away · ${String(counts.ops)} ops`}
       </span>
-      <span aria-hidden="true" className={`${panelClass} flex-1`} />
+      <span aria-hidden="true" className={`${panelClass} hidden grow-[461] md:block`} />
     </div>
   );
 }

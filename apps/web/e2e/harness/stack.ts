@@ -211,6 +211,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       NEXT_PUBLIC_IRCD_WS_URL: `ws://127.0.0.1:${wsPort}`,
       NEXT_TELEMETRY_DISABLED: "1",
       NODE_ENV: "production",
+      // pixel-match R13.5: the e2e build includes the fixture route and goes to its own distDir, so a
+      // normal `pnpm build` (.next) never contains it.
+      SEANCE_E2E_FIXTURES: "1",
+      SEANCE_DIST_DIR: ".next-e2e",
     };
     delete webEnv["FAKE_AGENT_SCRIPT"];
 

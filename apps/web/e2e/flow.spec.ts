@@ -86,10 +86,11 @@ test("window titles, menus, minimise/restore and status bar", async ({ page }) =
   const titleBar = page.getByTestId("title-bar");
   await expect(titleBar).toContainText("Séance — [Status: chrome1");
   await expect(titleBar).toContainText(`on ${host}]`);
-  await expect(page.getByTestId("mdi-title")).toContainText(`Status: chrome1 on ${host}`);
+  // pixel-match R2.1: the maximised child has no header any more; the region label names it.
+  await expect(page.getByRole("region", { name: "Status window" })).toBeVisible();
   await expect(page).toHaveTitle(/^Séance — \[Status: chrome1/);
 
-  // The seven menus; Favorites and Options… are disabled (R2).
+  // The seven menus; Favorites opens with one inert item (pixel-match R5.1); Options… is disabled.
   const menubar = page.getByRole("menubar", { name: "Main menu" });
   await expect(menubar.getByRole("menuitem")).toHaveText([
     "File",
@@ -100,27 +101,31 @@ test("window titles, menus, minimise/restore and status bar", async ({ page }) =
     "Window",
     "Help",
   ]);
-  await expect(menubar.getByRole("menuitem", { name: "Favorites" })).toHaveAttribute("aria-disabled", "true");
+  await menubar.getByRole("menuitem", { name: "Favorites" }).click();
+  await expect(page.getByRole("menu", { name: "Favorites" }).getByRole("menuitem", { name: "No favorites yet" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.keyboard.press("Escape");
   await menubar.getByRole("menuitem", { name: "Tools" }).click();
   const options = page.getByRole("menu").getByRole("menuitem", { name: "Options…" });
   await expect(options).toHaveAttribute("aria-disabled", "true");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toHaveCount(0);
 
-  // Channel window title in the Title_Bar and the MDI child.
+  // Channel window title in the Title_Bar; the child buttons sit in the menu bar (pixel-match R2.2).
   await send("/join #chrome");
   await expect(titleBar).toContainText("Séance — [#chrome");
-  const mdiTitle = page.getByTestId("mdi-title");
-  await expect(mdiTitle).toContainText("#chrome");
+  await expect(page.getByRole("region", { name: "#chrome window" })).toBeVisible();
 
   // Minimise puts the window into the Minimised_Tray; restore takes it out (R4.3, R4.4).
-  await mdiTitle.getByRole("button", { name: "Minimise" }).click();
+  await page.getByRole("button", { name: "Minimise active window" }).click();
   const bar = page.getByTestId("minimised-bar");
   await expect(bar).toHaveCount(1);
   await expect(bar).toContainText("#chrome");
   await bar.getByRole("button", { name: "Restore", exact: true }).click();
   await expect(bar).toHaveCount(0);
-  await expect(page.getByTestId("mdi-title")).toContainText("#chrome");
+  await expect(page.getByRole("region", { name: "#chrome window" })).toBeVisible();
 });
 
 test("Credits_Counter follows a WHOIS of the fake agent", async ({ page }) => {

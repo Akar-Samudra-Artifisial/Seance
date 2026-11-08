@@ -30,7 +30,7 @@ Match the mockup before inventing anything. When a value is not listed here, rea
 |---|---|
 | Background | `#0b0b0f` |
 | Text | `#d8d4c8` |
-| Accent orange (highlights, mentions, human nicks) | `#c8761f` |
+| Accent orange (highlights, mentions, notices) | `#c8761f` |
 | Green (success, joins) | `#6a9955` |
 | Purple (system, researcher) | `#9a80c2` |
 
@@ -41,7 +41,7 @@ Match the mockup before inventing anything. When a value is not listed here, rea
 | `coder` | `#3b78ff` |
 | `reviewer` | `#4caf50` |
 | `researcher` | purple `#9a80c2` |
-| Humans | orange `#c8761f` |
+| Humans | orange `#e08a2e` |
 
 Define all colors once as Tailwind theme tokens / CSS variables; never hardcode hex values in components.
 
@@ -66,6 +66,18 @@ Define all colors once as Tailwind theme tokens / CSS variables; never hardcode 
 ## Halloween touches
 
 ASCII jack-o'-lantern in the status window on connect, MOTD "Server is haunted", `*** coder has been exorcised` on kick. Keep them tasteful and never block functionality.
+
+## Icons
+
+- The icons are the Figma drawings in `apps/web/design/figma-icons/` (plus `figma-icons-extra/` for pressed states and the few added icons). Never draw a look-alike in code.
+- `node scripts/gen-icons.mjs` (in `apps/web`) generates `src/icons/*.tsx` and the scrollbar arrows in `app/scrollbar.css`; generated files are committed and never edited by hand. They are the only place outside `app/globals.css` with hex colours.
+
+## Layout and breakpoints
+
+- Region sizes live once in `app/globals.css` (`--layout-*`) and `src/layout/metrics.ts`; components use the tokens, never `style=`.
+- Desktop (1024 px and up): Frame_01 metrics. Medium (768 to 1023): nick list 140 px, status panels scale.
+- Compact (below 768): nick list as an overlay toggled by the toolbar agents button; menus that do not fit go into a `»` menu; toolbar label, lag and filler panels hidden; switchbar scrolls in its row; credits show candle and value only; topic truncates with `title`.
+- Every control gets a 32x32 hit area on coarse pointers (`hit-target` or `pointer-coarse:`) without changing the drawn size on a fine pointer. No horizontal page overflow from 360 px up.
 
 ## Verifying UI
 

@@ -79,7 +79,8 @@ IRC semantics — modes, services, CTCP — are ideal primitives for agent gover
 
 - Web client (retro UI).
 - IRC server over TCP and WebSocket.
-- Commands: `JOIN`, `PART`, `PRIVMSG`, `NOTICE`, `TOPIC`, `INVITE`, `KICK`, `MODE` (`+o`, `+v`, `+m`), `WHOIS`, `NAMES`, `LIST`, `AWAY`, `QUIT`, `PASS`, `NICK`, `USER`, `PING`, `PONG`.
+- Commands: `JOIN`, `PART`, `PRIVMSG`, `NOTICE`, `TOPIC`, `INVITE`, `KICK`, `MODE` (`+o`, `+v`, `+m`, `+n`, `+t`), `WHOIS`, `NAMES`, `LIST`, `AWAY`, `QUIT`, `PASS`, `NICK`, `USER`, `PING`, `PONG`.
+- Channel modes: a new channel is `+nt`. `+n` (default on): only members may send to the channel (`404` otherwise). `+t` (default on): only operators set the topic (`482` otherwise). `+m` (default off): only `+v`/`+o` members may speak. One `MODE` command gives one grouped `MODE` line with the changes that altered state (for example `+mnt`, `+o-v coder bob`); `324` lists the flags alphabetically (`+nt`, `+mnt`).
 - Three agents: `coder`, `reviewer`, `researcher`.
 - One git worktree per channel.
 - Persistent logs.
@@ -95,6 +96,7 @@ IRC semantics — modes, services, CTCP — are ideal primitives for agent gover
 | `/topic` | Task statement given to agents |
 | `+v` | Agent may speak |
 | `+m` | Only `+v`/`+o` members may speak (saves credits) |
+| `+n`, `+t` | On by default: no messages from outside the channel; only operators change the task (topic) |
 | `+o` | Write tools enabled (edit, `git commit`, shell) |
 | `/msg <agent>` | Private prompt |
 | `/whois <agent>` | Model, tools, status, credits |
@@ -219,8 +221,9 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 
 ## 7. UI
 
-- MDI windows (status / channel / query) with Windows 95 title bars.
-- 16px icon toolbar, Fixedsys-like font.
+- MDI windows (status / channel / query). The active window is maximised into the frame like the Figma mockup: one title bar, the child icon and child buttons in the menu bar (spec `.kiro/specs/web-client-pixel-match`; layout metrics in `apps/web/src/layout/metrics.ts`).
+- Icon toolbar with the Figma icons; IBM Plex Mono for chat, Arimo for chrome.
+- Responsive: Desktop from 1024 px (Frame_01 metrics), Medium 768–1023 px (narrower nick list), Compact below 768 px (nick list overlay, `»` menu overflow, scrolling switchbar, input kept above the on-screen keyboard).
 - Nick list on the right with `@` / `+` prefixes.
 - `^K` color codes 0–15 (coder = 12, reviewer = 3).
 - `[HH:MM]` timestamps; a "ding" when your nick is mentioned.

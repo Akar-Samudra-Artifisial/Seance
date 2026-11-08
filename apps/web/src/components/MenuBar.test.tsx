@@ -147,13 +147,22 @@ describe("MenuBar", () => {
   });
 
   describe("disabled items", () => {
-    it("marks Favorites aria-disabled and never opens it", () => {
-      setup();
+    // pixel-match R5.1 changes this on purpose: Favorites opens like the other menus and holds one
+    // inert item (it used to be an aria-disabled menu that never opened).
+    it("opens Favorites with the single inert 'No favorites yet' item", () => {
+      const { socket } = setup();
+      const sent = socket.sent.length;
       const fav = bar("Favorites");
-      expect(fav.getAttribute("aria-disabled")).toBe("true");
-      fireEvent.click(fav);
+      expect(fav.getAttribute("aria-disabled")).toBeNull();
+      fav.focus();
       fireEvent.keyDown(fav, { key: "ArrowDown" });
-      expect(screen.queryByRole("menu")).toBeNull();
+      const menu = screen.getByRole("menu", { name: "Favorites" });
+      const items = within(menu).getAllByRole("menuitem");
+      expect(items.map((i) => i.textContent)).toEqual(["No favorites yet"]);
+      expect(items[0]?.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(items[0] as HTMLElement);
+      expect(screen.getByRole("menu", { name: "Favorites" })).toBeTruthy();
+      expect(socket.sent.length).toBe(sent);
     });
 
     it("keeps unsupported items inert and the menu open", () => {
@@ -216,6 +225,84 @@ describe("MenuBar", () => {
     });
   });
 
+  describe("Frame_01 geometry (R2.2, R5.2)", () => {
+    it("puts the child icon first and gives the menus the fixed slot widths", () => {
+      setup();
+      const menubar = screen.getByRole("menubar");
+      const row = menubar.parentElement as HTMLElement;
+      expect(row.firstElementChild?.querySelector("svg")?.getAttribute("data-icon")).toBe("mdi-child-channel");
+      const widths = within(menubar)
+        .getAllByRole("menuitem")
+        .map((b) => /w-\[(\d+)px\]/.exec(b.className)?.[1]);
+      expect(widths).toEqual(["42", "42", "75", "49", "69", "56", "56"]);
+      for (const b of within(menubar).getAllByRole("menuitem")) {
+        expect(b.className).toContain("text-left");
+        expect(b.querySelector("u")).not.toBeNull();
+      }
+    });
+
+    it("shows the Status monitor as child icon in the Status_Window", () => {
+      const { store } = setup();
+      act(() => {
+        store.getState().setActiveWindow("status");
+      });
+      const row = screen.getByRole("menubar").parentElement as HTMLElement;
+      expect(row.firstElementChild?.querySelector("svg")?.getAttribute("data-icon")).toBe("tray-status");
+    });
+  });
+
+  describe("Compact overflow (R11.4, P6)", () => {
+    const realRect = HTMLElement.prototype.getBoundingClientRect;
+    afterEach(() => {
+      HTMLElement.prototype.getBoundingClientRect = realRect;
+    });
+    const narrow = (width: number): void => {
+      HTMLElement.prototype.getBoundingClientRect = function rect(this: HTMLElement): DOMRect {
+        return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: 20, width, height: 20, toJSON: () => ({}) };
+      };
+    };
+
+    it("moves the menus that do not fit into the » list and opens them from there", () => {
+      narrow(360);
+      setup();
+      const menubar = screen.getByRole("menubar");
+      const names = within(menubar)
+        .getAllByRole("menuitem")
+        .map((b) => b.getAttribute("aria-label") ?? b.textContent);
+      expect(names).toEqual(["File", "View", "Favorites", "Tools", "More menus"]);
+      const more = screen.getByRole("menuitem", { name: "More menus" });
+      fireEvent.click(more);
+      const list = screen.getByRole("menu", { name: "More menus" });
+      expect(within(list).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Commands", "Window", "Help"]);
+      fireEvent.click(within(list).getByRole("menuitem", { name: "Commands" }));
+      const commands = screen.getByRole("menu", { name: "Commands" });
+      expect(within(commands).getByRole("menuitem", { name: "Join…" })).toBeTruthy();
+      fireEvent.keyDown(commands, { key: "Escape" });
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(document.activeElement).toBe(more);
+    });
+
+    it("keeps keyboard order: ArrowRight from the last visible menu lands on »; Alt+mnemonic still opens hidden menus", () => {
+      narrow(360);
+      setup();
+      const tools = bar("Tools");
+      tools.focus();
+      fireEvent.keyDown(tools, { key: "ArrowRight" });
+      const more = screen.getByRole("menuitem", { name: "More menus" });
+      expect(document.activeElement).toBe(more);
+      expect(more.tabIndex).toBe(0);
+      fireEvent.keyDown(document, { key: "w", code: "KeyW", altKey: true });
+      expect(screen.getByRole("menu", { name: "Window" })).toBeTruthy();
+    });
+
+    it("shows every menu and no » when the bar is wide", () => {
+      narrow(1434);
+      setup();
+      expect(screen.queryByRole("menuitem", { name: "More menus" })).toBeNull();
+      expect(within(screen.getByRole("menubar")).getAllByRole("menuitem")).toHaveLength(7);
+    });
+  });
+
   describe("Input_Line prefill", () => {
     it.each([
       ["Commands", "Join…", "/join #"],
@@ -250,6 +337,26 @@ describe("MenuBar", () => {
       fireEvent.click(screen.getByRole("button", { name: "Restore active window" }));
       store.getState().restoreWindow("c:#dev");
       expect(store.getState().ui.minimised).toEqual([]);
+    });
+
+    it("makes restore aria-disabled with its title unless the active window is minimised (R2.3)", () => {
+      const { store } = setup();
+      const restore = screen.getByRole("button", { name: "Restore active window" });
+      expect(restore.getAttribute("aria-disabled")).toBe("true");
+      expect(restore.getAttribute("title")).toBe("Restore (this client keeps one maximised window)");
+      fireEvent.click(restore);
+      expect(store.getState().ui.minimised).toEqual([]);
+    });
+
+    it("draws the child buttons with the Figma icons and swaps to the pressed drawing", () => {
+      setup();
+      const group = screen.getByRole("group", { name: "Active window controls" });
+      const icons = Array.from(group.querySelectorAll("svg")).map((s) => s.getAttribute("data-icon"));
+      // Live buttons carry raised + pressed drawings; the inert restore keeps only the raised one.
+      expect(icons).toEqual(["btn-min", "btn-min-pressed", "btn-restore", "btn-close", "btn-close-pressed"]);
+      for (const svg of Array.from(group.querySelectorAll("svg"))) {
+        expect(svg.getAttribute("aria-hidden")).toBe("true");
+      }
     });
 
     it("disables close for the Status_Window", () => {

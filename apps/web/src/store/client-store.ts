@@ -79,6 +79,8 @@ export interface UiState {
   readonly draft: string | null;
   /** Counter bumped by `requestConnectDialog`; the Connect_Dialog reopens when it changes. */
   readonly connectRequests: number;
+  /** Compact layout: the nick list overlay is open (web-client-pixel-match R11.4). */
+  readonly nickOverlayOpen: boolean;
 }
 
 export interface ClientStore {
@@ -101,6 +103,8 @@ export interface ClientStore {
   dispose(): void;
   /** Toggle the mention sound (off by default). Call it from a user gesture: enabling unlocks audio. */
   setMentionSound(enabled: boolean): void;
+  /** Open or close the Compact nick list overlay. */
+  setNickOverlay(open: boolean): void;
   /** Hide a window in the Minimised_Tray; routing, unread and mention flags are untouched. */
   minimiseWindow(key: string): void;
   /** Un-minimise a window and make it active. */
@@ -475,6 +479,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         minimised: [],
         draft: null,
         connectRequests: 0,
+        nickOverlayOpen: false,
       },
 
       connect(params) {
@@ -704,6 +709,11 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
           }
         }
         set((s) => ({ ui: { ...s.ui, mentionSound: enabled } }));
+      },
+
+      setNickOverlay(open) {
+        if (get().ui.nickOverlayOpen === open) return;
+        set((s) => ({ ui: { ...s.ui, nickOverlayOpen: open } }));
       },
     };
   });

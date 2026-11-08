@@ -29,7 +29,7 @@ Client sends `PASS <password>` (optional, first), `NICK <nick>`, `USER <user> 0 
 | 001 | RPL_WELCOME | `:Welcome to the Séance IRC Network <nick>!<user>@<host>` |
 | 002 | RPL_YOURHOST | `:Your host is <servername>, running version <ver>` |
 | 003 | RPL_CREATED | `:This server was created <date>` |
-| 004 | RPL_MYINFO | `<servername> <version> <usermodes> <chanmodes>` (e.g. `seance 0.1 a mov`) |
+| 004 | RPL_MYINFO | `<servername> <version> <usermodes> <chanmodes>` (Séance: `seance-ircd-0.1 o mntov`) |
 | 005 | RPL_ISUPPORT | `CHANTYPES=# PREFIX=(ov)@+ CHANMODES=,,,m CASEMAPPING=rfc1459 NICKLEN=… :are supported by this server` |
 | 375/372/376 | RPL_MOTDSTART / RPL_MOTD / RPL_ENDOFMOTD | `:- <server> Message of the day -`, `:- Server is haunted`, `:End of MOTD command` |
 
@@ -46,7 +46,7 @@ Client sends `PASS <password>` (optional, first), `NICK <nick>`, `USER <user> 0 
 | `TOPIC #ch [:topic]` | query → `332`/`331`; set → relay `TOPIC` to members | `442`, `482`, `461` |
 | `NAMES #ch` | `353` (split if > 512 bytes), then `366` | — |
 | `LIST` | `322` per channel, then `323` | — |
-| `MODE #ch [+o/-o/+v/-v nick] [+m/-m]` | query → `324`; change → relay `MODE` | `403`, `441`, `472`, `482` |
+| `MODE #ch [+o/-o/+v/-v nick] [+m/-m] [+n/-n] [+t/-t]` | query → `324` (flags sorted, new channels `+nt`); change → one grouped `MODE` with the effective changes | `403`, `441`, `472`, `482` |
 | `KICK #ch nick [:reason]` | relay `KICK` to members, target removed | `403`, `441`, `442`, `482` |
 | `INVITE nick #ch` | `341` to inviter, `INVITE` to target | `401`, `442`, `443`, `482` |
 | `WHOIS nick` | `311`, `319`, `312`, `301`?, `317`?, then `318` | `401`, `431` |
@@ -97,6 +97,6 @@ Client sends `PASS <password>` (optional, first), `NICK <nick>`, `USER <user> 0 
 
 ## Séance semantics on top of IRC
 
-- `+o` = agent may write/shell/commit, `+v` = may speak, `+m` = only `+o`/`+v` may speak.
+- `+o` = agent may write/shell/commit, `+v` = may speak, `+m` = only `+o`/`+v` may speak, `+n` (default) = no messages from non-members (`404`), `+t` (default) = only ops set the topic (`482`).
 - `KICK` on an agent = ACP `session/cancel` + worktree reset; message `*** <nick> has been exorcised`.
 - `WHOIS` on an agent adds model, tools and credits (as `320`-style free-text lines or `NOTICE`; decide in the agent-runner spec).

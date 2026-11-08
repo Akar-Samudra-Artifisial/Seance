@@ -92,3 +92,8 @@ export function formatIrc(text: string): readonly Span[] {
   flush();
   return spans;
 }
+
+/** True when the formatted text holds at least one non-whitespace character. */
+export function hasVisibleText(text: string): boolean {
+  return formatIrc(text).some((span) => span.text.trim() !== "");
+}

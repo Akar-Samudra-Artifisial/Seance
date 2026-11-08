@@ -11,6 +11,7 @@ import { createBrowserStorage } from "../store/storage.js";
 import { ChannelWindow } from "./ChannelWindow.js";
 import { ConnectDialog } from "./ConnectDialog.js";
 import { InputLine } from "./InputLine.js";
+import { useCompact, useVisualViewport } from "./layout-hooks.js";
 import { MenuBar } from "./MenuBar.js";
 import { Mdi } from "./Mdi.js";
 import { MinimisedTray } from "./MinimisedTray.js";
@@ -64,8 +65,18 @@ export function Shell(): ReactNode {
   const win = active ?? EMPTY_STATUS;
   // A minimised window leaves the MDI area (R4.3).
   const hidden = useClientStore((s) => s.ui.minimised.includes(s.client.activeKey));
+  const activeKey = useClientStore((s) => s.client.activeKey);
+  const setNickOverlay = useClientStore((s) => s.setNickOverlay);
+  const compact = useCompact();
+  useVisualViewport();
+  // The Compact nick overlay belongs to one channel and one layout: close it when either changes.
+  useEffect(() => {
+    setNickOverlay(false);
+  }, [activeKey, compact, setNickOverlay]);
+  // Frame_01 (R1): 3 px raised frame; rows and their gaps come from the region classes. The height
+  // follows the visual viewport so the Input_Line stays above an on-screen keyboard (R11.5).
   return (
-    <div className="flex h-full flex-col bg-chrome-face font-chrome">
+    <div className="bevel-frame flex h-[var(--app-height,100dvh)] min-w-0 flex-col overflow-hidden bg-chrome-face p-(--layout-frame) font-chrome">
       <SkipLink />
       <UnreadAnnouncer />
       <TitleBar />

@@ -87,8 +87,9 @@ describe("MODE handler", () => {
     mode(alice, "#t", "+m");
     bob.sent.length = 0;
     mode(bob, "#t");
+    // web-client-pixel-match R12.1, R12.6: new channels are `+nt`; flags are listed alphabetically.
     expect(bob.sent).toEqual([
-      { prefix: "irc.test", command: "324", params: ["bob", "#t", "+m"] },
+      { prefix: "irc.test", command: "324", params: ["bob", "#t", "+mnt"] },
     ]);
   });
 

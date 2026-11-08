@@ -1,5 +1,7 @@
 import { appendLine } from "./buffer.js";
 import { channelKey, keyOf, queryKey } from "./casemap.js";
+import { GATED_KINDS } from "./classify.js";
+import { hasVisibleText } from "./formatter.js";
 import { getOwn, nullRecord, withEntry, withoutEntry } from "./record.js";
 import type { Rec } from "./record.js";
 import type {
@@ -103,6 +105,8 @@ function withWindow(state: ClientState, win: Window): ClientState {
  * Status_Window. Non-active windows get `unread` (and `mentioned` for a mention).
  */
 export function appendTo(state: ClientState, key: string, spec: LineSpec, nowMs: number): ClientState {
+  // R9.2: a chat-like line with nothing visible is never stored (no row, no unread, no sound).
+  if (GATED_KINDS.includes(spec.kind) && !hasVisibleText(spec.text)) return state;
   const target = getOwn(state.windows, key) ?? getOwn(state.windows, STATUS_KEY) ?? emptyWindow(STATUS_KEY, "status", "Status");
   const mention = spec.mention === true;
   const line: Line = {

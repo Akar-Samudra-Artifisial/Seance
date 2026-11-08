@@ -19,6 +19,7 @@ export type LineKind =
   | "nick"
   | "mode"
   | "topic"
+  | "invite"
   | "kick"
   | "exorcised"
   | "exorcised-kick"

@@ -1,27 +1,10 @@
 import type { ReactNode } from "react";
 import { formatIrc, linkify, mentionSegments } from "../irc/index.js";
+import { readableClass } from "../irc/colors.js";
 import type { Span } from "../irc/index.js";
 
 // Full class literals so Tailwind sees every name at build time. No inline style.
-const FG: readonly string[] = [
-  "text-irc-0",
-  "text-irc-1",
-  "text-irc-2",
-  "text-irc-3",
-  "text-irc-4",
-  "text-irc-5",
-  "text-irc-6",
-  "text-irc-7",
-  "text-irc-8",
-  "text-irc-9",
-  "text-irc-10",
-  "text-irc-11",
-  "text-irc-12",
-  "text-irc-13",
-  "text-irc-14",
-  "text-irc-15",
-];
-
+// Foreground classes come from readableClass (src/irc/colors.ts).
 const BG: readonly string[] = [
   "bg-irc-0",
   "bg-irc-1",
@@ -41,13 +24,10 @@ const BG: readonly string[] = [
   "bg-irc-15",
 ];
 
-/** Class names for one formatter span. */
+/** Class names for one formatter span. Foregrounds always meet 4.5:1 (readableClass). */
 export function spanClass(span: Span): string {
   const classes: string[] = [];
-  if (span.fg !== undefined) {
-    const c = FG[span.fg];
-    if (c !== undefined) classes.push(c);
-  }
+  if (span.fg !== undefined) classes.push(readableClass(span.fg, span.bg));
   if (span.bg !== undefined) {
     const c = BG[span.bg];
     if (c !== undefined) classes.push(c);

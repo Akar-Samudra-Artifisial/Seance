@@ -4,15 +4,15 @@ import type { ReactNode } from "react";
 import { plain } from "../irc/index.js";
 import type { Window } from "../irc/index.js";
 import { useClientStore } from "../store/react.js";
-import { Icon } from "./Icon.js";
-import { childTitleOf, iconOf } from "./MdiChild.js";
+import { CaptionButton } from "./CaptionButton.js";
+import { ChildIcon, childTitleOf } from "./MdiChild.js";
 import { IrcText } from "./Spans.js";
 import { hostOf } from "./TitleBar.js";
 
-const controlClass =
-  "bevel-raised flex h-3.5 w-4 shrink-0 items-center justify-center bg-chrome-face font-chrome text-[11px] leading-none text-chrome-outline focus-visible:outline-2 focus-visible:outline-chrome-outline disabled:text-chrome-shadow";
-
-/** Compact bar of a minimised MDI_Child: icon, bold title, restore and close. */
+/**
+ * Bar of a minimised MDI_Child (R1.7): 176x24, raised frame around an inactive title strip with the
+ * child icon at x7, the bold title at x26 and restore, maximise and close at x120, 136 and 154.
+ */
 export function MinimisedBar(props: { readonly window: Window; readonly title: string }): ReactNode {
   const { window: win } = props;
   // Window names are untrusted; strip bidi and control characters from every attribute text.
@@ -24,49 +24,55 @@ export function MinimisedBar(props: { readonly window: Window; readonly title: s
       role="group"
       aria-label={`${title} (minimised)`}
       data-testid="minimised-bar"
-      className="bevel-raised flex h-[22px] w-60 min-w-0 shrink-0 items-center gap-1 bg-chrome-face px-0.5 font-chrome text-xs font-bold text-chrome-outline"
+      className="bevel-button h-6 w-44 shrink-0 bg-chrome-face p-[3px]"
     >
-      <button
-        type="button"
-        aria-label={`Restore ${title}`}
-        onClick={() => {
-          restoreWindow(win.key);
-        }}
-        className="flex min-w-0 flex-1 items-center gap-1 text-left focus-visible:outline-2 focus-visible:outline-chrome-outline"
-      >
-        <Icon name={iconOf(win.kind)} className="size-3.5 shrink-0" />
-        <span className="min-w-0 flex-1 truncate font-bold">
-          <IrcText text={title} />
-        </span>
-      </button>
-      <button
-        type="button"
-        aria-label="Restore"
-        title={`Restore ${title}`}
-        onClick={() => {
-          restoreWindow(win.key);
-        }}
-        className={controlClass}
-      >
-        <span aria-hidden="true">❐</span>
-      </button>
-      <button
-        type="button"
-        aria-label="Close"
-        title={`Close ${title}`}
-        disabled={win.kind === "status"}
-        onClick={() => {
-          closeWindow(win.key);
-        }}
-        className={controlClass}
-      >
-        <span aria-hidden="true">×</span>
-      </button>
+      <div className="flex h-[18px] min-w-0 items-center bg-linear-to-r from-title-inactive-from to-title-inactive-to pl-1 pr-[3px] font-chrome text-xs font-bold text-title-inactive-text">
+        <button
+          type="button"
+          aria-label={`Restore ${title}`}
+          onClick={() => {
+            restoreWindow(win.key);
+          }}
+          className="hit-target flex min-w-0 flex-1 items-center gap-[5px] text-left focus-visible:outline-2 focus-visible:outline-chrome-outline"
+        >
+          <ChildIcon kind={win.kind} />
+          <span className="min-w-0 flex-1 truncate font-bold">
+            <IrcText text={title} />
+          </span>
+        </button>
+        <CaptionButton
+          kind="restore"
+          label="Restore"
+          title={`Restore ${title}`}
+          onClick={() => {
+            restoreWindow(win.key);
+          }}
+        />
+        <CaptionButton
+          kind="max"
+          label="Maximise"
+          title={`Maximise ${title}`}
+          onClick={() => {
+            // The client keeps one maximised window: maximising a minimised child restores it.
+            restoreWindow(win.key);
+          }}
+        />
+        <CaptionButton
+          kind="close"
+          label="Close"
+          title={`Close ${title}`}
+          className="ml-0.5"
+          disabled={win.kind === "status"}
+          onClick={() => {
+            closeWindow(win.key);
+          }}
+        />
+      </div>
     </div>
   );
 }
 
-/** Row between the Input_Line and the Switchbar; renders nothing when no window is minimised (R4.8). */
+/** Row between the Input_Line and the Switchbar; renders nothing when no window is minimised (R1.4). */
 export function MinimisedTray(): ReactNode {
   const minimised = useClientStore((s) => s.ui.minimised);
   const windows = useClientStore((s) => s.client.windows);
@@ -82,7 +88,8 @@ export function MinimisedTray(): ReactNode {
     <div
       role="region"
       aria-label="Minimised windows"
-      className="flex h-7 shrink-0 items-center gap-1 overflow-hidden bg-chrome-face px-1"
+      // Frame_01: the tray row is the empty MDI area (#808080), the bars sit on it.
+      className="mt-0.5 flex h-(--layout-tray) shrink-0 items-start gap-1 overflow-x-auto overflow-y-hidden bg-chrome-shadow pl-1.5 pt-0.5"
     >
       {bars.map((win) => (
         <MinimisedBar key={win.key} window={win} title={childTitleOf(win, ownNick, host)} />

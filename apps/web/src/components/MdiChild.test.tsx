@@ -1,11 +1,11 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Window } from "../irc/index.js";
 import { createClientStore } from "../store/client-store.js";
 import { ClientStoreProvider } from "../store/react.js";
 import type { SocketCloseInfo, WebSocketLike } from "../store/socket.js";
 import { createClientStorage } from "../store/storage.js";
-import { MdiChild, childTitleOf } from "./MdiChild.js";
+import { ChildIcon, MdiChild, childTitleOf } from "./MdiChild.js";
 
 afterEach(cleanup);
 
@@ -62,34 +62,43 @@ describe("childTitleOf", () => {
   });
 });
 
+// pixel-match R2.1: the Maximised_Child has no header of its own any more. The title moved to the
+// application title bar and minimise/restore/close to the menu bar (covered in MenuBar.test.tsx),
+// so the former header tests (mdi-title, child Close/Minimise/Maximise) are replaced by these.
 describe("MdiChild", () => {
-  it("styles the active window with the active gradient and others inactive", () => {
-    const { store, view } = setup();
-    view("c:#dev");
-    expect(screen.getByTestId("mdi-title").dataset["active"]).toBe("true");
-    cleanup();
-    store.getState().setActiveWindow("status");
-    view("c:#dev");
-    expect(screen.getByTestId("mdi-title").dataset["active"]).toBe("false");
-  });
-
-  it("disables Close on the Status window only", () => {
+  it("is a labelled section with no title bar and no buttons", () => {
     const { view } = setup();
-    view("status");
-    expect((screen.getByRole("button", { name: "Close" }) as HTMLButtonElement).disabled).toBe(true);
-    cleanup();
     view("c:#dev");
-    expect((screen.getByRole("button", { name: "Close" }) as HTMLButtonElement).disabled).toBe(false);
+    const section = screen.getByRole("region", { name: "#dev window" });
+    expect(section.tagName).toBe("SECTION");
+    expect(screen.queryByTestId("mdi-title")).toBeNull();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(screen.queryByRole("heading")).toBeNull();
   });
 
-  it("Minimise minimises the window and Maximise keeps it active", () => {
-    const { store, view } = setup();
-    view("c:#dev");
-    fireEvent.click(screen.getByRole("button", { name: "Maximise" }));
-    expect(store.getState().ui.minimised).toEqual([]);
-    fireEvent.click(screen.getByRole("button", { name: "Minimise" }));
-    expect(store.getState().ui.minimised).toEqual(["c:#dev"]);
-    expect(store.getState().client.activeKey).toBe("q:bob" in store.getState().client.windows ? "q:bob" : "status");
+  it("renders its children inside the section", () => {
+    const { store } = setup();
+    const win = store.getState().client.windows["status"] as Window;
+    render(
+      <ClientStoreProvider store={store}>
+        <MdiChild window={win} label="Status window">
+          <p>content</p>
+        </MdiChild>
+      </ClientStoreProvider>,
+    );
+    const section = screen.getByRole("region", { name: "Status window" });
+    expect(within(section).getByText("content")).toBeTruthy();
+  });
+});
+
+describe("ChildIcon", () => {
+  it.each([
+    ["status", "tray-status"],
+    ["channel", "mdi-child-channel"],
+    ["query", "mdi-child-query"],
+  ] as const)("%s uses %s", (kind, icon) => {
+    const { container } = render(<ChildIcon kind={kind} />);
+    expect(container.querySelector("svg")?.getAttribute("data-icon")).toBe(icon);
   });
 });
 

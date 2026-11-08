@@ -7,7 +7,8 @@ export type Channel = {
   /** Name as given by the creating join; always starts with `#`. */
   readonly name: string;
   topic?: string;
-  modes: { moderated: boolean };
+  /** `m` moderated, `n` no external messages, `t` only operators set the topic. */
+  modes: { moderated: boolean; noExternal: boolean; topicLock: boolean };
   /** Keyed by `Client.id`. */
   readonly members: Map<string, Membership>;
   /**
@@ -60,7 +61,8 @@ export class ChannelRegistry {
     if (existing === undefined) {
       const channel: Channel = {
         name,
-        modes: { moderated: false },
+        // `+nt` by default: the behaviour the server always had (web-client-pixel-match R12.1).
+        modes: { moderated: false, noExternal: true, topicLock: true },
         members: new Map([[clientId, { op: true, voice: false }]]),
         invited: new Set(),
       };
@@ -175,13 +177,22 @@ export class ChannelRegistry {
   }
 
   /**
-   * Whether the client may send to the channel. Non-members never can
-   * (Req 6.5). Under `+m` only `+o` or `+v` members can (Req 6.6).
+   * Whether the client may send to the channel. Under `+n` non-members cannot (Req 6.5);
+   * under `+m` only `+o` or `+v` members can (Req 6.6), so `+m` also blocks non-members.
    */
   canSpeak(name: string, clientId: string): boolean {
     const channel = this.get(name);
+    if (channel === undefined) return false;
+    const membership = channel.members.get(clientId);
+    if (membership === undefined) return !channel.modes.noExternal && !channel.modes.moderated;
+    return !channel.modes.moderated || membership.op || membership.voice;
+  }
+
+  /** Whether the member may change the topic: always under `-t`, only operators under `+t`. */
+  canSetTopic(name: string, clientId: string): boolean {
+    const channel = this.get(name);
     const membership = channel?.members.get(clientId);
     if (channel === undefined || membership === undefined) return false;
-    return !channel.modes.moderated || membership.op || membership.voice;
+    return !channel.modes.topicLock || membership.op;
   }
 }

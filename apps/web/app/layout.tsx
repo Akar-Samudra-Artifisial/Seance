@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Arimo, IBM_Plex_Mono, VT323 } from "next/font/google";
 import type { ReactNode } from "react";
@@ -22,6 +22,12 @@ const vt323 = VT323({
 export const metadata: Metadata = {
   title: "Séance",
   description: "IRC is dead. Hold a séance.",
+};
+
+// R11.7: device width, scale 1, zoom stays enabled (no maximumScale, no userScalable).
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default async function RootLayout({ children }: { readonly children: ReactNode }) {

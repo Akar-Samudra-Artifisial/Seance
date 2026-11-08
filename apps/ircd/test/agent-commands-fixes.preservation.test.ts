@@ -253,7 +253,8 @@ describe("Preservation: golden lines (3.11)", () => {
     expect(welcome[0]).toBe(":seance.local 001 alice :Welcome to the Séance IRC network, alice");
     expect(welcome[1]).toBe(":seance.local 002 alice :Your host is seance.local, running version seance-ircd-0.1");
     expect(welcome[2]).toMatch(/^:seance\.local 003 alice :This server was created \d{4}-\d\d-\d\dT[\d:.]+Z$/);
-    expect(welcome[3]).toBe(":seance.local 004 alice seance.local seance-ircd-0.1 o ov");
+    // web-client-pixel-match R12.7 intentionally widened the channel modes of 004 to mntov.
+    expect(welcome[3]).toBe(":seance.local 004 alice seance.local seance-ircd-0.1 o mntov");
     expect(welcome[4]).toBe(
       ":seance.local 005 alice CASEMAPPING=rfc1459 CHANTYPES=# NICKLEN=30 TOPICLEN=300 KICKLEN=300 AWAYLEN=200 PREFIX=(ov)@+ :are supported by this server",
     );

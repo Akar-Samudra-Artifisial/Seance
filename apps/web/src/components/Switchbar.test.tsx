@@ -131,9 +131,10 @@ describe("window shortcuts", () => {
         <Shell />
       </ClientStoreProvider>,
     );
-    // The child title bar's Close button (the app Title_Bar has its own "Close").
-    const child = screen.getByRole("region", { name: "bob window" });
-    fireEvent.click(within(child).getByRole("button", { name: "Close" }));
+    // pixel-match R2.1/R2.2: the child has no title bar any more; its close button now sits at the
+    // right of the menu bar ("Close active window"), outside the window region.
+    expect(within(screen.getByRole("region", { name: "bob window" })).queryByRole("button")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close active window" }));
     expect(store.getState().client.windows["q:bob"]).toBeUndefined();
   });
 });

@@ -75,6 +75,8 @@ const PAIRS: readonly (readonly [string, string, number, string])[] = [
   // Title text is VT323 20px bold (large text), so 3:1 applies at the lighter gradient end.
   ["chrome-highlight", "title-to", LARGE_OR_UI, "title text, right end of gradient (large bold)"],
   ["chrome-highlight", "title-to", LARGE_OR_UI, "focus ring of the title-bar close button"],
+  // web-client-pixel-match R10.1: IRC colours without a background on the ghost background.
+  ...Array.from({ length: 16 }, (_, i) => [`irc-fg-${i}`, "ghost-bg", BODY, `IRC colour ${i} in chat`] as const),
 ];
 
 describe("WCAG contrast of documented token pairs", () => {

@@ -288,7 +288,16 @@ function onInvite(state: ClientState, msg: IrcMessage, nowMs: number): ReduceRes
   if (target === undefined || channel === undefined || inviter === "" || !isOwnNick(state, target)) {
     return statusLine(state, msg, nowMs);
   }
-  return done(appendTo(state, state.activeKey, { kind: "system", text: `${inviter} invites you to ${channel}` }, nowMs));
+  return done(appendTo(state, state.activeKey, { kind: "invite", text: `${inviter} invites you to ${channel}` }, nowMs));
+}
+
+/** 341 RPL_INVITING `<me> <target> <channel>`: `*** <me> invited <target>` in that channel (or Status). */
+function onInviting(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult {
+  const target = msg.params[1];
+  const channel = msg.params[2];
+  if (target === undefined || channel === undefined || target === "") return statusLine(state, msg, nowMs);
+  const me = state.ownNick === "" ? (msg.params[0] ?? "") : state.ownNick;
+  return done(appendTo(state, channelKey(channel), { kind: "invite", text: `${me} invited ${target}` }, nowMs));
 }
 
 /** 305 / 306: away status notices go to the Active_Window. */
@@ -374,6 +383,8 @@ function route(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult
       return onTopic(state, msg, nowMs);
     case "INVITE":
       return onInvite(state, msg, nowMs);
+    case "341":
+      return onInviting(state, msg, nowMs);
     case "305":
     case "306":
       return onAway(state, msg, nowMs);

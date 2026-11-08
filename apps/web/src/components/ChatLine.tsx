@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { exorcismText, formatClock, irc_lower, isKnownAgent, keyOf, markersFor } from "../irc/index.js";
+import { EVENT_LINE_KINDS, exorcismText, formatClock, irc_lower, isKnownAgent, keyOf, markersFor } from "../irc/index.js";
 import type { Line, Member } from "../irc/index.js";
-import { Icon } from "./Icon.js";
+import { NickAgentResearcherAway } from "../icons/index.js";
 import { IrcText } from "./Spans.js";
 import { WhoisLines } from "./WhoisLines.js";
 import { memberPrefix } from "../irc/nick-order.js";
@@ -21,24 +21,15 @@ export function nickClass(nick: string): string {
   return "text-nick-human";
 }
 
-/** Kinds that read as `*** text` Event_Lines. Exorcism kinds are styled by task 6.2. */
-const EVENT_KINDS: ReadonlySet<Line["kind"]> = new Set([
-  "join",
-  "part",
-  "quit",
-  "nick",
-  "mode",
-  "topic",
-  "kick",
-  "exorcised",
-]);
+/** Kinds that read as `*** text` Event_Lines: the event-green kinds plus kick and exorcism. */
+const EVENT_KINDS: ReadonlySet<Line["kind"]> = new Set([...EVENT_LINE_KINDS, "kick", "exorcised"]);
 
 const SESSION_START = /^--- Session start: /;
 
-function lineClass(line: Line): string {
+export function lineClass(line: Line): string {
+  // web-client-pixel-match R6.1: every `***` event line uses the event green.
+  if (EVENT_LINE_KINDS.includes(line.kind)) return "text-event-green";
   switch (line.kind) {
-    case "join":
-      return "text-event-green";
     case "action":
       return "text-action-purple";
     case "notice":
@@ -166,7 +157,7 @@ function Body(props: {
             </>
           ) : null}
           <span role="img" aria-label="exorcised" className="ml-1 inline-flex align-middle">
-            <Icon name="ghost-away" />
+            <NickAgentResearcherAway />
           </span>
         </>
       );

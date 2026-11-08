@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 .next/
+.next-e2e/
 .turbo/
 *.tsbuildinfo
 
@@ -25,5 +26,7 @@ workspaces/
 .perm-out.txt
 __pycache__/
 apps/web/test-results/
+# Copy of e2e/figma/01-main-1440x900.png made by pixel.spec.ts at run time
+apps/web/e2e/__screenshots__/desktop-1440/figma-01-main.png
 apps/web/playwright-report/
 playwright-report/

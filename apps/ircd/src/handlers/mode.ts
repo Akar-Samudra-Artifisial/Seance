@@ -1,4 +1,4 @@
-import { Numerics } from "@seance/irc-protocol";
+import { Numerics, serialize } from "@seance/irc-protocol";
 import type { IrcMessage } from "@seance/irc-protocol";
 import type { Channel } from "../channel-registry.js";
 import type { Client } from "../client.js";
@@ -6,13 +6,53 @@ import type { CommandRouter, RouterContext } from "../command-router.js";
 import { reflectedReply } from "../replies.js";
 import type { IrcModeEvent } from "../event-bus.js";
 
+/** Channel flags without an argument: `m` moderated, `n` no external messages, `t` topic lock. */
+type FlagMode = "m" | "n" | "t";
+type ChannelModeChar = "o" | "v" | FlagMode;
+
 /** One validated mode change, ready to apply. */
 type ModeChange = {
-  readonly mode: "o" | "v" | "m";
+  readonly mode: ChannelModeChar;
   readonly adding: boolean;
   /** Target member id and nick (as stored by the server) for `o`/`v`. */
   readonly target?: { readonly id: string; readonly nick: string };
 };
+
+const FLAG_FIELD: Readonly<Record<FlagMode, "moderated" | "noExternal" | "topicLock">> = {
+  m: "moderated",
+  n: "noExternal",
+  t: "topicLock",
+};
+
+const isFlag = (ch: string): ch is FlagMode => ch === "m" || ch === "n" || ch === "t";
+
+/** `+` and the active flags in alphabetical order, e.g. `+nt` or `+mnt` (324 RPL_CHANNELMODEIS). */
+export function flagString(modes: Channel["modes"]): string {
+  return `+${(["m", "n", "t"] as const).filter((f) => modes[FLAG_FIELD[f]]).join("")}`;
+}
+
+/**
+ * MODE parameters after the channel for a list of applied changes: sign runs over the
+ * mode characters in input order, then the arguments in the same order.
+ * `[{o,+,bob},{v,-,eve}]` gives `["+o-v", "bob", "eve"]`; `[{m,+},{n,+}]` gives `["+mn"]`.
+ */
+export function groupChanges(
+  changes: readonly { readonly mode: ChannelModeChar; readonly adding: boolean; readonly nick?: string }[],
+): readonly string[] {
+  let modes = "";
+  let sign: "+" | "-" | "" = "";
+  const args: string[] = [];
+  for (const c of changes) {
+    const s = c.adding ? "+" : "-";
+    if (s !== sign) {
+      modes += s;
+      sign = s;
+    }
+    modes += c.mode;
+    if (c.nick !== undefined) args.push(c.nick);
+  }
+  return modes === "" ? [] : [modes, ...args];
+}
 
 function numeric(
   ctx: RouterContext,
@@ -57,8 +97,8 @@ function validateChanges(
       adding = false;
       continue;
     }
-    if (ch === "m") {
-      changes.push({ mode: "m", adding });
+    if (isFlag(ch)) {
+      changes.push({ mode: ch, adding });
       continue;
     }
     if (ch !== "o" && ch !== "v") {
@@ -81,6 +121,29 @@ function validateChanges(
   return changes;
 }
 
+/**
+ * The broadcast for `applied`: one message, unless the sender's prefix would push it past the
+ * 512-byte line limit; then it is split in halves until every part fits.
+ */
+function groupedMessages(prefix: string, channel: string, applied: readonly ModeChange[]): readonly IrcMessage[] {
+  const msg: IrcMessage = {
+    prefix,
+    command: "MODE",
+    params: [
+      channel,
+      ...groupChanges(applied.map((c) => ({ mode: c.mode, adding: c.adding, ...(c.target === undefined ? {} : { nick: c.target.nick }) }))),
+    ],
+  };
+  try {
+    serialize(msg);
+    return [msg];
+  } catch (error) {
+    if (applied.length <= 1) throw error;
+    const half = Math.ceil(applied.length / 2);
+    return [...groupedMessages(prefix, channel, applied.slice(0, half)), ...groupedMessages(prefix, channel, applied.slice(half))];
+  }
+}
+
 /** `MODE <channel> [<modes> [<nick>...]]`: Req 9.1–9.10 (461 for bare MODE via minParams). */
 function handleMode(ctx: RouterContext, client: Client, msg: IrcMessage): void {
   const name = msg.params[0];
@@ -99,7 +162,7 @@ function handleMode(ctx: RouterContext, client: Client, msg: IrcMessage): void {
       reflectedReply(ctx, client, Numerics.ERR_NOTONCHANNEL, [channel.name], "You're not on that channel");
       return;
     }
-    numeric(ctx, client, Numerics.RPL_CHANNELMODEIS, channel.name, channel.modes.moderated ? "+m" : "+");
+    numeric(ctx, client, Numerics.RPL_CHANNELMODEIS, channel.name, flagString(channel.modes));
     return;
   }
 
@@ -111,26 +174,34 @@ function handleMode(ctx: RouterContext, client: Client, msg: IrcMessage): void {
   const changes = validateChanges(ctx, client, channel, modeString, msg.params.slice(2));
   if (changes === null) return; // rejected: no state was touched
 
-  const origin = prefixOf(ctx, client);
-  const recipients = [...channel.members.keys()];
+  // Apply in order; keep only the changes that altered state (R12.5).
+  const applied: ModeChange[] = [];
   for (const change of changes) {
-    if (change.mode === "m") {
-      channel.modes.moderated = change.adding;
+    if (isFlag(change.mode)) {
+      const field = FLAG_FIELD[change.mode];
+      if (channel.modes[field] === change.adding) continue;
+      channel.modes[field] = change.adding;
+      applied.push(change);
     } else if (change.target !== undefined) {
       const membership = channel.members.get(change.target.id);
       if (membership === undefined) continue; // validated above; defensive
-      if (change.mode === "o") membership.op = change.adding;
-      else membership.voice = change.adding;
+      const key = change.mode === "o" ? "op" : "voice";
+      if (membership[key] === change.adding) continue;
+      membership[key] = change.adding;
+      applied.push(change);
     }
+  }
+  if (applied.length === 0) return;
 
-    const sign = change.adding ? "+" : "-";
-    const params =
-      change.target === undefined
-        ? [channel.name, `${sign}${change.mode}`]
-        : [channel.name, `${sign}${change.mode}`, change.target.nick];
-    const out: IrcMessage = { prefix: origin, command: "MODE", params };
+  // One MODE message per command, e.g. `MODE #c +mnt` or `MODE #c +o-v coder bob`.
+  const recipients = [...channel.members.keys()];
+  for (const out of groupedMessages(prefixOf(ctx, client), channel.name, applied)) {
     for (const id of recipients) ctx.connections.get(id)?.send(out);
+  }
 
+  // Req 9.10: the runner port knows o, v and m only; n and t publish no event.
+  for (const change of applied) {
+    if (change.mode !== "o" && change.mode !== "v" && change.mode !== "m") continue;
     const event: IrcModeEvent = {
       channel: channel.name,
       by: client.nick ?? "*",
@@ -138,7 +209,7 @@ function handleMode(ctx: RouterContext, client: Client, msg: IrcMessage): void {
       adding: change.adding,
       ...(change.target === undefined ? {} : { target: change.target.nick }),
     };
-    ctx.events?.publish("irc.mode", event); // Req 9.10
+    ctx.events?.publish("irc.mode", event);
   }
 }
 

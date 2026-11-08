@@ -25,8 +25,9 @@ function handleTopic(ctx: RouterContext, client: Client, msg: IrcMessage): void 
     sendTopicReply(ctx, client, channel); // Req 7.1
     return;
   }
-  if (!ctx.channels.isOp(channel.name, client.id)) {
-    reflectedReply(ctx, client, Numerics.ERR_CHANOPRIVSNEEDED, [channel.name], "You're not channel operator"); // Req 7.3
+  // Req 7.3 under `+t` (the default); any member may set the topic under `-t`.
+  if (!ctx.channels.canSetTopic(channel.name, client.id)) {
+    reflectedReply(ctx, client, Numerics.ERR_CHANOPRIVSNEEDED, [channel.name], "You're not channel operator");
     return;
   }
 

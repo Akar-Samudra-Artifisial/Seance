@@ -177,6 +177,16 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: design with Architecture, Components and Interfaces, Data Models and Property N headings
 - Notes: the validator rejected the first design (three required sections missing); its tasks.md still lacks a dependency graph
 
+### 2026-11-08 — web-client-pixel-match implementation
+- Kiro features: spec web-client-pixel-match (tasks 1 to 10), MCP (Talk to Figma for icon SVGs, Frame_01 text nodes and measurements), PBT (P1 icon fidelity to P7 layout sum), steering (web-ui, security, testing), hook (guard-shell), Playwright (five pixel projects)
+- Produced: generated icon components (`apps/web/src/icons`, `scripts/gen-icons.mjs`), readable IRC foreground tokens, event-green `***` lines and `341` invite lines, the empty-line gate, ircd `+n`/`+t` with grouped `MODE`, the Frame_01 shell (child merged into the frame, menu bar child icon and buttons, toolbar, tray, switchbar, credits panel, status bar), the Compact layout (nick overlay, `»` menu, `visualViewport`), the test-only fixture route and `e2e/pixel.spec.ts` with app baselines at five sizes
+- Notes: headless Chromium hides scrollbars, so the pixel projects drop `--hide-scrollbars`; the Figma comparison skips until the 1440x900 export is saved; the ESLint hex rule got a narrow exception for generated icons and the palette module
+
+### 2026-11-08 — web-client-pixel-match: Figma comparison and final checks
+- Kiro features: spec web-client-pixel-match (tasks 0.1, 0.3, 0.4, 9.2, 12), MCP (Playwright), hook (guard-shell)
+- Produced: working scrollbar arrow selectors, six layout fixes from the gap list, five regenerated baselines, a Figma comparison with export-side masks at limit 0.0205 (measured 0.01704), design Open Points 6, 7, 11 and 12
+- Notes: the spike showed Chromium draws no `:single-button` scrollbar arrows; guard-shell blocked writing output files outside the repo; the Playwright MCP browser refuses `file:` URLs, so the spike ran through a Playwright script
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.

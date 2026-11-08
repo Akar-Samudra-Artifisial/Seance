@@ -21,9 +21,12 @@ const keyFor = (target: string): string => (target === CHANNEL ? CHANNEL_KEY : Q
 
 /** Words that include the own nick as a whole word, as a substring, and unrelated text. */
 const wordArb = fc.constantFrom("hello", "me", "ME", "Me", "meow", "name", "me,", "(me)", "me:", "x_me", "me-2", "ok", "");
+// web-client-pixel-match R9.2: a line without a visible character is no longer stored, so the
+// flag property only generates text that produces a line (P4 covers the empty case).
 const textArb = fc
   .array(wordArb, { minLength: 0, maxLength: 5 })
-  .map((words) => words.join(" "));
+  .map((words) => words.join(" "))
+  .filter((text) => text.trim() !== "");
 
 const startArb = fc.constantFrom(...WINDOW_KEYS);
 const targetArb = fc.constantFrom(CHANNEL, QUERY);
