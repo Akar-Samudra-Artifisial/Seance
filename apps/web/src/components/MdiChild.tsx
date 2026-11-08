@@ -12,7 +12,11 @@ function plain(text: string): string {
     .join("");
 }
 
-/** Child title per R4.2. Parts that are empty (no topic, `""` or `+` modes) are omitted. Used by the tray. */
+/**
+ * Child title per web-client-polish R4.2. Parts that are empty (no topic, `""` or `+` modes) are
+ * omitted. Not rendered since the tray shows the window name only (Frame_01); kept for its tests
+ * and for a future restored (non-maximised) child.
+ */
 export function childTitleOf(win: Window, ownNick: string, host: string): string {
   if (win.kind === "status") return `Status: ${ownNick} on ${host}`;
   if (win.kind === "query") return win.name;

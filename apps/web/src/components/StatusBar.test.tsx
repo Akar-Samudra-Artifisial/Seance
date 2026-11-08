@@ -62,12 +62,14 @@ describe("StatusBar", () => {
     expect(screen.getByRole("status").textContent).not.toContain("(TLS)");
   });
 
-  it("appends (TLS) for wss and shows lag with two decimals", () => {
+  // pixel-match follow-up: Frame_01 reads `Connected to <host>:<port> (TLS) as <nick>`; the TLS mark
+  // moved from the end to after the host on purpose (supersedes web-client-polish R6.2 wording).
+  it("marks (TLS) after the host for wss and shows lag with two decimals", () => {
     const t = setup(WSS, true);
     act(() => {
       t.connect();
     });
-    expect(screen.getByRole("status").textContent).toContain("Connected to irc.example.org:6697 as alice (TLS)");
+    expect(screen.getByRole("status").textContent).toContain("Connected to irc.example.org:6697 (TLS) as alice");
     expect(document.querySelector('[aria-live="off"]')?.textContent).toBe("lag –");
   });
 

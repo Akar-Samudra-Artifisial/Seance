@@ -5,9 +5,8 @@ import { plain } from "../irc/index.js";
 import type { Window } from "../irc/index.js";
 import { useClientStore } from "../store/react.js";
 import { CaptionButton } from "./CaptionButton.js";
-import { ChildIcon, childTitleOf } from "./MdiChild.js";
+import { ChildIcon } from "./MdiChild.js";
 import { IrcText } from "./Spans.js";
-import { hostOf } from "./TitleBar.js";
 
 /**
  * Bar of a minimised MDI_Child (R1.7): 176x24, raised frame around an inactive title strip with the
@@ -76,9 +75,6 @@ export function MinimisedBar(props: { readonly window: Window; readonly title: s
 export function MinimisedTray(): ReactNode {
   const minimised = useClientStore((s) => s.ui.minimised);
   const windows = useClientStore((s) => s.client.windows);
-  const ownNick = useClientStore((s) => s.client.ownNick);
-  const serverUrl = useClientStore((s) => s.ui.serverUrl);
-  const host = hostOf(serverUrl);
   const bars = minimised.flatMap((key) => {
     const win = windows[key];
     return win === undefined ? [] : [win];
@@ -92,7 +88,8 @@ export function MinimisedTray(): ReactNode {
       className="mt-0.5 flex h-(--layout-tray) shrink-0 items-start gap-1 overflow-x-auto overflow-y-hidden bg-chrome-shadow pl-1.5 pt-0.5"
     >
       {bars.map((win) => (
-        <MinimisedBar key={win.key} window={win} title={childTitleOf(win, ownNick, host)} />
+        // Frame_01 node 1:1513: the caption is the window name only ("Status").
+        <MinimisedBar key={win.key} window={win} title={win.name} />
       ))}
     </div>
   );

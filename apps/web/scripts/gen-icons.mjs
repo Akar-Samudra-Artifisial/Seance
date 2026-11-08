@@ -12,7 +12,7 @@
 // cuts composite files into slices by choosing whole paths and a viewBox.
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_DIRS = [join(WEB, "design/figma-icons"), join(WEB, "design/figma-icons-extra")];
@@ -58,18 +58,65 @@ function findSource(file) {
   throw new Error(`gen-icons: no source SVG named ${file}.svg in ${SOURCE_DIRS.join(", ")}`);
 }
 
-function parseAttrs(s) {
+/** The only attributes a source <path> may carry. Anything else fails the run. */
+const PATH_ATTRS = new Set([
+  "d",
+  "fill",
+  "stroke",
+  "stroke-width",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "fill-rule",
+  "clip-rule",
+  "opacity",
+]);
+
+/**
+ * `name="value"` pairs of an element's attribute text. Strict: anything that is not such a pair
+ * (single quotes, bare names, stray characters) throws, so no attribute can slip past the allowlist.
+ */
+function parseAttrs(s, where) {
   const attrs = {};
-  for (const m of s.matchAll(/([a-zA-Z:-]+)="([^"]*)"/g)) attrs[m[1]] = m[2];
+  const re = /\s*([a-zA-Z:-]+)="([^"]*)"/y;
+  let at = 0;
+  while (at < s.length) {
+    if (/^\s*\/?\s*$/.test(s.slice(at))) break;
+    re.lastIndex = at;
+    const m = re.exec(s);
+    if (m === null) throw new Error(`gen-icons: ${where}: cannot parse attributes near "${s.slice(at, at + 30)}"`);
+    if (Object.hasOwn(attrs, m[1])) throw new Error(`gen-icons: ${where}: duplicate attribute ${m[1]}`);
+    attrs[m[1]] = m[2];
+    at = re.lastIndex;
+  }
   return attrs;
+}
+
+/** Path attributes after the allowlist check; throws on any other attribute. */
+function pathAttrs(s, file, index) {
+  const where = `${file} <path> #${String(index + 1)}`;
+  const attrs = parseAttrs(s, where);
+  for (const name of Object.keys(attrs)) {
+    if (!PATH_ATTRS.has(name)) {
+      throw new Error(`gen-icons: ${where} has attribute "${name}"; allowed: ${[...PATH_ATTRS].join(", ")}`);
+    }
+  }
+  if (attrs.d === undefined || attrs.d.trim() === "") throw new Error(`gen-icons: ${where} has no path data (d)`);
+  return attrs;
+}
+
+/** Escapes a value for a double-quoted JSX or XML attribute (JSX decodes entities in strings too). */
+function escapeAttr(value) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /** Root viewBox and the <path> elements, in document order. Other elements are reported. */
 function parseSvg(text, file) {
   const root = /<svg\b([^>]*)>/.exec(text);
   if (root === null) throw new Error(`gen-icons: ${file} has no <svg> element`);
-  const rootAttrs = parseAttrs(root[1]);
-  const paths = [...text.matchAll(/<path\b([^>]*?)\/>/g)].map((m) => ({ attrs: parseAttrs(m[1]) }));
+  const rootAttrs = parseAttrs(root[1], `${file} <svg>`);
+  const paths = [...text.matchAll(/<path\b([^>]*?)\/>/g)].map((m, i) => ({ attrs: pathAttrs(m[1], file, i) }));
+  // A <path> written as an open/close pair would not match the self-closing form above.
+  if (/<path\b[^>]*[^/]>/.test(text)) throw new Error(`gen-icons: ${file} has a <path> that is not self-closing`);
   const others = [...text.matchAll(/<(text|rect|circle|g|image|use)\b/g)].map((m) => m[1]);
   return { viewBox: rootAttrs.viewBox, rootFill: rootAttrs.fill, paths, others };
 }
@@ -103,9 +150,9 @@ const pascal = (kebab) => kebab.split("-").map((p) => p[0].toUpperCase() + p.sli
 function pathJsx(attrs, swap) {
   const parts = [];
   for (const [k, v] of Object.entries(attrs)) {
-    if (k === "style") throw new Error("gen-icons: a path carries a style attribute");
+    // Only allowlisted names reach this point (pathAttrs); values are escaped, never trusted.
     const value = swap !== undefined && (k === "fill" || k === "stroke") && v === swap ? "currentColor" : v;
-    parts.push(`${JSX_ATTR[k] ?? k}="${value}"`);
+    parts.push(`${JSX_ATTR[k] ?? k}="${escapeAttr(value)}"`);
   }
   return `<path ${parts.join(" ")} />`;
 }
@@ -142,12 +189,15 @@ ${body}
 }
 
 function svgString(box, paths) {
-  const body = paths.map((p) => `<path ${Object.entries(p.attrs).map(([k, v]) => `${k}="${v}"`).join(" ")}/>`).join("");
+  const body = paths.map((p) => `<path ${Object.entries(p.attrs).map(([k, v]) => `${k}="${escapeAttr(v)}"`).join(" ")}/>`).join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${box.join(" ")}" width="16" height="16" shape-rendering="crispEdges">${body}</svg>`;
 }
 
 const dataUri = (svg) => `url("data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, "%27")}")`;
 
+export { PATH_ATTRS, escapeAttr, parseAttrs, parseSvg, pathJsx, svgString };
+
+function main() {
 mkdirSync(OUT, { recursive: true });
 const index = [];
 const manifest = [];
@@ -212,3 +262,7 @@ ${vars}
 `,
 );
 console.log(`gen-icons: ${index.length} components, ${cssParts.length} scrollbar parts`);
+}
+
+// Generate only when run as a script; the test imports the helpers above.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) main();

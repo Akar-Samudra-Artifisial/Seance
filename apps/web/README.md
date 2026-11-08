@@ -13,7 +13,7 @@ At 1440x900 the regions match Frame_01 to the pixel box (3 px frame, title 22, m
 - **Toolbar**: connect | options | channel list, agents | logs | theme, plus the `Theme: Ghost` label.
 - **Maximised window**: the active window fills the frame with no title bar of its own (its title is in the title bar). A channel window shows the topic field, the chat pane with an always-visible Win95 scrollbar, and the nick list. Minimised windows move to a tray above the switchbar and stay in the switchbar; click the bar to restore. The status window cannot be closed.
 - **Switchbar**: one button per window (unread in navy, mention in orange) and a credits panel at the right end. The counter sums the latest `total` per agent from `320` WHOIS lines like `credits: #dev 9.60 / total 12.00`. It reads `credits: 0.0` until such a line arrives.
-- **Status bar**: `Connected to <host> as <nick>` (with ` (TLS)` for `wss:`), `lag <s>s`, and `<a> agents · <w> away · <o> ops`. Lag comes from a `PING :seance-lag-<n>` sent every 30 s; it reads `lag –` before the first reply.
+- **Status bar**: `Connected to <host>` plus ` (TLS)` for `wss:`, then ` as <nick>`, `lag <s>s`, and `<a> agents · <w> away · <o> ops`. Lag comes from a `PING :seance-lag-<n>` sent every 30 s; it reads `lag –` before the first reply.
 
 ### Modes and away tracking
 
@@ -21,8 +21,11 @@ The client sends `MODE <channel>` once after joining and keeps channel flags (su
 
 ### Line formats
 
-- Chat: `[HH:MM] <@nick> text`, `<+nick>` for voiced, `<nick>` otherwise.
+- Chat: `[HH:MM] <@nick> text`, `<+nick>` for voiced, `<nick>` otherwise. The prefix is the sender's mode when the line arrived, so older lines keep it after a later `+o`.
 - Events: `*** nick (user@host) has joined #chan`, `has left`, `has quit`, `is now known as`, `sets mode:`, `sets topic:`.
+- Session start: `--- Session start: Fri Nov 06 23:38:02 2026` in local time.
+- Away: `* nick is away (text)`, then `* nick is back (gone hh:mm:ss)` when the away line was seen (plain `is back` otherwise).
+- Notices: `-nick- text` with only `-nick-` in orange. Agent tool notices (`using tool: …`) read `-tool- …` in grey; denied ones read `[denied] -tool- …`, struck through.
 - WHOIS: classic lines, each starting with the nick in bold, for example `coder is user@host * Real name`, `coder on #chan`, then each `320` line as received, then `coder End of /WHOIS list.`.
 - Exorcism: a kick of a known agent reads `*** coder has been exorcised by alice (reason)`. When the reason is empty or equals the kicker nick, the parentheses are dropped. The agent stays in the nick list, struck through, until it rejoins, the window closes or the client reconnects.
 
@@ -41,8 +44,11 @@ These carry `aria-disabled` and do nothing: the "No favorites yet" item of Favor
 1. Start the Ircd and allow the origin the browser will use:
 
    ```sh
-   IRCD_WS_ALLOWED_ORIGINS=http://localhost:3000 pnpm --filter @seance/ircd dev
+   pnpm --filter @seance/ircd build
+   IRCD_HOST=127.0.0.1 IRCD_WS_ALLOWED_ORIGINS=http://localhost:3000 node apps/ircd/dist/index.js
    ```
+
+   Run it from the repository root. The Ircd has no watch mode; rebuild and restart it after a change.
 
 2. Start the web client:
 
@@ -74,12 +80,12 @@ See [`.env.example`](./.env.example).
 
 | Variable | Used by | Meaning |
 | --- | --- | --- |
-| `NEXT_PUBLIC_IRCD_WS_URL` | web (build time) | Default Ircd WebSocket URL (`ws:` or `wss:`). Default `ws://127.0.0.1:6680` |
+| `NEXT_PUBLIC_IRCD_WS_URL` | web server (per request) | Default Ircd WebSocket URL (`ws:` or `wss:`). Default `ws://127.0.0.1:6680` |
 | `IRCD_WS_ALLOWED_ORIGINS` | Ircd | Page origins the Ircd accepts |
 | `SEANCE_E2E_FIXTURES` | web (build time, tests only) | `1` adds the fixture route (`*.fixture.tsx` pages) |
 | `SEANCE_DIST_DIR` | web (build time, tests only) | Build output directory, a `.next*` name inside `apps/web` (e2e uses `.next-e2e`) |
 
-`NEXT_PUBLIC_IRCD_WS_URL` is inlined into the bundle at build time. Changing it requires a rebuild; setting it when running `next start` has no effect. The origin of this URL also becomes the CSP `connect-src`, so it is the only non-local WebSocket origin the page may open. An invalid value fails the build with an error.
+`NEXT_PUBLIC_IRCD_WS_URL` is read on the server for each request (`proxy.ts` and `app/page.tsx` pass `process.env` to `computeConnectConfig`, so Next.js does not inline it), and the page hands the value to the browser as a prop. Set it in the environment of `next start` (or `next dev`); changing it needs a restart, not a rebuild. The origin of this URL also becomes the CSP `connect-src`, so it is the only non-local WebSocket origin the page may open. An invalid value makes page requests fail with an error that names the variable.
 
 ## Build
 
@@ -107,18 +113,18 @@ pnpm --filter @seance/web test:e2e
 
 The `flows` project runs the behaviour specs. Five pixel projects (`desktop-1440`, `desktop-1024`, `medium-768`, `compact-390`, `compact-360`) open the fixture page `/fixtures/01-main` (the Frame_01 content fed through an in-memory socket) and check screenshots, horizontal overflow, region boxes at 1440x900, touch hit areas and CSP violations.
 
-- The fixture route exists only in a build made with `SEANCE_E2E_FIXTURES=1`; the harness sets it and `SEANCE_DIST_DIR=.next-e2e`, so the deployable `.next` output never contains fixture code (`src/fixtures/bundle.test.ts` checks both outputs when they exist).
+- The fixture route exists only in a build made with `SEANCE_E2E_FIXTURES=1`; the harness sets it and `SEANCE_DIST_DIR=.next-e2e`, so the deployable `.next` output never contains fixture code (`src/fixtures/bundle.test.ts` checks both outputs; locally it skips a missing output, with `CI=true` it fails, so CI must run `pnpm build` and the e2e build before `pnpm test`).
 - Baselines live in `e2e/__screenshots__/<project>/` without a platform suffix and were generated with macOS Chromium. After an intended visual change, or on another OS, regenerate them:
 
   ```sh
   pnpm --filter @seance/web exec playwright test -c e2e/playwright.config.ts --update-snapshots
   ```
 
-- The Figma comparison at 1440x900 uses `e2e/figma/01-main-1440x900.png` (Frame_01 exported from Figma at 1x) with `maxDiffPixelRatio: 0.0205` (measured 0.017 plus 20 %; see design Open Point 7). Without the file the test is skipped with "Figma export missing". After an intended visual change, re-measure it: set `FIGMA_MAX_DIFF_RATIO` in `e2e/pixel.spec.ts` to 0, read the ratio from the failure, then set it back to measured + 20 %.
+- The Figma comparison at 1440x900 uses `e2e/figma/01-main-1440x900.png` (Frame_01 exported from Figma at 1x) with `maxDiffPixelRatio: 0.0157` (measured 0.0131 plus 20 %; see design Open Point 7). Without the file the test is skipped with "Figma export missing". After an intended visual change, re-measure it: set `FIGMA_MAX_DIFF_RATIO` in `e2e/pixel.spec.ts` to 0, read the ratio from the failure, then set it back to measured + 20 %.
 
 ## Icons
 
-The icons are the Figma drawings. Sources are `design/figma-icons/*.svg` (from the mockup) and `design/figma-icons-extra/*.svg` (pressed states, the active researcher ghost, the `»` chevrons, the query child icon). After changing a source, regenerate the components in `src/icons/`, `src/icons/sources.ts` and the scrollbar arrows in `app/scrollbar.css`:
+The icons are the Figma drawings. Sources are `design/figma-icons/*.svg` (from the mockup) and `design/figma-icons-extra/*.svg` (pressed states, the active researcher ghost, the `»` chevrons, the query child icon). A source `<path>` may only carry `d`, `fill`, `stroke`, `stroke-width`, `stroke-linecap`, `stroke-linejoin`, `fill-rule`, `clip-rule` and `opacity`; any other attribute, or attribute text the script cannot parse, stops the run with the file and path number, and values are escaped in the output. After changing a source, regenerate the components in `src/icons/`, `src/icons/sources.ts` and the scrollbar arrows in `app/scrollbar.css`:
 
 ```sh
 node scripts/gen-icons.mjs

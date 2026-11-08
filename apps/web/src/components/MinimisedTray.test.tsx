@@ -75,6 +75,24 @@ describe("MinimisedTray", () => {
     expect(store.getState().client.activeKey).toBe("status");
   });
 
+  // pixel-match follow-up (Frame_01 node 1:1513): the caption is the window name only; it used to
+  // be the child title (`Status: alice on host`, `#dev [modes]: topic`).
+  it("captions each bar with the window name only", () => {
+    const { store, recv } = setup();
+    recv(":alice!a@h TOPIC #dev :ship it");
+    store.getState().minimiseWindow("c:#dev");
+    store.getState().minimiseWindow("status");
+    render(
+      <ClientStoreProvider store={store}>
+        <MinimisedTray />
+      </ClientStoreProvider>,
+    );
+    const bars = screen.getAllByTestId("minimised-bar");
+    expect(bars.map((b) => b.getAttribute("aria-label"))).toEqual(["#dev (minimised)", "Status (minimised)"]);
+    expect(within(bars[0] as HTMLElement).getByRole("button", { name: "Restore #dev" }).textContent).toBe("#dev");
+    expect(within(bars[1] as HTMLElement).getByRole("button", { name: "Restore Status" }).textContent).toBe("Status");
+  });
+
   it("closing a bar closes the window", () => {
     const { store, recv } = setup();
     store.getState().minimiseWindow("c:#ops");

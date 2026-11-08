@@ -2,6 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { creditsTotal, plain } from "../irc/index.js";
+import { sessionStartText } from "../irc/reducer.route.js";
 import { FIGMA_01_MAIN, FIXTURE_MARKER, stepTime } from "./figma-01-main.js";
 import { FixtureShell, createFixtureStore } from "./shell.js";
 
@@ -41,13 +42,20 @@ describe("Frame_01 fixture store", () => {
   it("holds the Frame_01 chat rows in order with times from 23:38 to 23:47", () => {
     const lines = channel?.lines ?? [];
     const texts = lines.map((l) => plain(l.text));
-    // The session-start text uses the runtime's time zone (UTC in the screenshot tests).
-    expect(texts[0]).toMatch(/^--- Session start: 2026-11-0[67] \d\d:\d\d$/);
+    // The session-start text uses the runtime's time zone; in UTC (the screenshot tests) it is the
+    // Frame_01 text `Fri Nov 06 23:38:02 2026`.
+    expect(texts[0]).toBe(sessionStartText(stepTime("23:38:02")));
+    expect(sessionStartText(stepTime("23:38:02"))).toMatch(/^--- Session start: \w{3} Nov 0[67] \d\d:38:02 2026$/);
     expect(texts).toContain("Now talking in #fix-bug-123");
     expect(texts).toContain("bayu invited coder");
     expect(texts).toContain("bayu invited reviewer");
     expect(texts).toContain("bayu sets mode: +mnt");
     expect(texts.at(-1)).toBe("coder touched 6 files outside topic scope");
+    // Frame_01 node 1:1368, and the prefix at the time of each line (1:1360 `<+coder>`, 1:1376 `<@coder>`).
+    expect(texts).toContain("is back (gone 00:01:48)");
+    const coderMessages = lines.filter((l) => l.kind === "message" && l.from === "coder").map((l) => l.nickPrefix);
+    expect(coderMessages).toEqual(["+", "+", "@", "@"]);
+    expect(lines.find((l) => l.kind === "message" && l.from === "reviewer")?.nickPrefix).toBe("");
     expect(lines.filter((l) => l.kind === "tool")).toHaveLength(3);
     // No row without visible text (R9.2).
     expect(texts.every((t) => t.trim() !== "")).toBe(true);
@@ -72,5 +80,18 @@ describe("FixtureShell", () => {
     expect(document.documentElement.dataset["fixture"]).toBe(FIXTURE_MARKER);
     // Frame_01 shows the typed, unsent command.
     expect((screen.getByLabelText("Message or command") as HTMLInputElement).value).toBe("/kick coder scope creep");
+    // Rendered rows with the Frame_01 wording.
+    const log = screen.getByRole("log", { name: "#fix-bug-123 messages" });
+    const rows = Array.from(log.querySelectorAll(":scope > div > div")).map((r) => r.textContent?.replace(/^\[\d\d:\d\d\] /, ""));
+    expect(rows).toContain("-tool- fs.read src/auth/login.ts · 142 lines · 0.3 cr");
+    expect(rows).toContain("<+coder> Plan: guard null email in src/auth/login.ts, add test");
+    expect(rows).toContain("<@coder> while I'm here I'll also migrate auth/ to the new session API");
+    expect(rows).toContain("* coder is back (gone 00:01:48)");
+    expect(rows).toContain("-ChanServ- worktree ready: .seance/wt/fix-bug-123 @ a1b2c3d");
+    // Status bar and tray caption (Frame_01 1:1520 and 1:1513).
+    expect(screen.getByText("Connected to seance.local:6697 (TLS) as bayu")).toBeTruthy();
+    const bar = within(minimised).getByTestId("minimised-bar");
+    expect(bar.getAttribute("aria-label")).toBe("Status (minimised)");
+    expect(within(bar).getByRole("button", { name: "Restore Status" }).textContent).toBe("Status");
   });
 });

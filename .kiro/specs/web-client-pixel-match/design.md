@@ -378,7 +378,7 @@ Decisions of 2026-11-08 (product owner): points 1, 2, 3 and 4 to 9 are closed as
    - The plain `::-webkit-scrollbar-button` (with `display: block`), `:vertical:start:decrement` and `:vertical:end:increment` draws the Figma arrows, also when nothing overflows; `:start:increment` and `:end:decrement` are hidden. `globals.css` uses this form.
    - The thumb is a 4-layer inset `box-shadow` (white, light, shadow, black) instead of `border-image`; it draws the Figma 2 px edge on any thumb length. Track `#dcdcdc`.
    - Not verified: the pressed arrows (`:active`), because a synthetic mouse-down in headless Chromium does not reach the scrollbar (the box did not scroll either), and Safari (WebKit is not installed in this environment). Both stay for the manual check.
-7. **1440 tolerance.** Measured on 2026-11-08 (macOS Chromium, Playwright 1.65, masks below): **22,083 of 1,296,000 pixels differ, ratio 0.01704**. Limit: **`maxDiffPixelRatio: 0.0205`** (measured + 20 %), in `e2e/pixel.spec.ts` (`FIGMA_MAX_DIFF_RATIO`). The ratio was read from a run with the limit set to 0, because a passing run at 1 does not report it. Masks: timestamp column (also covers the session-start row, which uses the dim token), nick list footer, away nick row, lag panel. Playwright paints masks on the actual screenshot only, so the test paints the same boxes in `#FF00FF` on its copy of the export. Re-measure after any intended visual change.
+7. **1440 tolerance.** Re-measured on 2026-11-08 after the Frame_01 text fixes of point 12 (macOS Chromium, Playwright 1.65, masks below): **16,960 of 1,296,000 pixels differ, ratio 0.01309** (first measurement before those fixes: 22,083, 0.01704). Limit: **`maxDiffPixelRatio: 0.0157`** (measured + 20 %), in `e2e/pixel.spec.ts` (`FIGMA_MAX_DIFF_RATIO`). The ratio was read from a run with the limit set to 0, because a passing run at 1 does not report it. Masks: timestamp column (also covers the session-start row, which uses the dim token), nick list footer, away nick row, lag panel. Playwright paints masks on the actual screenshot only, so the test paints the same boxes in `#FF00FF` on its copy of the export. Re-measure after any intended visual change.
 10. **Topic field placement (D3).** Implemented inside `ChannelWindow` (first row of the window section), not mounted by the shell. With no child frame the drawn result is the same full-width row under the toolbar, absent for Status and query, and the topic stays inside the window's labelled region.
 11. **Tray bar buttons.** Frame_01 draws minimise, maximise and close on the minimised bar. The Client shows restore, maximise (also restores, since the client keeps one maximised window) and close, because minimising a minimised window does nothing. Open: follow Figma's drawing or keep restore.
 12. **Gap list after the Figma export (task 0.4, 2026-11-08).** Compared the 1440 fixture with `e2e/figma/01-main-1440x900.png` region by region (share of differing pixels before the fixes: total 11.1 %, tray 91 %, status 34 %, toolbar 8 %, chat 9 %).
@@ -390,13 +390,14 @@ Decisions of 2026-11-08 (product owner): points 1, 2, 3 and 4 to 9 are closed as
       - The etched line between menu bar and toolbar was missing.
       - The tray row background is now `#808080` (the empty MDI area).
       - The fixture now holds the typed command `/kick coder scope creep` in the input line, as Frame_01 shows.
-    - Open, not covered by a requirement (decide before changing):
-      - a. `-tool-` rows: Figma shows `-tool- <text>` in the dim token, upright. The Client shows `[tool] using tool: <text>` in italic grey (the `[tool]` marker and the runner wording).
-      - b. Notices (`-ChanServ- …`, `-coder- …`): Figma colours only the `-nick-` prefix orange and the text in the text token. The Client colours the whole row orange.
-      - c. Chat prefixes: Figma shows the mode at the time of the message (`<+coder>` before the `+o`). The Client uses the current mode (`<@coder>`).
-      - d. Wording: `Session start: Fri Nov 06 23:38:02 2026` against `Session start: 2026-11-06 23:38`; `coder is back (gone 00:01:48)` against `coder is back`.
-      - e. Status bar: Figma reads `Connected to seance.local:6697 (TLS) as bayu`. The Client follows web-client-polish R6.2 (` (TLS)` appended at the end). Panel edges differ by 1 to 3 px.
-      - f. Tray bar: Figma's title is the window name only (`Status`), in white on a grey gradient. The Client shows the child title (`Status: bayu on …`) in black on the inactive gradient, a contrast decision. The buttons are covered by point 11.
+    - Decided and implemented in the follow-up of 2026-11-08 (product owner), each with tests:
+      - a. Tool rows read `-tool- <text>` in upright `tool-grey`; the runner's `using tool: ` lead-in is not shown, and the `[tool]` marker is dropped because `-tool-` is the text cue. `tool-denied` rows are unchanged.
+      - b. Notices colour only the `-nick-` part (and the `-server-` part of server notices) in the accent orange; the text uses `ghost-text`.
+      - c. Chat prefixes use the sender's mode when the line arrived: `appendTo` stores `Line.nickPrefix` for channel message lines, and `ChatLine` falls back to the current members only for lines without it.
+      - d. Session start reads `--- Session start: Fri Nov 06 23:38:02 2026` (local time, English names). The away-return line reads `is back (gone hh:mm:ss)` when the client kept the nick's `is away (…)` line, and plain `is back` otherwise (marked by `301`, or the line left the buffer).
+      - e. The status bar reads `Connected to <host>:<port> (TLS) as <nick>`; this supersedes the web-client-polish R6.2 order. Panel edges still differ by 1 to 3 px.
+      - f. The tray caption is the window name only (`Status`). It stays black on the inactive gradient for contrast; the buttons are covered by point 11.
+    - Still open:
       - g. Switchbar text sits about 2 px further right in Figma.
 8. **Restore button.** Accepted: disabled in the maximised state.
 9. **Compact nick list.** Accepted: overlay opened by the toolbar button, no swipe gesture.

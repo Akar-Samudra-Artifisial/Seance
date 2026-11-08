@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 
-const exclude = ["e2e/**", "node_modules/**", ".next/**"];
+const exclude = ["e2e/**", "node_modules/**", ".next/**", ".next-e2e/**"];
 
 export default defineConfig({
   test: {
@@ -10,7 +10,7 @@ export default defineConfig({
         test: {
           name: "node",
           environment: "node",
-          include: ["src/**/*.test.ts", "app/**/*.test.ts", "*.test.ts"],
+          include: ["src/**/*.test.ts", "app/**/*.test.ts", "*.test.ts", "scripts/**/*.test.mjs"],
           exclude,
         },
       },

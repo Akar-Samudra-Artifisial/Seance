@@ -1,6 +1,7 @@
 import type { IrcMessage } from "@seance/irc-protocol";
 import { describe, expect, it } from "vitest";
 import { initialState, reduce } from "./reducer.js";
+import { sessionStartText } from "./reducer.route.js";
 import { resetForReconnect } from "./reset.js";
 import type { ClientState } from "./types.js";
 
@@ -11,7 +12,8 @@ function run(state: ClientState, ...msgs: IrcMessage[]): ClientState {
   return msgs.reduce((s, msg, i) => reduce(s, msg, 1_700_000_000_000 + i).state, state);
 }
 
-const SESSION = /^--- Session start: \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
+// pixel-match follow-up: Frame_01 node 1:1352 writes `Fri Nov 06 23:38:02 2026` (was `2026-11-06 23:38`).
+const SESSION = /^--- Session start: [A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2} \d{4}$/;
 const sessionLines = (s: ClientState, key: string): number =>
   (s.windows[key]?.lines ?? []).filter((l) => SESSION.test(l.text)).length;
 
@@ -52,5 +54,14 @@ describe("session start lines", () => {
       m("TOPIC", ["#dev", "hello"], "op!o@h"),
     );
     expect(s.windows["c:#dev"]?.lines.at(-1)?.text).toBe("op sets topic: hello");
+  });
+});
+
+describe("sessionStartText", () => {
+  it("uses the Frame_01 form in the local time zone, with English names and zero padding", () => {
+    // Build the instant from local parts so the check holds in any time zone.
+    const at = new Date(2026, 10, 6, 23, 38, 2).getTime();
+    expect(sessionStartText(at)).toBe("--- Session start: Fri Nov 06 23:38:02 2026");
+    expect(sessionStartText(new Date(2027, 0, 3, 4, 5, 6).getTime())).toBe("--- Session start: Sun Jan 03 04:05:06 2027");
   });
 });

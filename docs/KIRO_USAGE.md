@@ -187,6 +187,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: working scrollbar arrow selectors, six layout fixes from the gap list, five regenerated baselines, a Figma comparison with export-side masks at limit 0.0205 (measured 0.01704), design Open Points 6, 7, 11 and 12
 - Notes: the spike showed Chromium draws no `:single-button` scrollbar arrows; guard-shell blocked writing output files outside the repo; the Playwright MCP browser refuses `file:` URLs, so the spike ran through a Playwright script
 
+### 2026-11-08 — web-client-pixel-match: Frame_01 text and generator hardening
+- Kiro features: spec web-client-pixel-match (design Open Points 7 and 12), steering (testing, security), hook (guard-shell)
+- Produced: Frame_01 wording (session start, `-tool-` rows, `is back (gone …)`, orange `-nick-` only, prefix at line time, `(TLS) as`, tray name), gen-icons attribute allowlist with escaping, CI-strict bundle test, new baselines, Figma ratio 0.01309 (limit 0.0157)
+- Notes: `next build` caught two test type errors that vitest misses; guard-shell blocked a `../..` output path
+
 ## Next specs to generate in Kiro
 
 These specs are intentionally **not** written yet: generate them in Kiro IDE (Spec mode, or the `seance-spec` agent in Kiro CLI) so the spec-driven workflow is visible in the write-up. Paste each prompt as is.

@@ -60,6 +60,10 @@ export interface Line {
   readonly prefix?: { readonly user: string; readonly host: string };
   /** Three-digit numeric of a server reply line; rendered dim before the text. */
   readonly code?: string;
+  /** Message lines in a channel: the sender's `@` / `+` / "" when the line arrived. */
+  readonly nickPrefix?: string;
+  /** Set only on the action lines written for an inbound `AWAY`; user text can never set it. */
+  readonly awayEvent?: "away" | "back";
   readonly mention: boolean;
   /** Sent by the own nick. */
   readonly own: boolean;

@@ -12,11 +12,11 @@ const FIGMA_EXPORT = resolve(dirname(fileURLToPath(import.meta.url)), "figma/01-
 const FIXTURE_PATH = "/fixtures/01-main";
 const MASK_COLOUR = "#FF00FF";
 /**
- * Design Open Point 7: measured 22,083 of 1,296,000 pixels (0.01704) on 2026-11-08 with macOS
- * Chromium and the masks below; limit = measured + 20 %. To re-measure, set 0 and read the ratio
- * from the failure message.
+ * Design Open Point 7: measured 16,960 of 1,296,000 pixels (0.01309) on 2026-11-08 with macOS
+ * Chromium and the masks below, after the Frame_01 text fixes; limit = measured + 20 %. To
+ * re-measure, set 0 and read the ratio from the failure message.
  */
-const FIGMA_MAX_DIFF_RATIO = 0.0205;
+const FIGMA_MAX_DIFF_RATIO = 0.0157;
 
 async function openFixture(page: Page): Promise<void> {
   await page.addInitScript(() => {

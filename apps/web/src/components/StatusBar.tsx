@@ -34,7 +34,8 @@ export function StatusBar(): ReactNode {
 
   const connection =
     phase === "registered"
-      ? `Connected to ${hostOf(serverUrl)} as ${nick}${serverUrl.startsWith("wss:") ? " (TLS)" : ""}`
+      ? // Frame_01: `Connected to seance.local:6697 (TLS) as bayu` (TLS mark after the host).
+        `Connected to ${hostOf(serverUrl)}${serverUrl.startsWith("wss:") ? " (TLS)" : ""} as ${nick}`
       : PHASE_TEXT[phase];
   const lagText = lag === null ? "lag –" : `lag ${lag.toFixed(2)}s`;
 

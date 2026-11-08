@@ -32,9 +32,19 @@ describe("ChatLine status formats", () => {
     expect(c.querySelector("strong")).toBeNull();
   });
 
-  it("renders server notices in the accent orange", () => {
+  // pixel-match follow-up: Frame_01 colours only the `-name-` part of a notice orange; the text uses
+  // the normal foreground (the whole row used to be orange).
+  it("renders the -server- prefix of server notices in the accent orange and the text normal", () => {
     const c = renderLine({ ...base, kind: "notice", text: "-irc.test- hello" });
     expect(c.textContent).toBe("[00:00] -irc.test- hello");
-    expect(c.firstElementChild?.className).toContain("text-ghost-orange");
+    expect(c.firstElementChild?.className).toContain("text-ghost-text");
+    expect(c.firstElementChild?.className).not.toContain("text-ghost-orange");
+    expect(c.querySelector(".text-ghost-orange")?.textContent).toBe("-irc.test-");
+  });
+
+  it("leaves a notice without a -name- prefix in the normal foreground", () => {
+    const c = renderLine({ ...base, kind: "notice", text: "plain notice" });
+    expect(c.textContent).toBe("[00:00] plain notice");
+    expect(c.querySelector(".text-ghost-orange")).toBeNull();
   });
 });

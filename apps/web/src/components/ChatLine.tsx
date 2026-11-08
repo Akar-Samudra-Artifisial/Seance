@@ -26,6 +26,12 @@ const EVENT_KINDS: ReadonlySet<Line["kind"]> = new Set([...EVENT_LINE_KINDS, "ki
 
 const SESSION_START = /^--- Session start: /;
 
+/** Lead-in of the runner's tool notices (`using tool: <summary>`). */
+const TOOL_LEAD = "using tool: ";
+
+/** `-<server>- ` at the start of a stored server notice. */
+const SERVER_NOTICE = /^(-[^\s-][^\s]*-) /;
+
 export function lineClass(line: Line): string {
   // web-client-pixel-match R6.1: every `***` event line uses the event green.
   if (EVENT_LINE_KINDS.includes(line.kind)) return "text-event-green";
@@ -33,13 +39,15 @@ export function lineClass(line: Line): string {
     case "action":
       return "text-action-purple";
     case "notice":
-      return "text-ghost-orange";
+      // Frame_01: only the `-nick-` part is orange (see NoticePrefix); the text is the normal foreground.
+      return "text-ghost-text";
     case "system":
       return SESSION_START.test(line.text) ? "text-timestamp-dim" : "text-action-purple";
     case "local":
       return "text-action-purple";
     case "tool":
-      return "text-tool-grey italic";
+      // Frame_01 nodes 1:1365 to 1:1367: upright grey `-tool- <text>`.
+      return "text-tool-grey";
     case "tool-denied":
       return "text-tool-grey line-through decoration-1";
     case "kick":
@@ -108,14 +116,28 @@ function Body(props: {
   const text = highlight === undefined ? <IrcText text={line.text} /> : <IrcText text={line.text} highlight={highlight} />;
   switch (line.kind) {
     case "message":
+      // The mode at the time of the line (Frame_01 `<+coder>` before the `+o`); lines without one
+      // (queries, Status) fall back to the current members.
       return (
         <>
           {"<"}
-          <Nick nick={from} prefix={chatPrefix(props.members, from)} />
+          <Nick nick={from} prefix={line.nickPrefix ?? chatPrefix(props.members, from)} />
           {"> "}
           {text}
         </>
       );
+    case "tool":
+    case "tool-denied": {
+      // Frame_01: `-tool- fs.read …`; the runner's `using tool: ` lead-in is not shown.
+      // A denied row keeps its `[denied]` marker and strike-through from ChatLine/lineClass.
+      const shown = line.text.startsWith(TOOL_LEAD) ? line.text.slice(TOOL_LEAD.length) : line.text;
+      return (
+        <>
+          {"-tool- "}
+          <IrcText text={shown} />
+        </>
+      );
+    }
     case "action":
       return (
         <>
@@ -125,17 +147,32 @@ function Body(props: {
           {text}
         </>
       );
-    case "notice":
-      return from === "" ? (
-        text
-      ) : (
+    case "notice": {
+      if (from !== "") {
+        return (
+          <>
+            <span className="text-ghost-orange">
+              {"-"}
+              <IrcText text={from} />
+              {"-"}
+            </span>{" "}
+            {text}
+          </>
+        );
+      }
+      // Server notices are stored as `-<server>- text`; colour the prefix the same way.
+      const server = SERVER_NOTICE.exec(line.text);
+      if (server === null) return text;
+      const rest = line.text.slice(server[0].length);
+      return (
         <>
-          {"-"}
-          <Nick nick={from} />
-          {"- "}
-          {text}
+          <span className="text-ghost-orange">
+            <IrcText text={server[1] ?? ""} />
+          </span>{" "}
+          {highlight === undefined ? <IrcText text={rest} /> : <IrcText text={rest} highlight={highlight} />}
         </>
       );
+    }
     case "exorcised-kick": {
       if (line.exorcism === undefined) return <IrcText text={line.text} />;
       const parts = exorcismText(line.exorcism);

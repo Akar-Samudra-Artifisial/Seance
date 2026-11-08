@@ -58,7 +58,7 @@ const frameReceived = (f: IntegrationFixture, text: string): Promise<LogRecord> 
     logMatching(f, (r) => r.msg === "acp <<" && typeof r.fields?.["frame"] === "string" && r.fields["frame"].includes(text)),
   );
 
-// A single-word trailing has no `:`, and agent lines start with an mIRC color code.
+// A single-word trailing has no `:`, and agent lines start with an IRC color code.
 const agentSays = (text: string): RegExp => new RegExp(`^:coder!\\S+ PRIVMSG \\S+ :?(?:\\x03\\d{1,2})?${text}`);
 const timeoutNotice = (channel: string): RegExp => new RegExp(`^:coder!\\S+ NOTICE ${channel} :?timeout$`, "i");
 const agentLeaves = /^:coder!\S+ (PART|QUIT|KICK)/;

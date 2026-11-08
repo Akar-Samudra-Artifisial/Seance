@@ -65,7 +65,9 @@ describe("classifyLine", () => {
 
 describe("markersFor", () => {
   it("maps kinds to text markers", () => {
-    expect(markersFor("tool", false)).toEqual(["[tool]"]);
+    // web-client-pixel-match follow-up: tool rows read `-tool- <text>` like Frame_01, and that
+    // prefix is the text cue, so the `[tool]` marker was dropped on purpose.
+    expect(markersFor("tool", false)).toEqual([]);
     expect(markersFor("tool-denied", false)).toEqual(["[denied]"]);
     expect(markersFor("exorcised", false)).toEqual([]);
     expect(markersFor("exorcised-kick", false)).toEqual([]);

@@ -1,7 +1,7 @@
 // Frame_01 "01 Main — #fix-bug-123" (Figma 1:1093) as IRC lines (web-client-pixel-match R13).
-// Chat rows follow nodes 1:1352 to 1:1379. Where the Client words a row differently (session start,
-// "is back", prefixes from the final member modes), the Client's own wording is kept. The `-tool-`
-// rows are agent tool notices from `coder`; `-ChanServ-` rows are notices from ChanServ (R13.2).
+// Chat rows follow nodes 1:1352 to 1:1379 and render with the Frame_01 wording. The `-tool-` rows
+// are agent tool notices from `coder` (`using tool: …`, shown as `-tool- …`); `-ChanServ-` rows are
+// notices from ChanServ (R13.2).
 // Pure data: no I/O. Used by the fixture page and by unit tests.
 
 /** Marker the bundle test looks for: present in the e2e build only (R13.6). */
@@ -58,7 +58,8 @@ export const FIGMA_01_MAIN: FixtureScript = {
     { at: "23:40:10", line: `:${CODER} PRIVMSG ${CH} :1) early-return 400 when email is missing, 2) login.spec.ts case` },
     { at: "23:41:00", line: `:${ME} PRIVMSG ${CH} :go ahead` },
     { at: "23:41:05", line: `:${ME} MODE ${CH} +o coder` },
-    { at: "23:41:10", line: `:${CODER} AWAY :editing src/auth/login.ts` },
+    // Away at 23:41:12, back at 23:43:00: "gone 00:01:48" as in node 1:1368.
+    { at: "23:41:12", line: `:${CODER} AWAY :editing src/auth/login.ts` },
     { at: "23:41:20", line: `:${CODER} NOTICE ${CH} :using tool: fs.read src/auth/login.ts · 142 lines · 0.3 cr` },
     { at: "23:42:00", line: `:${CODER} NOTICE ${CH} :using tool: fs.write src/auth/login.ts · +11 −2 · 0.9 cr` },
     { at: "23:42:30", line: `:${CODER} NOTICE ${CH} :using tool: shell: npm test -- login.spec · 14 passed · 1.4 cr` },

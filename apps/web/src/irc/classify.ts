@@ -63,14 +63,12 @@ export const GATED_KINDS: readonly LineKind[] = ["message", "action", "notice", 
 
 /**
  * Text markers rendered next to colour so state never depends on colour alone (R14.10).
- * Event lines no longer need a "[kick]" marker: their "*** ... was kicked" text says it.
+ * Event lines no longer need a "[kick]" marker: their "*** ... was kicked" text says it. Tool lines
+ * read `-tool- <text>` (Frame_01), so that prefix is their text marker and `[tool]` is gone.
  */
 export function markersFor(kind: LineKind, mention: boolean): readonly string[] {
   const markers: string[] = [];
   switch (kind) {
-    case "tool":
-      markers.push("[tool]");
-      break;
     case "tool-denied":
       markers.push("[denied]");
       break;

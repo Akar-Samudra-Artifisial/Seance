@@ -1,7 +1,7 @@
 import type { IrcMessage } from "@seance/irc-protocol";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { AWAY_MAX } from "./reducer.away.js";
+import { AWAY_MAX, goneText } from "./reducer.away.js";
 import { initialState, reduce } from "./reducer.js";
 import { resetForReconnect } from "./reset.js";
 import type { ClientState } from "./types.js";
@@ -38,10 +38,65 @@ describe("away tracking", () => {
     expect(lastText(s, "c:#b")).not.toContain("away");
   });
 
-  it("clears on AWAY without text and logs 'is back'", () => {
+  // pixel-match follow-up (Frame_01 node 1:1368): the back line carries the away time when the
+  // client saw the `is away` line; both messages here arrive at the same clock, so it reads 00:00:00.
+  it("clears on AWAY without text and logs 'is back (gone hh:mm:ss)'", () => {
     const s = run(setup(), [from("Bob", "AWAY", "x"), from("Bob", "AWAY")]);
     expect(s.away["bob"]).toBeUndefined();
-    expect(s.windows["c:#a"]?.lines.at(-1)).toMatchObject({ kind: "action", from: "Bob", text: "is back" });
+    expect(s.windows["c:#a"]?.lines.at(-1)).toMatchObject({
+      kind: "action",
+      from: "Bob",
+      text: "is back (gone 00:00:00)",
+    });
+  });
+
+  it("measures the time since the latest 'is away' line", () => {
+    const at = (s: ClientState, m: IrcMessage, ms: number): ClientState => reduce(s, m, ms).state;
+    let s = at(setup(), from("Bob", "AWAY", "lunch"), 10_000);
+    s = at(s, from("Bob", "AWAY"), 10_000 + 108_000);
+    expect(lastText(s, "c:#a")).toBe("is back (gone 00:01:48)");
+    // A second away period is measured from its own start.
+    s = at(s, from("Bob", "AWAY", "again"), 500_000);
+    s = at(s, from("Bob", "AWAY"), 500_000 + 3_725_000);
+    expect(lastText(s, "c:#a")).toBe("is back (gone 01:02:05)");
+  });
+
+  it("says plain 'is back' when the away start is unknown", () => {
+    // Marked by 301 (no line) or never marked: no duration to show.
+    const fromWhois = run(setup(), [srv("301", "me", "Bob", "brb"), from("Bob", "AWAY")]);
+    expect(lastText(fromWhois, "c:#a")).toBe("is back");
+    const never = run(setup(), [from("Bob", "AWAY")]);
+    expect(lastText(never, "c:#a")).toBe("is back");
+  });
+
+  it("formats gone times as hh:mm:ss without a 24 h cap", () => {
+    expect(goneText(0)).toBe("00:00:00");
+    expect(goneText(108_999)).toBe("00:01:48");
+    expect(goneText(100 * 3600_000)).toBe("100:00:00");
+    expect(goneText(-5)).toBe("00:00:00");
+  });
+
+  it("formats non-finite gone times as 00:00:00", () => {
+    expect(goneText(Number.NaN)).toBe("00:00:00");
+    expect(goneText(Number.POSITIVE_INFINITY)).toBe("00:00:00");
+    expect(goneText(Number.NEGATIVE_INFINITY)).toBe("00:00:00");
+  });
+
+  it("ignores a user's own `/me is away (…)` or `/me is back` when measuring the gone time", () => {
+    const at = (s: ClientState, m: IrcMessage, ms: number): ClientState => reduce(s, m, ms).state;
+    const act = (text: string): IrcMessage => from("Bob", "PRIVMSG", "#a", `\x01ACTION ${text}\x01`);
+    // Marked by 301 (no line); a fake action line must not give a start.
+    let s = at(setup(), srv("301", "me", "Bob", "brb"), 1_000);
+    s = at(s, act("is away (fake)"), 5_000);
+    expect(s.windows["c:#a"]?.lines.at(-1)).toMatchObject({ kind: "action", text: "is away (fake)" });
+    s = at(s, from("Bob", "AWAY"), 20_000);
+    expect(lastText(s, "c:#a")).toBe("is back");
+    // A real away start is kept even when fake lines follow it.
+    s = at(s, from("Bob", "AWAY", "lunch"), 10_000);
+    s = at(s, act("is away (later)"), 50_000);
+    s = at(s, act("is back"), 60_000);
+    s = at(s, from("Bob", "AWAY"), 10_000 + 108_000);
+    expect(lastText(s, "c:#a")).toBe("is back (gone 00:01:48)");
   });
 
   it("marks on 301 and keeps the reply line", () => {
