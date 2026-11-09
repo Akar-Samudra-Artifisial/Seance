@@ -6,6 +6,10 @@
 runtime.us-east-1.kiro.dev
 management.us-east-1.kiro.dev
 telemetry.us-east-1.kiro.dev
+# kiro-cli 3.1.0 fetches its release manifest here during `session/new` and blocks until the
+# connect gives up (EC2, 2026-11-09: session/new hung >120 s with this name dropped, 1.3 s with it
+# allowed). KIRO_NO_AUTO_UPDATE=1 and KIRO_NO_REMOTE_CHANGELOG=1 do not skip the call.
+desktop-release.q.us-east-1.amazonaws.com
 # Token refresh for an IAM Identity Center login (AWS SSO OIDC). Add the other sign-in endpoints
 # listed on the Kiro firewall page for your login method.
 oidc.us-east-1.amazonaws.com

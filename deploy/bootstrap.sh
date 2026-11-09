@@ -134,6 +134,9 @@ EOF
 [Unit]
 After=user@$SEANCE_UID.service
 Wants=user@$SEANCE_UID.service
+
+[Service]
+ReadWritePaths=/run/user/$SEANCE_UID
 EOF
   systemctl daemon-reload
   loginctl enable-linger "$SEANCE_USER"

@@ -177,6 +177,8 @@ describe("nftables template (7.3, D19)", () => {
       .map((l) => l.replace(/#.*/, "").trim())
       .filter((l) => l !== "");
     expect(names).toEqual(expect.arrayContaining(["runtime.us-east-1.kiro.dev", "registry.npmjs.org", "pypi.org"]));
+    // Without it kiro-cli 3.1.0 hangs in session/new (the invite fails with "session/new timed out").
+    expect(names).toContain("desktop-release.q.us-east-1.amazonaws.com");
     for (const n of names) expect(n).toMatch(/^[A-Za-z0-9.-]+$/);
   });
 });

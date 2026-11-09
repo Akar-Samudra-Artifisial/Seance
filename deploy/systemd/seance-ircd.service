@@ -33,17 +33,20 @@ KillMode=mixed
 #    (and mounts /proc and /sys inside it); read-only kernel tunables break container start.
 #  - no ProtectControlGroups: rootless containers get their cgroups through the user manager
 #    (delegated controllers, --memory/--cpus/--pids-limit); a read-only /sys/fs/cgroup breaks that.
+#  - no ProtectHostname: crun sets each container's hostname (--hostname=seance-agent);
+#    ProtectHostname=yes makes that fail ("crun: sethostname: Operation not permitted", EC2 S12).
 # The agents themselves run with no-new-privileges and all capabilities dropped inside the
 # container (sandbox/, docs/SANDBOX.md). bootstrap.sh also renders the drop-in
 # seance-ircd.service.d/user-manager.conf with After= and Wants=user@<uid>.service.
 NoNewPrivileges=no
 ProtectSystem=strict
-ReadWritePaths=/srv/seance /home/seance /run/user/%U
+# /run/user/<uid of seance> comes from the drop-in bootstrap.sh renders: %U is the uid of the
+# service manager (0 for the system manager), not of User=.
+ReadWritePaths=/srv/seance /home/seance
 PrivateTmp=yes
 ProtectHome=no
 ProtectKernelModules=yes
 ProtectClock=yes
-ProtectHostname=yes
 RestrictRealtime=yes
 LockPersonality=yes
 UMask=0077
