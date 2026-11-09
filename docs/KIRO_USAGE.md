@@ -436,6 +436,16 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: idle timer and `PendingPermissions` for `/query` sessions in `session-manager.ts` (NOTICE to the human, QUIT-style teardown); only events during a prompt count as activity; dropped prompts and no-op events do not; new tests in `idle-timeout.test.ts`
 - Notes: four of the new tests failed against the old code before the fix; one earlier test was changed on purpose because the rule it pinned changed
 
+### 2026-11-09 — Kiro login refresh becomes part of the deploy
+- Kiro features: spec deploy-aws (criterion 5.5 and task 7 first, then the files), steering (security: no secrets in output), hook guard-shell
+- Produced: `deploy/seance-kiro-refresh.sh` (forced refresh on a copy, atomic install only on success), `seance-kiro-refresh.{service,timer}`, bootstrap/update wiring, docs, tests in `sandbox-files.test.ts`
+- Notes: ports the interim EC2 hotfix; guard-shell blocked `rm -rf $var` in a scratch test, so the test used a literal `.turbo` path
+
+### 2026-11-09 — Kiro login refresh review fixes (deploy-aws task 7.4)
+- Kiro features: spec deploy-aws task 7.4 (requirement 5.5 and design D17 updated first), steering (security), hook guard-shell
+- Produced: the refresh now runs as `seance` in a hardened unit (no root, `flock`, SQLite backup API, abort when the live login changed), `OnUnitInactiveSec` timer, `update.sh` enables the timer, tests in `sandbox-files.test.ts`
+- Notes: the review found a root-to-seance symlink escalation; a local run under dash with shims found that a missing `flock` was read as "another refresh is running"
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

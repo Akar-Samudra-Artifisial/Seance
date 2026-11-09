@@ -1,0 +1,28 @@
+# Forces a Kiro token refresh on a copy of the login and installs it when it worked (see
+# deploy/seance-kiro-refresh.sh). Installed by bootstrap.sh; the timer starts it. It runs as the
+# seance user, not root: the script writes into a directory seance owns.
+#
+# ProtectHome stays off on purpose: the script reads /home/seance/.local/bin (kiro-cli) and writes
+# the login directory, the only path made writable below.
+[Unit]
+Description=Séance Kiro login refresh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=seance
+Group=seance
+ExecStart=/usr/local/sbin/seance-kiro-refresh
+TimeoutStartSec=120
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/home/seance/.local/share/kiro-cli
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+RestrictRealtime=yes

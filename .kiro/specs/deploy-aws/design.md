@@ -38,6 +38,7 @@ One EC2 instance, everything on it: Caddy, the Next production server, the ircd 
 | `Caddyfile` | template of `/etc/caddy/Caddyfile` |
 | `systemd/seance-ircd.service`, `seance-web.service` | the two services |
 | `systemd/seance-sandbox-nft.service`, `seance-egress-refresh.{service,timer}` | the agents' egress rule and its allow-list refresh |
+| `seance-kiro-refresh.sh`, `systemd/seance-kiro-refresh.{service,timer}` | forced Kiro token refresh on a copy, 20 minutes after each run (requirement 5.5); installed to `/usr/local/sbin/seance-kiro-refresh` (root-owned, 0755) and run as `seance` |
 
 ## Decisions
 
@@ -57,6 +58,7 @@ One EC2 instance, everything on it: Caddy, the Next production server, the ircd 
 - **D13 SSM first.** `user_data` installs and starts `amazon-ssm-agent` (official `.deb` from the regional AWS bucket, the Debian image lacks it) before the clone and the bootstrap, so a failed bootstrap never locks the Operator out.
 - **D14 Pinned installer.** `deploy/pins.env` pins `KIRO_INSTALLER_SHA256`; a missing or different value stops `bootstrap.sh` (fail closed). The installer verifies the kiro-cli package itself against Kiro's release manifest.
 - **D15 Placement and detach.** The subnet comes from a zone that offers the instance type (`aws_ec2_instance_type_offerings`); the AMI filter takes release images only (`debian-13-amd64-20*`); the volume attachment stops the instance before detaching.
+- **D17 Kiro login refresh runs as `seance`, never root.** The token directory belongs to `seance`, which the agents can influence; a root job that created a temp file there and then wrote, re-owned or chmod-ed it would follow a link planted by a compromised `seance` and could overwrite any root file. `seance-kiro-refresh.service` therefore sets `User=seance`/`Group=seance` and the script refuses to run as anyone else; it needs no root because the files are already `seance`'s. The unit is hardened (`NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict` with `ReadWritePaths` on the login directory only, kernel and cgroup protections, `RestrictAddressFamilies`, `UMask=0077`) but has no `ProtectHome`, because it reads `~/.local/bin` and writes the login. The script, in order: `flock -n` on `.refresh.lock` (exit 0 when held); refuse before any network call while the live `data.sqlite3-wal` is non-empty; copy the database with SQLite's backup API into a `mktemp` HOME (no `cp` of a live database); force the refresh on the copy; abort without replacing when the live `expires_at` changed since the start (a manual re-login wins); checkpoint the copy; install with an atomic `mv -f` of a 0600 temp file in the auth directory. The timer uses `OnUnitInactiveSec=20min`, so scheduling continues after a failed run. `update.sh` enables the timer when agents were running, so older installs get it. The script file is root-owned 0755 (`seance` must execute but not edit it).
 - **D16 Edge headers and updates.** Caddy adds HSTS (without `includeSubDomains`), `nosniff` and `no-referrer`, and keeps the app's CSP; `unattended-upgrades` installs security updates daily.
 
 ## Error handling

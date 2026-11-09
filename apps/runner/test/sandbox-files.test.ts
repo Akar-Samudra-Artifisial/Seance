@@ -1,9 +1,10 @@
 // agent-sandbox task 8.5 (Requirements 1.8, 3.3, 7.3, 7.6, 7.7, 12.8): the shipped image, probe and
 // network files agree with the runner and keep their safety properties.
 import { execFile } from "node:child_process";
-import { accessSync, constants, readFileSync } from "node:fs";
+import { accessSync, constants, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:net";
-import { dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
@@ -141,6 +142,177 @@ describe("seance-probe behaviour on this host", () => {
   }, 15_000);
 });
 
+// deploy-aws: the Kiro login refresh (task 7). The script itself needs root, runuser and kiro-cli,
+// so these tests pin the shipped files and run only its SQLite helper.
+describe("Kiro login refresh (deploy-aws)", () => {
+  const SCRIPT = "deploy/seance-kiro-refresh.sh";
+  const installUnits = (): string => {
+    const text = read("deploy/bootstrap.sh");
+    const start = text.indexOf("install_units() {");
+    return text.slice(start, text.indexOf("\n}\n", start));
+  };
+
+  it("the timer fires 2 minutes after boot, then 20 minutes after each run ended, with 30 s accuracy", () => {
+    const timer = read("deploy/systemd/seance-kiro-refresh.timer");
+    expect(timer).toMatch(/^OnBootSec=2min$/m);
+    // Inactive, not Active: scheduling must continue after a failed run.
+    expect(timer).toMatch(/^OnUnitInactiveSec=20min$/m);
+    expect(timer).not.toMatch(/^OnUnitActiveSec=/m);
+    expect(timer).toMatch(/^AccuracySec=30s$/m);
+    expect(timer).toMatch(/^WantedBy=timers\.target$/m);
+  });
+
+  it("the service is a oneshot that runs the installed script as seance, hardened", () => {
+    const service = read("deploy/systemd/seance-kiro-refresh.service");
+    expect(service).toMatch(/^Type=oneshot$/m);
+    expect(service).toMatch(/^ExecStart=\/usr\/local\/sbin\/seance-kiro-refresh$/m);
+    expect(service).toMatch(/^User=seance$/m);
+    expect(service).toMatch(/^Group=seance$/m);
+    for (const line of [
+      "NoNewPrivileges=yes",
+      "PrivateTmp=yes",
+      "ProtectSystem=strict",
+      "ReadWritePaths=/home/seance/.local/share/kiro-cli",
+      "ProtectKernelTunables=yes",
+      "ProtectKernelModules=yes",
+      "ProtectControlGroups=yes",
+      "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+      "LockPersonality=yes",
+      "RestrictRealtime=yes",
+      "UMask=0077",
+    ]) {
+      expect(service, line).toMatch(new RegExp(`^${line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+    }
+    // The script reads ~/.local/bin and writes the login: no ProtectHome, read-only or not.
+    expect(service).not.toMatch(/^ProtectHome=/m);
+  });
+
+  it("bootstrap.sh installs the script (root-owned, 0755) and both units, and enables the timer only with the agents", () => {
+    const bootstrap = read("deploy/bootstrap.sh");
+    const units = installUnits();
+    expect(units).toContain("seance-kiro-refresh.service");
+    expect(units).toContain("seance-kiro-refresh.timer");
+    expect(units).toMatch(/install -m 0755 -o root -g root "\$REPO_DIR\/deploy\/seance-kiro-refresh\.sh" \/usr\/local\/sbin\/seance-kiro-refresh/);
+    expect(units).not.toMatch(/enable[^\n]*seance-kiro-refresh/);
+    const enables = bootstrap.split("\n").filter((l) => /systemctl enable[^\n]*seance-kiro-refresh\.timer/.test(l));
+    expect(enables).toHaveLength(2); // agents already running, and agents being started
+    const gate = bootstrap.indexOf("main() {");
+    for (const line of enables) expect(bootstrap.indexOf(line)).toBeGreaterThan(gate);
+    expect(bootstrap.slice(bootstrap.indexOf("elif ready_for_agents; then"))).toMatch(/enable --now [^\n]*seance-kiro-refresh\.timer/);
+  });
+
+  it("update.sh reinstalls the script and both units, and enables the timer when agents were running", () => {
+    const update = read("deploy/update.sh");
+    expect(update).toContain("seance-kiro-refresh.service seance-kiro-refresh.timer");
+    expect(update).toMatch(/install -m 0755 -o root -g root "\$REPO_DIR\/deploy\/seance-kiro-refresh\.sh" \/usr\/local\/sbin\/seance-kiro-refresh/);
+    const guarded = update.slice(update.indexOf('if [ "$AGENTS_WERE_ACTIVE" -eq 1 ]; then'));
+    expect(guarded.slice(0, guarded.indexOf("\n  fi\n"))).toContain("systemctl enable --now seance-kiro-refresh.timer");
+  });
+
+  it("the script is executable POSIX sh that runs as seance, on a copy, and installs it atomically", () => {
+    const text = read(SCRIPT);
+    expect(text.startsWith("#!/bin/sh\n")).toBe(true);
+    expect(() => accessSync(resolve(ROOT, SCRIPT), constants.X_OK)).not.toThrow();
+    // The variable names of bootstrap.sh.
+    for (const name of ["SEANCE_USER", "SEANCE_HOME", "AUTH_DIR"]) expect(text).toMatch(new RegExp(`^${name}=`, "m"));
+    // Runs as seance, never as root: no user switch and no ownership change anywhere in the file.
+    expect(text).toContain('[ "$(id -un)" = "$SEANCE_USER" ]');
+    expect(text).not.toContain("runuser");
+    expect(text).not.toContain("chown");
+    expect(text).not.toMatch(/\bsudo\b/);
+    expect(text).toMatch(/^umask 077$/m);
+    // Concurrency and freshness, in order: lock, WAL check, backup API, refresh, re-read, install.
+    const at = (needle: string): number => {
+      const i = text.indexOf(needle);
+      expect(i, needle).toBeGreaterThan(-1);
+      return i;
+    };
+    expect(text).toContain('flock -n 9');
+    expect(text).toContain("another refresh is running");
+    const order = [
+      at("flock -n 9"),
+      at("if live_wal_busy; then"),
+      at('py backup "$live_db" "$copy_db"'),
+      at("timeout 60 kiro-cli whoami"),
+      at('now=$(py expiry "$live_db"'),
+      at('py checkpoint "$copy_db"'),
+      at('mv -f -- "$staged" "$live_db"'),
+    ];
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(text).toContain("login changed during refresh");
+    expect(text).toContain(".backup(dst)");
+    expect(text).not.toMatch(/\bcp -a\b/); // a live database is never copied with cp
+    expect(text).toContain("FORCED_EXPIRY=2000-01-01T00:00:00Z");
+    expect(text).toContain("wal_checkpoint(TRUNCATE)");
+    expect(text).toContain("refresh FAILED, login kept (expires $old)");
+    expect(text).toContain('env -i "HOME=$work"');
+    expect(text).toMatch(/\?"?, \(KEY,\)/); // parameterised queries
+    expect(text).not.toContain("KIRO_API_KEY");
+  });
+
+  it("CI shellcheck covers deploy/*.sh, so the script is checked", () => {
+    expect(read(".github/workflows/ci.yml")).toContain("shellcheck --severity=style deploy/*.sh");
+  });
+
+  it("DEPLOY.md and SANDBOX.md describe the refresh", () => {
+    const deploy = read("docs/DEPLOY.md");
+    expect(deploy).toContain("journalctl -u seance-kiro-refresh");
+    expect(deploy).toMatch(/disable --now seance-kiro-refresh\.timer/);
+    const sandbox = read("docs/SANDBOX.md");
+    expect(sandbox).toContain("kirodotdev/Kiro#4847");
+    expect(sandbox).toContain("kirodotdev/Kiro#9783");
+  });
+
+  it("the SQLite helper moves expires_at back and forward and reports a missing row", async () => {
+    const hasPython = await exec("python3", ["--version"]).then(
+      () => true,
+      () => false,
+    );
+    if (!hasPython) return;
+    const helper = /<<'PY'\n([\s\S]*?)\nPY\n/.exec(read(SCRIPT))?.[1];
+    expect(helper).toBeDefined();
+    const dir = mkdtempSync(join(tmpdir(), "seance-kiro-refresh-"));
+    try {
+      const py = (args: readonly string[], input?: string): Promise<{ stdout: string; code: number }> =>
+        new Promise((done) => {
+          const child = execFile("python3", ["-c", input ?? "", ...args], (error, stdout) => {
+            done({ stdout: stdout.trim(), code: error === null ? 0 : typeof error.code === "number" ? error.code : 1 });
+          });
+          child.stdin?.end();
+        });
+      // `python3 -c <code> <args>` makes `args[0]` the sys.argv[1] the script's helper expects.
+      const run = (...args: string[]) => py(args, helper);
+      const seed = `
+import json, sqlite3, sys
+for name, rows in (("login.db", [("kirocli:social:token", json.dumps({"access_token": "t-1", "expires_at": "2026-11-09T12:00:00Z"}))]), ("empty.db", [])):
+    c = sqlite3.connect(sys.argv[1] + "/" + name)
+    c.execute("create table auth_kv (key text primary key, value text)")
+    for k, v in rows:
+        c.execute("insert into auth_kv values (?, ?)", (k, v))
+    c.commit()
+    c.close()
+`;
+      expect((await py([dir], seed)).code).toBe(0);
+      const db = join(dir, "login.db");
+      expect(await run("expiry", db)).toEqual({ stdout: "2026-11-09T12:00:00Z", code: 0 });
+      expect((await run("expire", db, "2000-01-01T00:00:00Z")).code).toBe(0);
+      expect((await run("expiry", db)).stdout).toBe("2000-01-01T00:00:00Z");
+      expect((await run("moved", "2000-01-01T00:00:00Z", "2026-11-09T13:00:00Z")).code).toBe(0);
+      expect((await run("moved", "2000-01-01T00:00:00Z", "1999-01-01T00:00:00Z")).code).toBe(1);
+      expect((await run("checkpoint", db)).code).toBe(0);
+      expect((await run("expiry", join(dir, "empty.db"))).code).toBe(3);
+      // The backup API copies the database; changing the copy leaves the original alone.
+      const copy = join(dir, "copy.db");
+      expect((await run("backup", db, copy)).code).toBe(0);
+      expect((await run("expire", copy, "1999-01-01T00:00:00Z")).code).toBe(0);
+      expect((await run("expiry", copy)).stdout).toBe("1999-01-01T00:00:00Z");
+      expect((await run("expiry", db)).stdout).toBe("2000-01-01T00:00:00Z");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
 describe("nftables template (7.3, D19)", () => {
   const text = read("sandbox/seance-sandbox.nft");
   const rules = text
@@ -181,6 +353,7 @@ describe("nftables template (7.3, D19)", () => {
     expect(names).toContain("desktop-release.q.us-east-1.amazonaws.com");
     // Social-login token refresh; without it every agent hangs once the one-hour access token expires.
     expect(names).toContain("prod.us-east-1.auth.desktop.kiro.dev");
+    expect(names).toContain("cognito-identity.us-east-1.amazonaws.com"); // Kiro firewall page, social sign-in
     for (const n of names) expect(n).toMatch(/^[A-Za-z0-9.-]+$/);
   });
 });

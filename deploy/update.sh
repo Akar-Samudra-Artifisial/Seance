@@ -69,14 +69,18 @@ deploy() {
   install -d -o "$SEANCE_USER" -g "$SEANCE_USER" -m 0700 "$REPO_DIR/apps/web/.next/cache"
   local unit
   for unit in seance-ircd.service seance-web.service seance-sandbox-nft.service \
-              seance-egress-refresh.service seance-egress-refresh.timer; do
+              seance-egress-refresh.service seance-egress-refresh.timer \
+              seance-kiro-refresh.service seance-kiro-refresh.timer; do
     install -m 0644 "$REPO_DIR/deploy/systemd/$unit" "/etc/systemd/system/$unit"
   done
+  install -m 0755 -o root -g root "$REPO_DIR/deploy/seance-kiro-refresh.sh" /usr/local/sbin/seance-kiro-refresh
   systemctl daemon-reload
   systemctl restart seance-web.service
   if [ "$AGENTS_WERE_ACTIVE" -eq 1 ]; then
     systemctl start seance-sandbox-nft.service
     systemctl start seance-ircd.service
+    # Older installs get the Kiro login refresh the first time they are updated with agents enabled.
+    systemctl enable --now seance-kiro-refresh.timer
   fi
   echo "$ref" > "$STATE_DIR/built-ref"
 }

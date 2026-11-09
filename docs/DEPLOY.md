@@ -74,6 +74,7 @@ There is no `KIRO_API_KEY` on this host. The operator logs in once, as the `sean
 The agents' egress rule lets the `seance` user reach only the agents' allow-list, so stop it for the login (no agent runs yet):
 
 ```sh
+sudo systemctl stop seance-kiro-refresh.timer      # a re-login must not race a refresh
 sudo systemctl stop seance-ircd.service seance-sandbox-nft.service
 sudo -iu seance
 kiro-cli login --use-device-flow
@@ -84,9 +85,10 @@ chmod 0700 ~/.local/share/kiro-cli
 exit
 sudo /opt/seance/deploy/bootstrap.sh    # now loads the egress rule and starts the ircd
 sudo /opt/seance/deploy/spike-s12.sh --with-auth   # optional: the s12-auth row (one prompt)
+sudo systemctl start seance-kiro-refresh.timer
 ```
 
-`bootstrap.sh` sets the directory to `seance`, mode 0700, and refuses to start the ircd while `kiro-cli whoami` fails as `seance`, while `/etc/seance/accounts` has no account, or while `SEANCE_INVITERS` still holds the placeholder. When the token expires during judging, repeat this step (stopping the ircd first).
+`bootstrap.sh` sets the directory to `seance`, mode 0700, and refuses to start the ircd while `kiro-cli whoami` fails as `seance`, while `/etc/seance/accounts` has no account, or while `SEANCE_INVITERS` still holds the placeholder. After the login, `seance-kiro-refresh.timer` keeps the token fresh: 20 minutes after each run it forces a refresh on a copy of the login and installs the copy only when the refresh worked (`deploy/seance-kiro-refresh.sh`, installed as `/usr/local/sbin/seance-kiro-refresh`, run by the unit as the `seance` user, not root; why on a copy is in [SANDBOX.md](./SANDBOX.md)). `bootstrap.sh` and `update.sh` enable the timer together with the agents. Check it with `journalctl -u seance-kiro-refresh` (a good run logs `refreshed, login expires ...`; a failed one logs `refresh FAILED, login kept`). If the host was off, or the timer stopped, for more than an hour, the token has expired for good: log in again (repeat this step, stopping the ircd first).
 
 **Risk, stated plainly** ([SANDBOX.md](./SANDBOX.md)): the login is readable inside every agent container, and a prompt-injected `+o` agent can send it out. The credit caps below bound the spend; the Kiro account is logged out right after judging (step 9).
 
@@ -146,6 +148,7 @@ There is no per-account credit counter in public-hardening: spend is bounded per
 ```sh
 # on the instance (SSM)
 sudo systemctl stop seance-ircd.service seance-sandbox-nft.service
+sudo systemctl disable --now seance-kiro-refresh.timer   # first: it would otherwise refresh a login you are removing
 sudo -iu seance kiro-cli logout
 sudo rm -rf /home/seance/.local/share/kiro-cli
 exit
@@ -179,6 +182,7 @@ The ircd trusts `X-Forwarded-For` only from `IRCD_TRUSTED_PROXIES=127.0.0.1,::1`
 | `/etc/seance/accounts` | seance, 0600 | judge accounts (scrypt hashes) |
 | `/etc/seance/deploy.conf` | root, 0600 | repository URL, commit, hostname, volume id, VPC CIDR |
 | `/home/seance/.local/share/kiro-cli` | seance, 0700 | the Kiro login (`SEANCE_SANDBOX_AUTH_DIR`) |
+| `/usr/local/sbin/seance-kiro-refresh` | root, 0755 | the login refresh script, run as `seance` by `seance-kiro-refresh.timer` (20 minutes after each run) |
 | `/srv/seance/workspaces` | seance | channel worktrees, `.seance-credits.json`, `.seance-paused` |
 | `/srv/seance/target` | seance | the demo target repository |
 | `/etc/nftables.d/seance-sandbox.nft` | root | the agents' egress rule |

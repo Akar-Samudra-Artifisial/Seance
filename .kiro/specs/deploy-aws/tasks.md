@@ -47,6 +47,17 @@ File-writing tasks first (Terraform, host files, CI, runbook), then the operator
   - DEPLOY.md step 9: stop the ircd and the egress rule, `kiro-cli logout` as `seance`, remove `/home/seance/.local/share/kiro-cli`, `terraform destroy`, delete the local state
   - _Requirements: 5.3_
 
+- [x] 7. Kiro login refresh (criterion 5.5)
+  - [x] 7.1 `deploy/seance-kiro-refresh.sh` (POSIX sh, shellcheck clean): forced refresh on a copy, atomic install only when `expires_at` moved forward and the live WAL is empty, no secrets in output
+    - _Requirements: 5.5_
+  - [x] 7.2 `deploy/systemd/seance-kiro-refresh.{service,timer}`; `bootstrap.sh` installs the script (0750) and enables the timer with the agents; `update.sh` reinstalls both
+    - _Requirements: 5.5_
+  - [x] 7.3 `docs/DEPLOY.md` steps 5 and 9, `docs/SANDBOX.md` (why a copy, Kiro#4847 and #9783, egress), `docs/KIRO_USAGE.md`; tests in `apps/runner/test/sandbox-files.test.ts`; CI `infra` already runs `shellcheck deploy/*.sh`
+    - _Requirements: 5.3, 5.5, 6.2_
+
+  - [x] 7.4 Review fixes: run as `seance` (no root, no `runuser`/`chown`), `flock`, WAL check before the network, SQLite backup API, abort when the live login changed, timer on `OnUnitInactiveSec`, unit hardening, `update.sh` enables the timer, DEPLOY.md re-login stops and starts the timer; tests in `sandbox-files.test.ts`
+    - _Requirements: 5.5_
+
 ## Notes
 
 - `infra/.terraform.lock.hcl` is committed so CI and the Operator use the same provider build.
@@ -65,7 +76,9 @@ File-writing tasks first (Terraform, host files, CI, runbook), then the operator
     { "id": 5, "tasks": ["3"] },
     { "id": 6, "tasks": ["4"] },
     { "id": 7, "tasks": ["5"] },
-    { "id": 8, "tasks": ["6"] }
+    { "id": 8, "tasks": ["6"] },
+    { "id": 9, "tasks": ["7.1", "7.2", "7.3"] },
+    { "id": 10, "tasks": ["7.4"] }
   ]
 }
 ```

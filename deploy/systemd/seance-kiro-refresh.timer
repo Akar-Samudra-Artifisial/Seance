@@ -1,0 +1,11 @@
+[Unit]
+Description=Séance Kiro login refresh every 20 minutes (the access token lives one hour)
+
+[Timer]
+OnBootSec=2min
+# Inactive, not Active: the next run is scheduled 20 minutes after the last one ENDED, also when it failed.
+OnUnitInactiveSec=20min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

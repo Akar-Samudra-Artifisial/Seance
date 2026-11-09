@@ -70,6 +70,7 @@ Put Séance on the internet for the Kiroween 2026 judges: one EC2 instance in AW
 2. THE token directory SHALL become `SEANCE_SANDBOX_AUTH_DIR`, owned by `seance` with mode 0700.
 3. `docs/DEPLOY.md` SHALL document the login exactly, and the teardown SHALL include `kiro-cli logout` and removal of the token directory.
 4. THE credit caps of public-hardening SHALL stay on with conservative defaults for a public demo on a 4,000-credit budget, documented with their reasons.
+5. WHEN agents are enabled, a systemd timer (`seance-kiro-refresh.timer`: 2 minutes after boot, then 20 minutes after each run ended, `OnUnitInactiveSec`) SHALL run `/usr/local/sbin/seance-kiro-refresh` (from `deploy/seance-kiro-refresh.sh`, installed by `bootstrap.sh` and reinstalled and enabled by `update.sh`) as the `seance` user, never as root, in a hardened unit. THE script SHALL hold a lock, refuse while the live write-ahead log is non-empty before any network call, copy the database with the SQLite backup API, force a token refresh on the copy, SHALL replace the live `data.sqlite3` atomically only when the copy's `expires_at` moved forward and the live `expires_at` is still the value read at the start, and SHALL otherwise leave the login untouched and exit 1 with `refresh FAILED, login kept (expires <old>)`. It SHALL print no token values. The teardown SHALL disable the timer before `kiro-cli logout`.
 
 ### Requirement 6: Spike S12 and checks
 

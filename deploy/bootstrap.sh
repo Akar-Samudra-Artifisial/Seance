@@ -411,9 +411,12 @@ write_config() {
 install_units() {
   local unit
   for unit in seance-ircd.service seance-web.service seance-sandbox-nft.service \
-              seance-egress-refresh.service seance-egress-refresh.timer; do
+              seance-egress-refresh.service seance-egress-refresh.timer \
+              seance-kiro-refresh.service seance-kiro-refresh.timer; do
     install -m 0644 "$REPO_DIR/deploy/systemd/$unit" "/etc/systemd/system/$unit"
   done
+  # Runs as seance (User= in the unit) but is owned by root, so the agents' user cannot edit it.
+  install -m 0755 -o root -g root "$REPO_DIR/deploy/seance-kiro-refresh.sh" /usr/local/sbin/seance-kiro-refresh
   systemctl daemon-reload
   systemctl enable seance-web.service
   systemctl restart seance-web.service
@@ -474,10 +477,11 @@ main() {
   install_units
   if systemctl is-active --quiet seance-sandbox-nft.service; then
     # Nothing needed the network and the agents are running: leave them alone.
+    systemctl enable --now seance-kiro-refresh.timer
     log "done: https://$SEANCE_PUBLIC_HOSTNAME/ (agents running, unchanged)"
   elif ready_for_agents; then
     log "starting the egress rule and the ircd"
-    systemctl enable --now seance-sandbox-nft.service seance-egress-refresh.timer
+    systemctl enable --now seance-sandbox-nft.service seance-egress-refresh.timer seance-kiro-refresh.timer
     systemctl enable seance-ircd.service
     systemctl restart seance-ircd.service
     log "done: https://$SEANCE_PUBLIC_HOSTNAME/ (agents enabled)"

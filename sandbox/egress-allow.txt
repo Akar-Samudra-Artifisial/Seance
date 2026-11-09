@@ -17,6 +17,8 @@ oidc.us-east-1.amazonaws.com
 # hour; after that kiro-cli refreshes on start, and with this name dropped `initialize` hangs until
 # the runner reports "session/new timed out" (EC2, 2026-11-09).
 prod.us-east-1.auth.desktop.kiro.dev
+# Listed on the Kiro firewall page for social (Google) sign-in.
+cognito-identity.us-east-1.amazonaws.com
 # Package registries.
 registry.npmjs.org
 pypi.org
