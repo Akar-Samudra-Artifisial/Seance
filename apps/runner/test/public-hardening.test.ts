@@ -414,12 +414,17 @@ describe("worktree size during a turn (Requirement 14.1)", () => {
     for (let i = 0; i < 40; i++) await new Promise<void>((r) => setImmediate(r));
   };
 
-  function build(over: boolean | (() => Promise<boolean>), mode: { op: boolean; voice: boolean } = { op: true, voice: false }) {
+  function build(
+    over: boolean | (() => Promise<boolean>),
+    mode: { op: boolean; voice: boolean } = { op: true, voice: false },
+    opts: { readonly noticeThrows?: boolean } = {},
+  ) {
     const exceedsCap = typeof over === "function" ? over : async () => over;
     const h = new HangingSession();
     const reset = vi.fn(async () => ({ target: "abc1234", filesReverted: 1 }));
     const notices: string[] = [];
-    const quiet: RunnerLogger = { debug() {}, info() {}, warn() {}, error() {} };
+    const errors: string[] = [];
+    const quiet: RunnerLogger = { debug() {}, info() {}, warn() {}, error: (msg) => void errors.push(msg) };
     const client = { id: "c", nick: "coder", virtual: true, send() {}, dispatch: () => undefined, onMessage: () => () => undefined, setAway() {}, close() {} } as unknown as HostVirtualClient;
     const clock = new ManualClock();
     const session = buildChannelSession(
@@ -431,15 +436,39 @@ describe("worktree size during a turn (Requirement 14.1)", () => {
         clock,
         timers: new TimerSet(clock),
         logger: quiet,
-        opNotice: (_c, t) => void notices.push(t),
+        opNotice: (_c, t) => {
+          if (opts.noticeThrows === true) throw new Error("notice transport is down");
+          notices.push(t);
+        },
       },
       { nick: "coder", kiroAgent: "coder", model: "m", tools: "read", color: 12 } as unknown as AgentProfile,
       "#dev",
       h,
       new AgentOutput({ client, logger: quiet, nick: "coder", user: "coder", host: "seance", color: 12 }),
     );
-    return { h, session, reset, notices };
+    return { h, session, reset, notices, errors };
   }
+
+  it("a throw while handling an over-cap result is logged, never an unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const { h, session, errors } = build(true, { op: true, voice: false }, { noticeThrows: true });
+      session.enqueue({ id: 1, text: "work" });
+      await flushAll();
+      h.emit({ kind: "tool-done", status: "completed" }); // applyOver -> opNotice throws
+      await flushAll();
+      expect(errors).toContain("worktree size handling failed");
+      expect(unhandled).toEqual([]);
+      h.cancel();
+      await flushAll();
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
 
   it("over the cap after a finished tool call: the turn is cancelled and the worktree reset with ignored files", async () => {
     const { h, session, reset, notices } = build(true);

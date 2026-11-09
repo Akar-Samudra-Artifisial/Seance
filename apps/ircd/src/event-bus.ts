@@ -75,7 +75,7 @@ const defaultErrorHandler: ListenerErrorHandler = (name, error) => {
 /**
  * Typed in-process event bus. Listeners run synchronously in subscription
  * order. A throwing listener never affects the publisher or other listeners;
- * its error is reported to the error handler. Swappable for Redis pub/sub.
+ * its error is reported to the error handler. In-process only; there is no external broker.
  */
 export class EventBus {
   private readonly listeners = new Map<EventName, Set<Listener<never>>>();

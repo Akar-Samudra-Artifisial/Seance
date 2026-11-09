@@ -2,7 +2,7 @@
 
 > **"IRC is dead. Hold a séance."**
 >
-> A 1995-style, mIRC-inspired IRC client and server for commanding a team of AI agents.
+> A 1995-style IRC client and server, after the classic Windows IRC clients, for commanding a team of AI agents.
 > Every AI agent is a user in a channel. The human operator runs the team with `/op`, `/kick` and `/topic`.
 
 - **Hackathon:** Kiroween 2026 (Devpost), category **Resurrection**
@@ -159,8 +159,9 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 ```
  irssi / HexChat ──TCP 6667──┐
                              ▼
- Web client (Next.js) ──WS──▶ ircd (Fastify + ws) ──▶ Postgres (logs, channels, agents, credits)
-                             │                    └─▶ Redis (pub/sub, rate limiting)
+ Web client (Next.js) ──WS──▶ ircd (Fastify + ws)   all IRC state in memory, in-process event bus
+                             │                    ├─▶ IRCD_ACCOUNTS_FILE (scrypt hashes, read at start)
+                             │                    └─▶ SEANCE_WORKSPACES/.seance-credits.json (credits, daily budget)
                              ▼
                       agent-runner
               (per agent: `kiro-cli acp --agent X`,
@@ -197,30 +198,36 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 
 ### `.kiro/` contents
 
-- `steering/` — product, tech, structure.
-- `specs/` — `ircd-core`, `agent-runner`, `web-client`, `permissions`.
-- `hooks/` — `PreToolUse` hooks blocking `rm -rf`, `git push --force`, and access outside the worktree.
-- `agents/` — `coder`, `reviewer`, `researcher`. There is no `chanserv` agent: ChanServ and NickServ lines are produced by runner code without a model call.
-- `powers/irc-protocol`.
-- Property-based tests for the parser with fast-check: `parse(serialize(m)) == m`.
+- `steering/` — always on: product, tech, structure, security; by file match: irc-protocol, runner-acp, web-ui, testing.
+- `specs/` — one folder per feature (requirements, design, tasks): `ircd-core`, `ircd-review-fixes`, `ircd-agent-commands`, `ircd-agent-commands-fixes`, `agent-runner`, `runner-services`, `agent-skills`, `agent-sandbox`, `public-hardening`, `web-client-basic`, `web-client-polish`, `web-client-pixel-match`, `web-client-extras`.
+- `hooks/` — `guard-shell` (`PreToolUse` deny-list: `rm -rf` outside build dirs, `git push --force`, `git reset --hard`, `curl | sh`, paths outside the repo, printing secrets), `test-on-save`, `verify-after-task`, `kiro-usage-log`.
+- `agents/` — the development agents `seance-dev`, `seance-reviewer`, `seance-spec`. The runtime agents `coder`, `reviewer`, `researcher` live in `agents/` at the repository root. There is no `chanserv` agent: ChanServ and NickServ lines are produced by runner code without a model call.
+- `skills/` — `irc-rfc2812`, `acp-runner`, `kiroween-submission`.
+- `settings/mcp.json` — Playwright and Context7.
+- Property-based tests with fast-check, from the parser (`parse(serialize(m)) == m`) to nick reservation and redaction.
 
 ---
 
 ## 6. Data Model
 
-| Table | Columns |
-|---|---|
-| `users` | `id`, `nick`, `kind` (`human` \| `agent`), `password_hash` |
-| `agents` | `user_id`, `kiro_agent`, `model`, `tools[]`, `banned` |
-| `channels` | `name`, `topic`, `worktree_path`, `mode_flags` |
-| `memberships` | `channel_id`, `user_id`, `op`, `voice`, `away` |
-| `messages` | `channel_id`, `from_user`, `kind` (`privmsg` \| `notice` \| `system`), `body`, `ts` |
-| `sessions` | `agent_id`, `channel_id`, `acp_session_id`, `status`, `credits_used` |
-| `audit` | `ts`, `actor`, `command`, `target`, `result` |
+There is no database. State lives in memory or in a few files:
 
-### Redis events
+| What | Where | Survives a restart |
+|---|---|---|
+| Users, nicks, channels, modes, topics, memberships | ircd memory (`ConnectionManager`, `ChannelRegistry`) | No |
+| Channel history for prompts | runner memory (`ChannelLog`, bounded) | No |
+| Sessions (agent, channel, ACP session id, status) | runner memory (`SessionManager`, `WhoisSnapshot`) | No |
+| Credits per agent and channel, daily budget | `SEANCE_WORKSPACES/.seance-credits.json` (`CreditsFile`, atomic write, mode 0600) | Yes |
+| Accounts | `IRCD_ACCOUNTS_FILE` (`<nick>:scrypt$...` lines, mode 0600, read at start) | Yes (operator file) |
+| Agent profiles and skills | `agents/` in the repository | Yes |
+| Work of the agents | git worktrees under `SEANCE_WORKSPACES/<channel>`, branches `seance/<channel>` | Yes |
+| Kill switch | `SEANCE_WORKSPACES/.seance-paused` (exists = paused) | Yes |
 
-`irc.message`, `irc.mode`, `irc.kick`, `agent.spawn`, `agent.chunk`, `agent.tool`, `agent.done`, `credits.exceeded`.
+`SessionStore` is an interface; the runner uses the credits file by default and `MemorySessionStore` in tests.
+
+### Events
+
+In-process `EventBus` of the ircd (no external broker): `irc.message`, `irc.mode`, `irc.kick`, `irc.invite`, `irc.register` and the other `irc.*` events the runner subscribes to through its host port.
 
 ---
 
@@ -258,7 +265,7 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 | Security | Shell only for `+o`; cwd locked to the worktree; deny-list hooks; Podman container (rootless, one per agent and session directory instead of one process per agent; spec `agent-sandbox`, [`docs/SANDBOX.md`](docs/SANDBOX.md); no git metadata inside it, so the runner commits an op agent's work on the host after each turn with hardened git; a commit command for ops is a later spec; egress limited to HTTPS towards Kiro and package registries by a host rule); only messages from human ops become instructions — everything else is wrapped in `<untrusted>`; agent output is never executed |
 | Latency | Stream per sentence; 120 s timeout → `NOTICE` |
 | Judge hosting | VPS + Podman + Caddy TLS; judge accounts via `PASS <nick>:<secret>` (`IRCD_ACCOUNTS_FILE`, scrypt hashes; guests via the server password cannot invite); nicks claimed only after `PASS`; max 2 active agent channels (`SEANCE_MAX_AGENT_CHANNELS`) and 6 sessions; real client IPs from `X-Forwarded-For` of trusted proxies for per-IP limits; `IRCD_PUBLIC=1` refuses to start until every item is set (spec `public-hardening`) |
-| Trademark | Never use "mIRC" in the product name |
+| Trademark | Never use the trademarked name of the classic Windows IRC client in the product name, packages, logos or UI (rule in `.kiro/steering/product.md`) |
 | Crew API | Not yet confirmed; MVP does not depend on it |
 
 **Untested assumption:** ACP `session/cancel` cancels cleanly.
@@ -301,6 +308,7 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 - `apps/runner` — ACP client.
 - `apps/web` — Next.js 16, Tailwind, Zustand.
 - `packages/irc-protocol` — parser/serializer + property-based tests.
-- `packages/db` — Prisma, Postgres.
-- `compose.yaml` (Podman): ircd, runner, web, postgres, redis.
+- No database and no message broker: in-memory state plus the credits and accounts files (section 6).
+- Agents run in rootless Podman containers in production (`sandbox/`, [`docs/SANDBOX.md`](docs/SANDBOX.md)); the deployment itself (Caddy for TLS, the host setup) is spec `deploy-aws` ([`docs/DEPLOY.md`](docs/DEPLOY.md)).
+- CI: GitHub Actions (`.github/workflows/ci.yml`).
 - License: MIT.

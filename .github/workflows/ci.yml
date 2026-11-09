@@ -1,0 +1,92 @@
+# Build, check and test Séance on every push and pull request to main.
+# No secrets, no real kiro-cli: the runner tests use the Fake_Agent from apps/runner/test/fixtures,
+# and the opt-in real-Kiro test stays off (SEANCE_E2E_KIRO is never set here). The rootless-Podman
+# sandbox suite (apps/ircd/test/runner/sandbox.integration.test.ts) skips itself unless rootless
+# Podman 5 and the pinned base image are present; this job never pulls or builds that image.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      # Belt and braces: the real-Kiro end-to-end test must never run in CI.
+      SEANCE_E2E_KIRO: "0"
+      TURBO_TELEMETRY_DISABLED: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # pnpm version comes from "packageManager": "pnpm@11.7.0" in package.json.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js (version from .nvmrc) with the pnpm store cache
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: The web production build exists
+        run: |
+          if [ ! -f apps/web/.next/BUILD_ID ]; then
+            echo "::error::apps/web/.next/BUILD_ID is missing after pnpm build"
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      # The bundle check needs both builds (.next and .next-e2e). The e2e build only exists after
+      # the Playwright step, so the bundle test runs on its own further down with CI=true, where a
+      # missing build output fails instead of skipping.
+      - name: Unit, property and integration tests
+        run: pnpm test --concurrency=1
+        env:
+          CI: "false"
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @seance/web exec playwright install --with-deps chromium
+
+      - name: Playwright e2e (ircd, runner with the Fake_Agent, Next production build)
+        run: pnpm --filter @seance/web test:e2e
+
+      - name: Web bundle test (fixture code only in the e2e build)
+        run: pnpm --filter @seance/web exec vitest run src/fixtures/bundle.test.ts
+        env:
+          CI: "true"
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            apps/web/test-results
+            apps/web/e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 7

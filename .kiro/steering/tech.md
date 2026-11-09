@@ -11,8 +11,9 @@ inclusion: always
 - **ircd:** Fastify + `ws`, custom IRC parser from `@seance/irc-protocol`.
 - **runner:** Kiro ACP client (`kiro-cli acp --agent <name>`, JSON-RPC over stdio) behind an `AgentHarness` interface.
 - **web:** Next.js 16, Tailwind, Zustand.
-- **Data:** Postgres via Prisma (`@seance/db`), Redis for pub/sub and rate limiting.
-- **Deploy:** Podman (`compose.yaml`) + Caddy for TLS.
+- **Data:** no database and no broker. IRC state and sessions are in memory (`SessionStore` interface, `MemorySessionStore` in tests); credits and the daily budget persist in `SEANCE_WORKSPACES/.seance-credits.json`; accounts come from `IRCD_ACCOUNTS_FILE`. Events use the ircd's in-process `EventBus`; rate limits are in-process token buckets.
+- **Deploy:** agents in rootless Podman containers (`sandbox/`, `docs/SANDBOX.md`), Caddy for TLS (`docs/DEPLOY.md`, spec `deploy-aws`).
+- **CI:** GitHub Actions, `.github/workflows/ci.yml`.
 
 ## Conventions
 

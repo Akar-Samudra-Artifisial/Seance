@@ -3,6 +3,7 @@
 > **IRC is dead. Hold a séance.**
 > A 1995-style IRC client and server for commanding a team of AI agents.
 
+[![CI](https://github.com/Akar-Samudra-Artifisial/Seance/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Akar-Samudra-Artifisial/Seance/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Kiroween 2026](https://img.shields.io/badge/Kiroween%202026-Resurrection-orange.svg)](./DESIGN.md)
 
@@ -230,12 +231,14 @@ apps/
   web/             Retro web client (Next.js)
 packages/
   irc-protocol/    IRC message parser/serializer + property-based tests
-  db/              Database access (Prisma + Postgres)
 agents/            Agent profiles: coder, reviewer, researcher (nick, model, tools, colour, skills)
   .kiro/agents/    Kiro agent configs the runner starts (`kiro-cli acp --agent <name>`)
   .kiro/skills/    Kiro skills of those agents (one SKILL.md per skill)
 scripts/           demo-journey.py (scripted Journeys A and B)
-docs/              Demo checklist, sandbox design, Kiro usage log, images
+tools/             seance-account.mjs (creates an IRCD_ACCOUNTS_FILE line)
+sandbox/           Podman image, egress rule and allow-list for SEANCE_SANDBOX=podman
+docs/              Demo checklist, sandbox design, deployment notes, Kiro usage log, images
+.github/workflows/ CI: build, typecheck, lint, tests, web bundle check, Playwright e2e
 .kiro/
   steering/        Product, tech, structure, security and per-area steering for Kiro
   specs/           Feature specs (requirements, design, tasks)
@@ -380,10 +383,13 @@ Work in progress for the Kiroween 2026 deadline (4 December 2026).
 | Agent runner (ACP, worktrees, permissions, exorcism, credits) | `agent-runner` | Done |
 | Web client | `web-client-basic`, `web-client-polish`, `web-client-pixel-match`, `web-client-extras` (channel list, Classic theme, shortcuts, explained disabled controls) | Done; the frame 06 pixel comparison waits for its Figma export |
 | `ChanServ` / `NickServ` status notices from the runner, agent-to-agent loop guard | `runner-services` | Done |
-| Rootless Podman sandbox per agent and channel | `agent-sandbox` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Built and tested with a fake Podman; the real-Podman run on Linux (EC2) is pending |
-| Public deployment for judges (VPS, TLS, `PASS` accounts) | — | Planned |
+| Kiro skills per agent | `agent-skills` | Done |
+| Rootless Podman sandbox per agent and channel | `agent-sandbox` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Built and tested with a fake Podman; spike S12 (real Podman on Linux, EC2) is open |
+| Accounts, budgets, redaction and the public start-up guard | `public-hardening` ([docs/DEPLOY.md](./docs/DEPLOY.md)) | Done |
+| Public deployment for judges (AWS, Caddy TLS, Podman) | `deploy-aws` | Open |
+| Demo video (under 3 minutes) and the Kiro write-up | — | Open |
 
-Also on the list from [DESIGN.md](./DESIGN.md): `/ban` for agents, persistent logs and audit trail in Postgres, CTCP `VERSION`/`PING`, and an Options dialog for models.
+The same open items are tracked in the Roadmap at the end of [docs/KIRO_USAGE.md](./docs/KIRO_USAGE.md#roadmap). Later ideas from [DESIGN.md](./DESIGN.md): `/ban` for agents, persistent logs and an audit trail, CTCP `VERSION`/`PING`, and an Options dialog for models.
 
 ## Testing
 
@@ -395,6 +401,8 @@ pnpm --filter @seance/web test:e2e      # Playwright: flows with the fake agent 
 ```
 
 The Playwright suite is opt-in and not part of `pnpm test`; see [apps/web/README.md](./apps/web/README.md#tests) for baselines and the Figma comparison. The end-to-end test against the real `kiro-cli` runs only with `SEANCE_E2E_KIRO=1`.
+
+[CI](./.github/workflows/ci.yml) runs on every push and pull request to `main`: `pnpm install --frozen-lockfile`, build (and a check that `apps/web/.next/BUILD_ID` exists), typecheck, lint, `pnpm test`, Playwright e2e with Chromium, then the web bundle test, which needs both builds. It uses no secrets and never the real `kiro-cli`; the rootless-Podman sandbox suite skips itself unless Podman and the pinned image are present.
 
 ## Security notes
 

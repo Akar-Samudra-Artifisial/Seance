@@ -10,10 +10,14 @@ inclusion: always
 apps/
   ircd/            @seance/ircd          IRC server: TCP 6667 (TLS 6697 in prod) + WebSocket 6680
   runner/          @seance/runner        Agent runner: one ACP process per agent, one session per channel
-  web/             @seance/web           Retro web client (Next.js, scaffolded in M2)
+  web/             @seance/web           Retro web client (Next.js)
 packages/
   irc-protocol/    @seance/irc-protocol  IrcMessage type, parser, serializer, numerics (no I/O)
-  db/              @seance/db            Prisma schema + client
+agents/            Runtime agents (coder, reviewer, researcher) + their Kiro configs and skills
+sandbox/           Podman image, egress rule and allow-list (SEANCE_SANDBOX=podman)
+tools/             seance-account.mjs (IRCD_ACCOUNTS_FILE lines)
+spikes/acp/        ACP spike client and FINDINGS.md
+.github/workflows/ ci.yml
 .kiro/
   steering/        Guidance: always-on (product, tech, structure, security) + fileMatch per area
   specs/           Feature specs: requirements.md, design.md, tasks.md
@@ -21,8 +25,8 @@ packages/
   agents/          Development agents: seance-dev, seance-reviewer, seance-spec (prompts/ holds their prompts)
   skills/          On-demand references: irc-rfc2812, acp-runner, kiroween-submission
   settings/        mcp.json (Playwright, Context7)
-docs/              KIRO_USAGE.md (Kiro usage log for the write-up)
-workspaces/        Per-channel git worktrees (git-ignored, created at runtime)
+docs/              KIRO_USAGE.md (Kiro usage log), SANDBOX.md, DEPLOY.md, DEMO_AGENT_RUNNER.md
+workspaces/        Per-channel git worktrees, .seance-credits.json, .seance-paused (git-ignored, created at runtime)
 DESIGN.md          Source of truth for product design
 ```
 

@@ -48,7 +48,7 @@ Each task writes the regression test first, confirms it fails, then fixes the co
   - `pnpm typecheck` and `pnpm test` pass; new env vars documented in `README.md`
   - _Requirements: 6.5, 7.4_
 
-- [ ] 9. Property tests for the design's Correctness Properties
+- [x] 9. Property tests for the design's Correctness Properties
   - Add `fast-check` tests in `apps/ircd/test/review-fixes.property.test.ts`; name each `RF-P<n> <title>` to avoid clashing with the `ircd-core` P-numbers
   - [x] 9.1 RF-P2/RF-P3: for any prefix, command and Unicode text, the serialized relayed line is at most 512 bytes including CRLF, the clamped text is a whole-code-point prefix of the input, and text that already fits is unchanged (`clamp(clamp(t)) == clamp(t)`)
     - _Requirements: 2.1, 2.5, 2.6_

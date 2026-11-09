@@ -2,7 +2,7 @@ import type { SessionRecord, SessionStore } from "./session-store.js";
 
 const keyOf = (agent: string, channel: string): string => `${agent}\0${channel}`;
 
-/** In-memory SessionStore; a Postgres store in packages/db replaces it later. */
+/** In-memory SessionStore (tests and embedders); the runner's default is the credits file (`CreditsFile`). */
 export class MemorySessionStore implements SessionStore {
   private readonly records = new Map<string, SessionRecord>();
 

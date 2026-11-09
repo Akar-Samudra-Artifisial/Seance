@@ -152,6 +152,10 @@ function watchWorktreeSize(d: ChannelSessionDeps, agent: string, channel: string
       .then((over) => {
         if (over) applyOver(seq);
       })
+      // applyOver sends notices and cancels; a throw there must be logged, never left unhandled.
+      .catch((err: unknown) => {
+        d.logger.error("worktree size handling failed", { agent, channel, reason: reasonOf(err) });
+      })
       .finally(() => {
         checking = false;
         if (pending) runCheck();
