@@ -12,6 +12,11 @@ const FIGMA_EXPORT = resolve(dirname(fileURLToPath(import.meta.url)), "figma/01-
 // web-client-extras R3.5: frame 06 Classic. The export is a manual step (the tools cannot write the PNG).
 const FIGMA_EXPORT_06 = resolve(dirname(fileURLToPath(import.meta.url)), "figma/06-classic-1440x900.png");
 const FIXTURE_PATH = "/fixtures/01-main";
+/**
+ * Screenshot comparisons. The baselines are rendered on macOS Chromium, and Linux font rendering
+ * differs by 1-2 %, so CI runs `--grep @pixel` on macOS and `--grep-invert @pixel` on Ubuntu.
+ */
+const PIXEL_TAG = "@pixel";
 const MASK_COLOUR = "#FF00FF";
 /**
  * Design Open Point 7: measured 16,960 of 1,296,000 pixels (0.01309) on 2026-11-08 with macOS
@@ -124,11 +129,11 @@ test.describe("Frame_01 fixture", () => {
     await openFixture(page);
   });
 
-  test("matches the app baseline (R14.1)", async ({ page }) => {
+  test("matches the app baseline (R14.1)", { tag: PIXEL_TAG }, async ({ page }) => {
     await expect(page).toHaveScreenshot("01-main.png", { fullPage: false });
   });
 
-  test("matches the Figma export at 1440x900 (R14.2)", async ({ page }, testInfo) => {
+  test("matches the Figma export at 1440x900 (R14.2)", { tag: PIXEL_TAG }, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop-1440", "Figma comparison is for 1440x900 only");
     test.skip(!existsSync(FIGMA_EXPORT), "Figma export missing");
     await compareWithFigma(page, testInfo, {
@@ -265,7 +270,7 @@ test.describe("Frame_06 Classic fixture (web-client-extras R3.5)", () => {
     await expect(page.getByText("Theme: Classic")).toHaveCount(1);
   });
 
-  test("matches the app baseline", async ({ page }) => {
+  test("matches the app baseline", { tag: PIXEL_TAG }, async ({ page }) => {
     await expect(page).toHaveScreenshot("06-classic.png", { fullPage: false });
   });
 
@@ -274,7 +279,7 @@ test.describe("Frame_06 Classic fixture (web-client-extras R3.5)", () => {
     expect(violations).toEqual([]);
   });
 
-  test("matches the Figma export at 1440x900", async ({ page }, testInfo) => {
+  test("matches the Figma export at 1440x900", { tag: PIXEL_TAG }, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop-1440", "Figma comparison is for 1440x900 only");
     test.skip(!existsSync(FIGMA_EXPORT_06), "Figma export of frame 06 missing (save it as e2e/figma/06-classic-1440x900.png)");
     await compareWithFigma(page, testInfo, {

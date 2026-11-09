@@ -402,7 +402,7 @@ pnpm --filter @seance/web test:e2e      # Playwright: flows with the fake agent 
 
 The Playwright suite is opt-in and not part of `pnpm test`; see [apps/web/README.md](./apps/web/README.md#tests) for baselines and the Figma comparison. The end-to-end test against the real `kiro-cli` runs only with `SEANCE_E2E_KIRO=1`.
 
-[CI](./.github/workflows/ci.yml) runs on every push and pull request to `main`: `pnpm install --frozen-lockfile`, build (and a check that `apps/web/.next/BUILD_ID` exists), typecheck, lint, `pnpm test`, Playwright e2e with Chromium, then the web bundle test, which needs both builds. It uses no secrets and never the real `kiro-cli`; the rootless-Podman sandbox suite skips itself unless Podman and the pinned image are present.
+[CI](./.github/workflows/ci.yml) runs on every push and pull request to `main` in two jobs. On Ubuntu: `pnpm install --frozen-lockfile`, build (and a check that `apps/web/.next/BUILD_ID` exists), typecheck, lint, `pnpm test`, Playwright e2e with Chromium without the screenshot comparisons (`test:e2e:functional`, `--grep-invert @pixel`), then the web bundle test, which needs both builds. On macOS: the screenshot comparisons tagged `@pixel` (`test:e2e:pixel`), because their baselines are macOS Chromium renders and Linux font rendering differs by 1-2 %. Locally `test:e2e` still runs everything. It uses no secrets and never the real `kiro-cli`; the rootless-Podman sandbox suite skips itself unless Podman and the pinned image are present.
 
 ## Security notes
 

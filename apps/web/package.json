@@ -12,6 +12,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.core.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e:functional": "playwright test -c e2e/playwright.config.ts --grep-invert @pixel",
+    "test:e2e:pixel": "playwright test -c e2e/playwright.config.ts --grep @pixel",
     "lint": "eslint ."
   },
   "dependencies": {

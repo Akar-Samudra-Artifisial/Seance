@@ -72,8 +72,10 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm --filter @seance/web exec playwright install --with-deps chromium
 
-      - name: Playwright e2e (ircd, runner with the Fake_Agent, Next production build)
-        run: pnpm --filter @seance/web test:e2e
+      # Screenshot comparisons (@pixel) run in the macOS job below: their baselines are macOS
+      # Chromium renders, and Linux font rendering differs by 1-2 %.
+      - name: Playwright e2e without @pixel (ircd, runner with the Fake_Agent, Next production build)
+        run: pnpm --filter @seance/web test:e2e:functional
 
       - name: Web bundle test (fixture code only in the e2e build)
         run: pnpm --filter @seance/web exec vitest run src/fixtures/bundle.test.ts
@@ -85,6 +87,53 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results
+          path: |
+            apps/web/test-results
+            apps/web/e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Screenshot comparisons against the macOS Chromium baselines and the Figma exports (tests tagged
+  # @pixel in apps/web/e2e/pixel.spec.ts). Same thresholds and baselines as a local run.
+  pixel:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      SEANCE_E2E_KIRO: "0"
+      TURBO_TELEMETRY_DISABLED: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # pnpm version comes from "packageManager": "pnpm@11.7.0" in package.json.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js (version from .nvmrc) with the pnpm store cache
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @seance/web exec playwright install chromium
+
+      - name: Playwright screenshot comparisons (@pixel)
+        run: pnpm --filter @seance/web test:e2e:pixel
+
+      - name: Upload Playwright results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-pixel-results
           path: |
             apps/web/test-results
             apps/web/e2e/test-results

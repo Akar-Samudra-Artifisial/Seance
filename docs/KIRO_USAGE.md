@@ -406,6 +406,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: stale Postgres/Redis/`compose.yaml`/`packages/db`/`powers` references replaced by the real state (in-memory state, credits file, accounts file, no database); empty `packages/db` removed; `.github/workflows/ci.yml`; CI badge; Roadmap section; `.catch` on the worktree size watcher with a test
 - Notes: none
 
+### 2026-11-08 — CI: screenshot comparisons move to macOS
+- Kiro features: steering (web-ui, testing), hook (guard-shell)
+- Produced: the four screenshot comparisons in `apps/web/e2e/pixel.spec.ts` tagged `@pixel`; scripts `test:e2e:functional` / `test:e2e:pixel`; Ubuntu CI runs e2e with `--grep-invert @pixel`, a new `pixel` job on macos-15 runs `--grep @pixel`
+- Notes: the 12 Ubuntu failures were 1-2 % font-rendering diffs against macOS baselines; thresholds and baselines unchanged, and `test:e2e` still runs everything locally
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.
