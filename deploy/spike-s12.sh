@@ -161,7 +161,9 @@ check_s12() {
     record "s12 flag spellings" FAIL "no agent image in /etc/seance/seance.env (run bootstrap.sh)"
     return
   fi
-  if (cd "$RUN_DIR/spikes/acp" && as_seance env S12_IMAGE="$image" node src/s12-podman.ts) > "$OUT/s12.log" 2>&1; then
+  # as_seance starts in $SEANCE_HOME, so change into the spike package inside the child shell.
+  # shellcheck disable=SC2016 # $1 expands inside the child shell
+  if as_seance env S12_IMAGE="$image" bash -c 'cd "$1" && node src/s12-podman.ts' _ "$RUN_DIR/spikes/acp" > "$OUT/s12.log" 2>&1; then
     record "s12 flag spellings" PASS "see $OUT/s12.log"
   else
     record "s12 flag spellings" FAIL "see $OUT/s12.log"
@@ -180,7 +182,8 @@ check_s12_auth() {
     record "s12-auth (one prompt)" FAIL "no Kiro login in $auth"
     return
   fi
-  if (cd "$RUN_DIR/spikes/acp" && as_seance env S12_IMAGE="$image" S12_AUTH_DIR="$auth" node src/s12-kiro-auth.ts) > "$OUT/s12-auth.log" 2>&1; then
+  # shellcheck disable=SC2016 # $1 expands inside the child shell
+  if as_seance env S12_IMAGE="$image" S12_AUTH_DIR="$auth" bash -c 'cd "$1" && node src/s12-kiro-auth.ts' _ "$RUN_DIR/spikes/acp" > "$OUT/s12-auth.log" 2>&1; then
     record "s12-auth (one prompt)" PASS "see $OUT/s12-auth.log"
   else
     record "s12-auth (one prompt)" FAIL "see $OUT/s12-auth.log"
@@ -206,7 +209,8 @@ for i in "${!NAMES[@]}"; do
   [ "${RESULTS[$i]}" = "FAIL" ] && failed=1
 done
 {
-  echo "S12 on $(hostname) $(date -u +%FT%TZ), commit $(git -C "$REPO_DIR" rev-parse HEAD)"
+  # /opt/seance is owned by seance: root's git needs safe.directory ("detected dubious ownership").
+  echo "S12 on $(hostname) $(date -u +%FT%TZ), commit $(git -c safe.directory="$REPO_DIR" -C "$REPO_DIR" rev-parse HEAD)"
   for i in "${!NAMES[@]}"; do echo "${RESULTS[$i]} ${NAMES[$i]}: ${DETAILS[$i]}"; done
 } > "$OUT/summary.txt"
 echo

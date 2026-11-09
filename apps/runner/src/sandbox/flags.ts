@@ -32,7 +32,14 @@ export const USERNS = `keep-id:uid=${CONTAINER_UID},gid=${CONTAINER_UID}`;
  * work in the sandbox by design.
  */
 export const TMPFS_TMP = "/tmp:rw,nosuid,nodev,noexec,size=256m";
-export const TMPFS_HOME = "/home/agent:rw,nosuid,nodev,noexec,size=256m";
+/**
+ * Spike S12 (EC2, Debian 13, Podman 5.4.2 rootless): without `U` the tmpfs is created as 0:0 mode
+ * 755, so the agent (uid 10001 through `--userns=keep-id:uid=10001,gid=10001`) cannot write its own
+ * `$HOME` ("mkdir: cannot create directory '/home/agent/.local': Permission denied"). Podman's `U`
+ * option chowns the tmpfs to the container user; `uid=` is rejected by Podman. `/tmp` stays as it
+ * is: it is created 1777 and works for any uid.
+ */
+export const TMPFS_HOME = "/home/agent:rw,nosuid,nodev,noexec,size=256m,U";
 export const CONTAINER_HOME = "/home/agent";
 export const CONTAINER_TMP = "/tmp";
 

@@ -54,7 +54,8 @@ describe("buildPodmanRunArgs golden argv (4.1, 5.1, 5.7, 6.1)", () => {
       "--workdir=/srv/seance/agents",
       "--network=pasta:--no-map-gw,--ipv4-only",
       "--tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m",
-      "--tmpfs=/home/agent:rw,nosuid,nodev,noexec,size=256m",
+      // Changed by spike S12: U makes the home tmpfs owned by the keep-id agent user.
+      "--tmpfs=/home/agent:rw,nosuid,nodev,noexec,size=256m,U",
       "--mount=type=bind,src=/srv/seance/workspaces/dev,dst=/srv/seance/workspaces/dev,rw,bind-propagation=rprivate,nosuid,nodev,relabel=shared",
       "--mount=type=bind,src=/srv/seance/agents,dst=/srv/seance/agents,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared",
       "--mount=type=bind,src=/srv/seance/auth,dst=/run/seance/auth,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared",
@@ -86,6 +87,21 @@ describe("buildPodmanRunArgs golden argv (4.1, 5.1, 5.7, 6.1)", () => {
     }
     expect(F.TMPFS_HOME).toContain(",noexec,");
     expect(F.TMPFS_TMP).toContain(",noexec,");
+  });
+
+  // Spike S12 finding (EC2, Debian 13, Podman 5.4.2 rootless): with --userns=keep-id:uid=10001 the
+  // home tmpfs is created as 0:0 mode 755 unless it carries Podman's U option, and the agent then
+  // fails with "mkdir: cannot create directory '/home/agent/.local': Permission denied". Podman
+  // rejects uid=, so U is the only spelling. /tmp needs no U: it is created 1777.
+  it("gives the home tmpfs the U option so the keep-id agent user owns it, and leaves /tmp without it", () => {
+    const argv = buildPodmanRunArgs(INPUT);
+    expect(argv).toContain(`--userns=${F.USERNS}`);
+    const home = argv.find((a) => a.startsWith("--tmpfs=/home/agent:"));
+    const homeOptions = (home ?? "").slice("--tmpfs=/home/agent:".length).split(",");
+    expect(homeOptions).toContain("U");
+    expect(homeOptions.some((o) => o.startsWith("uid="))).toBe(false);
+    const tmp = argv.find((a) => a.startsWith("--tmpfs=/tmp:"));
+    expect((tmp ?? "").slice("--tmpfs=/tmp:".length).split(",")).not.toContain("U");
   });
 
   it("labels a private session directory :Z and everything else :z (5.7, D21)", () => {

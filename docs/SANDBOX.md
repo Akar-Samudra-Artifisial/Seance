@@ -95,7 +95,7 @@ podman run -i --rm --name=seance-coder-1a2b3c4d-9f8e7d6c
   --pull=never --http-proxy=false --no-hosts --log-driver=none
   --timeout=86400 --stop-timeout=2 --hostname=seance-agent --workdir=<agents>
   --network=pasta:--no-map-gw,--ipv4-only
-  --tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m --tmpfs=/home/agent:rw,nosuid,nodev,noexec,size=256m
+  --tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m --tmpfs=/home/agent:rw,nosuid,nodev,noexec,size=256m,U
   --mount=type=bind,src=<worktree>,dst=<worktree>,rw,bind-propagation=rprivate,nosuid,nodev,relabel=shared
   --mount=type=bind,src=<agents>,dst=<agents>,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared
   --mount=type=bind,src=<auth>,dst=/run/seance/auth,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared
@@ -104,6 +104,8 @@ podman run -i --rm --name=seance-coder-1a2b3c4d-9f8e7d6c
 ```
 
 Never present: `--privileged`, `--cap-add`, `--device`, `-v`, `--network=host`, `--pid`, `--env-file`, `--security-opt label=disable`, published ports.
+
+**Spike S12 finding (EC2, Debian 13, Podman 5.4.2 rootless).** Without the `U` option the `/home/agent` tmpfs is created as `0:0`, mode 755, and the agent (uid 10001 through `--userns=keep-id:uid=10001,gid=10001`) cannot write its own home: `mkdir: cannot create directory '/home/agent/.local': Permission denied`, so `kiro-cli` cannot stage the login. Podman's `U` option chowns the tmpfs to the container user (verified on the instance: `10001:10001`, `mkdir` works); `uid=` is rejected by Podman. `/tmp` keeps its options: it is created 1777 and works for any uid. The flag lives in `apps/runner/src/sandbox/flags.ts` (`TMPFS_HOME`), and a unit test in `apps/runner/test/podman-args.test.ts` pins the `U`.
 
 Mounts, and only these:
 

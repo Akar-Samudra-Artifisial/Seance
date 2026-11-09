@@ -240,7 +240,7 @@ podman run -i --rm --name=seance-coder-1a2b3c4d-9f8e7d6c
   --timeout=86400 --stop-timeout=2 --hostname=seance-agent
   --network=pasta:--no-map-gw,--ipv4-only
   --tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m
-  --tmpfs=/home/agent:rw,nosuid,nodev,noexec,size=256m
+  --tmpfs=/home/agent:rw,nosuid,nodev,noexec,size=256m,U   # U: spike S12, owned by the keep-id user
   --mount=type=bind,src=<wt>,dst=<wt>,rw,bind-propagation=rprivate,nosuid,nodev,relabel=shared   # see note
   --mount=type=bind,src=<agents>,dst=<agents>,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared
   --mount=type=bind,src=<auth>,dst=/run/seance/auth,ro,bind-propagation=rprivate,nosuid,nodev,relabel=shared

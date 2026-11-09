@@ -421,6 +421,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: build as `seance` with `web.env` loaded (wss URL baked in), Kiro installer pinned by sha256 in `deploy/pins.env` (fail closed), spike builds the fixture image before the egress rule, SSM agent installed first in `user_data`, ircd unit exceptions plus a `user@<uid>` drop-in, AMI release filter, zone offerings, safe detach, apt lock timeout, `unattended-upgrades`, `kiro-cli whoami` gate, strict variable validation, quoted `deploy.conf`, HSTS/nosniff/no-referrer in Caddy
 - Notes: still no AWS call; shellcheck, `terraform fmt -check` and `terraform validate` stay clean without credentials. The installer hash was taken from `https://cli.kiro.dev/install` on 2026-11-09 (downloaded, read, not run)
 
+### 2026-11-09 — Spike S12 on EC2 finds a sandbox bug
+- Kiro features: spec (`agent-sandbox` task 0.4 via `deploy-aws` task 1, `deploy/spike-s12.sh`), steering (runner-acp, testing), hook (guard-shell)
+- Produced: `TMPFS_HOME` in `apps/runner/src/sandbox/flags.ts` gains Podman's `U` option; a unit test pins it; the spike runs `s12` from the right directory and uses `git -c safe.directory` on the seance-owned repo
+- Notes: the real host caught what the fake Podman could not: the `/home/agent` tmpfs was `0:0` 755, so the keep-id agent (uid 10001) got "Permission denied" on `mkdir ~/.local`; `U` was verified on the instance, `uid=` is rejected by Podman
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

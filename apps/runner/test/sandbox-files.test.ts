@@ -42,7 +42,8 @@ describe("image pinning (12.8, decision 5)", () => {
   // is applied to both tmpfs mounts, and every program the container starts lives in the image.
   it("both tmpfs mounts are noexec, and kiro-cli, the entrypoint and the probe sit in /usr/local/bin of the image", () => {
     const flags = read("apps/runner/src/sandbox/flags.ts");
-    expect(flags).toMatch(/TMPFS_HOME = "\/home\/agent:rw,nosuid,nodev,noexec,size=256m"/);
+    // Spike S12: the home tmpfs carries U so the keep-id agent user owns it.
+    expect(flags).toMatch(/TMPFS_HOME = "\/home\/agent:rw,nosuid,nodev,noexec,size=256m,U"/);
     expect(flags).toMatch(/TMPFS_TMP = "\/tmp:rw,nosuid,nodev,noexec,size=256m"/);
     for (const file of DOCKERFILES) {
       const text = read(file);
