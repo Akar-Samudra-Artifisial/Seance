@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { createFakePodman } from "../../../runner/test/fixtures/fake-podman-env.js";
+import type { FakePodman } from "../../../runner/test/fixtures/fake-podman-env.js";
 import type { VirtualClient } from "../../src/virtual-client.js";
 import { FAKE_KIRO_BIN, ManualClock, closeAllFixtures, startIntegration } from "./integration.js";
 import type { IntegrationFixture, IrcTestClient } from "./integration.js";
@@ -37,6 +39,7 @@ interface World {
 
 let world: World | undefined;
 let scratchDirs: string[] = [];
+let fakePodman: FakePodman | undefined;
 
 afterEach(async () => {
   const clock = world?.clock;
@@ -47,6 +50,9 @@ afterEach(async () => {
     await closeAllFixtures();
   } finally {
     if (pump !== undefined) clearInterval(pump);
+    const fake = fakePodman;
+    fakePodman = undefined;
+    await fake?.dispose();
     const dirs = scratchDirs;
     scratchDirs = [];
     for (const dir of dirs) await rm(dir, { recursive: true, force: true });
@@ -84,7 +90,7 @@ async function until(w: World, what: string, cond: () => boolean | Promise<boole
   }
 }
 
-async function setup(): Promise<World> {
+async function setup(extraEnv: Readonly<Record<string, string>> = {}): Promise<World> {
   const scratch = await mkdtemp(join(tmpdir(), "seance-exorcism-"));
   scratchDirs.push(scratch);
   const stdinLog = join(scratch, "agent-stdin.log");
@@ -94,7 +100,7 @@ async function setup(): Promise<World> {
   const clock = new ManualClock();
   // `op` sends more lines than the default flood burst (10) faster than the wall-clock refill
   // (1/s) on a fast host; lift the burst so flood control never closes the test's own link.
-  const fx = await startIntegration({ clock, script: SCRIPT, env: { SEANCE_KIRO_BIN: wrapper }, floodBurst: 10_000 });
+  const fx = await startIntegration({ clock, script: SCRIPT, env: { SEANCE_KIRO_BIN: wrapper, ...extraEnv }, floodBurst: 10_000 });
   const op = await fx.connectClient("op");
   world = { fx, clock, op, scratch, stdinLog };
   return world;
@@ -353,6 +359,108 @@ describe("exorcism (agent-runner Req 9)", () => {
       await w.op.waitFor(/NOTICE op :coder is banned from #haunt/);
       expect(joinedCount(w, "#haunt")).toBe(1);
       expect(await namesOf(w, "#haunt")).not.toContain("coder");
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+// agent-runner Requirement 9, criterion 18: an abandoned agent is released after SEANCE_IDLE_TIMEOUT_S.
+describe("idle timeout (agent-runner Req 9.18)", () => {
+  const IDLE_ENV = { SEANCE_IDLE_TIMEOUT_S: "60" } as const;
+  const CHANSERV = /^:ChanServ!ChanServ@services\.\S+ NOTICE #idle :(.*)$/;
+
+  /** Moves the ManualClock one virtual second per few real milliseconds, until stopped. */
+  const startPump = (w: World): (() => void) => {
+    const timer = setInterval(() => w.clock.advance(1_000), 5);
+    return () => clearInterval(timer);
+  };
+
+  const chanServLines = (w: World): string[] =>
+    w.op.lines.flatMap((l) => {
+      const m = CHANSERV.exec(l);
+      return m?.[1] === undefined ? [] : [m[1]];
+    });
+
+  it(
+    "SEANCE_SANDBOX=none: notices, worktree reset, PART with the idle reason, and a later invite resumes",
+    async () => {
+      const w = await setup(IDLE_ENV);
+      await summon(w, "#idle");
+      const dir = wtPath(w, "idle");
+      const head = await dirty(dir, "idle");
+
+      // The inviter walks away without KICK: only virtual time passes.
+      const stop = startPump(w);
+      try {
+        await until(w, "idle exorcism to finish", () => exorcisedCount(w, "#idle") === 1);
+      } finally {
+        stop();
+      }
+
+      await w.op.waitFor(/^:coder!\S+ PART #idle :idle for 1 min$/);
+      const notices = chanServLines(w);
+      const idleAt = notices.indexOf("coder idle for 1 min, releasing the session");
+      const closedAt = notices.findIndex((t) => /^session closed, worktree reset to [0-9a-f]+$/.test(t));
+      expect(idleAt).toBeGreaterThanOrEqual(0);
+      expect(closedAt).toBeGreaterThan(idleAt);
+      await expectReset(dir, "idle", head);
+      expect(await namesOf(w, "#idle")).not.toContain("coder");
+      expect(w.fx.logs.filter((l) => l.level === "error")).toEqual([]);
+
+      // A later INVITE starts a new session and resumes, exactly as after a KICK.
+      w.op.send("INVITE coder #idle");
+      await until(w, "coder to rejoin", () => joinedCount(w, "#idle") === 2);
+      const rejoin = w.fx.logs.filter((l) => l.msg === "agent joined channel" && l.fields?.["channel"] === "#idle").at(-1);
+      expect(rejoin?.fields?.["resumed"]).toBe(true);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "never cuts a prompt in flight, however much virtual time passes",
+    async () => {
+      const w = await setup(IDLE_ENV);
+      await summon(w, "#idle");
+      await prompt(w, "#idle", "dig the plumbing");
+      // 60 s idle timeout, 100 s of virtual time (the 120 s hung-agent watchdog stays untouched).
+      w.clock.advance(100_000);
+      await yieldLoop();
+      expect(exorcisedCount(w, "#idle")).toBe(0);
+      expect(await requests(w, "session/cancel")).toHaveLength(0);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "SEANCE_SANDBOX=podman: the container is gone after the idle exorcism",
+    async () => {
+      const fake = await createFakePodman();
+      fakePodman = fake;
+      const auth = await mkdtemp(join(tmpdir(), "seance-idle-auth-"));
+      scratchDirs.push(auth);
+      const w = await setup({
+        ...IDLE_ENV,
+        SEANCE_SANDBOX: "podman",
+        SEANCE_PODMAN_BIN: fake.bin,
+        SEANCE_SANDBOX_IMAGE: `localhost/seance-agent@sha256:${"a".repeat(64)}`,
+        SEANCE_SANDBOX_AUTH_DIR: auth,
+      });
+      await summon(w, "#idle");
+      await until(w, "the agent container", async () => (await fake.live()).length === 1);
+
+      const stop = startPump(w);
+      try {
+        await until(w, "idle exorcism to finish", () => exorcisedCount(w, "#idle") === 1);
+      } finally {
+        stop();
+      }
+
+      await w.op.waitFor(/^:coder!\S+ PART #idle :idle for 1 min$/);
+      expect(chanServLines(w)).toContain("coder idle for 1 min, releasing the session");
+      expect(chanServLines(w).some((t) => t.startsWith("session closed, worktree reset to "))).toBe(true);
+      await until(w, "no container left", async () => (await fake.live()).length === 0);
+      const calls = await fake.calls();
+      expect(calls.some((c) => c.args[0] === "rm")).toBe(true);
     },
     TEST_TIMEOUT_MS,
   );

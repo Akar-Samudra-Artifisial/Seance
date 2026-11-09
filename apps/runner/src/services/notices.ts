@@ -43,6 +43,11 @@ export function worktreeReady(dir: string, sha: string): string {
   return fit(`worktree ready: ${dir} @ ${sha}`);
 }
 
+/** agent-runner Req 9.18: `<agent> idle for <N> min, releasing the session`, sent before the kick notices. */
+export function sessionIdle(o: { readonly agent: string; readonly minutes: number }): string {
+  return fit(`${o.agent} idle for ${String(o.minutes)} min, releasing the session`);
+}
+
 /** Req 6.1: `session cancelled, worktree reset to <sha>` or `session closed, worktree reset to <sha>`. */
 export function sessionEnded(o: { readonly cancelled: boolean; readonly sha: string }): string {
   return fit(`session ${o.cancelled ? "cancelled" : "closed"}, worktree reset to ${o.sha}`);

@@ -3,6 +3,7 @@ import { CreditAccumulator } from "../credits/accumulator.js";
 import type { CreditLedger } from "../credits/ledger.js";
 import type { HarnessSession, PermissionHandler } from "../harness/harness.js";
 import type { RunnerLogger } from "../log.js";
+import type { PendingPermissions } from "../session/pending-permissions.js";
 import type { AgentOutput } from "../output/agent-output.js";
 import { attachSessionOutput } from "../output/session-output.js";
 import { handlePermissionRequest } from "../permissions/handler.js";
@@ -30,6 +31,8 @@ export type ChannelSessionDeps = {
   readonly opNotice: (channel: string, text: string) => void;
   /** agent-sandbox Requirement 14 (podman mode only): host-side commit after an `end_turn`. */
   readonly commitTurn?: (agent: string, channel: string) => Promise<void>;
+  /** agent-runner Requirement 9.18: releases a channel Session that stayed idle for `timeoutS` seconds. */
+  readonly idle?: { readonly timeoutS: number; readonly onIdle: (session: Session) => void };
 };
 
 /** `session/request_permission` handler for a channel Session confined to `cwd`. */
@@ -39,22 +42,30 @@ export function channelPermissionHandler(
   channel: string,
   cwd: string,
   output: Pick<AgentOutput, "channelNotice">,
+  /** Counts the request as pending while it is decided (idle timeout, agent-runner Requirement 9.18). */
+  permissions?: PendingPermissions,
 ): PermissionHandler {
-  return (req) =>
-    handlePermissionRequest(
-      {
-        agent: profile.nick,
-        channel,
-        worktree: cwd,
-        isPrivate: false,
-        currentMembership: () => d.host.modeOf(channel, profile.nick),
-        notifyOps: (text) => {
-          output.channelNotice(channel, text);
+  return async (req) => {
+    const end = permissions?.begin();
+    try {
+      return await handlePermissionRequest(
+        {
+          agent: profile.nick,
+          channel,
+          worktree: cwd,
+          isPrivate: false,
+          currentMembership: () => d.host.modeOf(channel, profile.nick),
+          notifyOps: (text) => {
+            output.channelNotice(channel, text);
+          },
+          logger: d.logger,
         },
-        logger: d.logger,
-      },
-      req,
-    );
+        req,
+      );
+    } finally {
+      end?.();
+    }
+  };
 }
 
 /** Builds a channel Session around an open harness session, wiring output and credits. */
@@ -65,6 +76,7 @@ export function buildChannelSession(
   harnessSession: HarnessSession,
   output: AgentOutput,
   isBlocked: (channel: string) => boolean = () => false,
+  permissions?: PendingPermissions,
 ): Session {
   const sink: PromptSink = {
     dropped: (prompt: Prompt, why) => {
@@ -72,6 +84,9 @@ export function buildChannelSession(
     },
   };
   const commit = d.commitTurn;
+  const idle = d.idle;
+  // `onIdle` only runs from a timer, after `created` is assigned below.
+  let created: Session | undefined;
   const session = new Session({
     agent: profile.nick,
     channel,
@@ -84,7 +99,19 @@ export function buildChannelSession(
     isBlocked,
     logger: d.logger,
     ...(commit !== undefined ? { afterTurn: () => commit(profile.nick, channel) } : {}),
+    ...(idle !== undefined
+      ? {
+          idle: {
+            timeoutS: idle.timeoutS,
+            onIdle: () => {
+              if (created !== undefined) idle.onIdle(created);
+            },
+            ...(permissions !== undefined ? { permissions } : {}),
+          },
+        }
+      : {}),
   });
+  created = session;
   attachSessionOutput({ session, output, clock: d.clock });
   const acc = new CreditAccumulator(`${profile.nick}@${channel}:${harnessSession.id}`, d.logger);
   session.sessionEvents((ev) => {

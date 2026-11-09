@@ -426,6 +426,16 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: `TMPFS_HOME` in `apps/runner/src/sandbox/flags.ts` gains Podman's `U` option; a unit test pins it; the spike runs `s12` from the right directory and uses `git -c safe.directory` on the seance-owned repo
 - Notes: the real host caught what the fake Podman could not: the `/home/agent` tmpfs was `0:0` 755, so the keep-id agent (uid 10001) got "Permission denied" on `mkdir ~/.local`; `U` was verified on the instance, `uid=` is rejected by Podman
 
+### 2026-11-09 — Idle timeout for abandoned agents (agent-runner criterion 9.18)
+- Kiro features: spec-driven (new criterion 9.18 in `agent-runner/requirements.md`, then design and tasks 26.1 to 26.4 before any code), steering (runner-acp, testing, security), hook (guard-shell)
+- Produced: `SEANCE_IDLE_TIMEOUT_S` (default 900, 60 to 86400), an idle timer in `Session` on the injected `TimerSet`, the `idle` exorcism trigger with its extra ChanServ notice and `PART :idle for <N> min`, unit tests on `ManualClock`, an integration test for both sandbox modes with the fake Podman
+- Notes: the EC2 deploy showed that an inviter who leaves without `/kick` keeps a 768 MB container up for a day; exorcism only had kick, PART and QUIT triggers. The timer runs only while the session is idle, so it never cuts a running prompt
+
+### 2026-11-09 — Idle timeout covers private sessions (task 26.5)
+- Kiro features: spec agent-runner task 26.5 (criterion 9.18 extended in requirements.md and design.md first), steering (runner-acp, testing)
+- Produced: idle timer and `PendingPermissions` for `/query` sessions in `session-manager.ts` (NOTICE to the human, QUIT-style teardown); only events during a prompt count as activity; dropped prompts and no-op events do not; new tests in `idle-timeout.test.ts`
+- Notes: four of the new tests failed against the old code before the fix; one earlier test was changed on purpose because the rule it pinned changed
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

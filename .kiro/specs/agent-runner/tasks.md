@@ -497,9 +497,31 @@ Build `apps/runner` (`@seance/runner`) bottom-up. Task 0 holds two spikes: S8 re
 - [x] 25. Final checkpoint
   - Run `pnpm typecheck && pnpm test` and `pnpm lint` at the repository root; ensure all tests pass, ask the user if questions arise.
 
+- [x] 26. Idle timeout for agent sessions (criterion 9.18)
+  - [x] 26.1 Parse `SEANCE_IDLE_TIMEOUT_S`
+    - `src/config.ts`: `idleTimeoutS` through `boundedInteger`, default 900, range 60 to 86400, both sandbox modes; `test/idle-config.test.ts` covers default, bounds and rejection
+    - _Requirements: 9.18_
+
+  - [x] 26.2 Idle timer in `Session`
+    - `src/session/pending-permissions.ts`, `src/session/session.ts`, `src/invite/channel-session.ts`: the timer runs on the injected `TimerSet` only while the session is idle, empty, without pending permission and not closing; activity restarts it; `test/idle-timeout.test.ts` with `ManualClock`
+    - _Requirements: 9.18_
+
+  - [x] 26.3 Idle exorcism
+    - `src/exorcism/exorcism.ts`, `src/services/notices.ts`, `src/runner.ts`: trigger `idle`, the extra ChanServ notice, the KICK steps and notices, PART reason `idle for <N> min`; cleared by every other trigger and by shutdown
+    - _Requirements: 9.18_
+
+  - [x] 26.4 Integration test and docs
+    - `apps/ircd/test/runner/exorcism.integration.test.ts` with a small timeout, the pumped clock and the fake podman registry; `deploy/seance.env.example`, `README.md`, `docs/SANDBOX.md`, `docs/DEPLOY.md`, `docs/KIRO_USAGE.md`
+    - _Requirements: 9.18_
+
+  - [x] 26.5 Private sessions and stricter activity
+    - `src/session/session-manager.ts`: the Private_Session gets the idle timer and `PendingPermissions`; on idle the human gets one NOTICE, the session and harness session close (no reset, no PART); `src/session/session.ts`: a harness event counts only while a prompt is in flight, and a prompt dropped on enqueue or a no-op event is not activity; tests in `test/idle-timeout.test.ts`
+    - _Requirements: 9.18_
+
 ## Notes
 
 - Tasks 7.4, 9.5, 12.3 and 12.4 are required security tests (worktree config exclusion, the pre-prompt gate, permission purity and the protected-path rules); they carry no `*` marker.
+- Task 26 (idle timeout, criterion 9.18) was added after the final checkpoint.
 - Tasks marked with `*` are optional unit tests and can be skipped for a faster MVP. The property tests (P1–P12), the ircd test for `irc.message`, the integration tests and the e2e test are not marked optional because the requirements demand them (Requirements 12.6, 12.8, 12.11).
 - Task 0 blocks every other task. It needs the real `kiro-cli` and may spend credits. The spawn strategy does not depend on its result (Requirement 1.10).
 - The Fake_Agent (task 4) is built before any harness, session or integration test; nothing in the automated suite starts `kiro-cli` or spends credits.

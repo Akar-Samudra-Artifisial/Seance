@@ -2,6 +2,7 @@ import { irc_lower } from "@seance/irc-protocol";
 import type { IrcMessage } from "@seance/irc-protocol";
 
 import type { Clock, TimerSet } from "../clock.js";
+import { idleMinutes } from "../config.js";
 import { createResetCreditsHandler, isResetCreditsCommand } from "../credits/reset-command.js";
 import { CreditAccumulator } from "../credits/accumulator.js";
 import type { CreditLedger } from "../credits/ledger.js";
@@ -20,6 +21,7 @@ import { SandboxError } from "../sandbox/errors.js";
 import { WhoisSnapshot } from "../whois/snapshot.js";
 import type { WorktreeManager } from "../worktree/worktree-manager.js";
 import { AgentLoopGuard } from "./agent-loop-guard.js";
+import { PendingPermissions } from "./pending-permissions.js";
 import type { Prompt } from "./machine.js";
 import { Session } from "./session.js";
 import type { PromptGate, PromptSink } from "./session.js";
@@ -76,6 +78,11 @@ export type SessionManagerDeps = {
    * each in podman mode) may start; checked before a Private_Session opens. Absent means no cap.
    */
   readonly privateCapacity?: () => string | undefined;
+  /**
+   * agent-runner Requirement 9.18: seconds of inactivity after which a Private_Session is closed
+   * and its human notified. Absent means no idle timeout.
+   */
+  readonly idleTimeoutS?: number;
 };
 
 /** At most this many Private_Sessions per human nick (across agents). */
@@ -589,21 +596,31 @@ export class SessionManager {
   async #openPrivate(reg: AgentRegistration, human: string): Promise<PrivateEntry | undefined> {
     const { profile } = reg;
     const logger = this.#d.logger;
+    const idleTimeoutS = this.#d.idleTimeoutS;
+    // Set once the entry exists; `onIdle` only runs from a timer, after that.
+    let opened: PrivateEntry | undefined;
     try {
       const cwd = await this.#d.worktrees.privateDir(profile.nick);
+      const permissions = new PendingPermissions();
       const harnessSession = await this.#d.harness.openSession(profile, {
         cwd,
-        onPermission: (req) =>
-          handlePermissionRequest(
-            {
-              agent: profile.nick,
-              worktree: cwd,
-              isPrivate: true, // voice-level reads only; write and shell are rejected
-              currentMembership: () => undefined,
-              logger,
-            },
-            req,
-          ),
+        onPermission: async (req) => {
+          const end = permissions.begin();
+          try {
+            return await handlePermissionRequest(
+              {
+                agent: profile.nick,
+                worktree: cwd,
+                isPrivate: true, // voice-level reads only; write and shell are rejected
+                currentMembership: () => undefined,
+                logger,
+              },
+              req,
+            );
+          } finally {
+            end();
+          }
+        },
       });
       const sink: PromptSink = {
         dropped: (prompt, why) => {
@@ -624,6 +641,18 @@ export class SessionManager {
         // Private_Sessions ignore the channel cap, but not the daily cap or the kill switch.
         isBlocked: () => this.#d.globallyBlocked?.() === true,
         logger,
+        // agent-runner Requirement 9.18: an abandoned /query releases its container too.
+        ...(idleTimeoutS !== undefined
+          ? {
+              idle: {
+                timeoutS: idleTimeoutS,
+                permissions,
+                onIdle: () => {
+                  if (opened !== undefined) void this.#releaseIdlePrivate(opened, human, idleTimeoutS);
+                },
+              },
+            }
+          : {}),
       });
       const detach = attachSessionOutput({ session, output: reg.output, clock: this.#d.clock });
       // public-hardening Requirement 12.1: /query spend counts towards SEANCE_DAILY_CREDIT_CAP.
@@ -632,7 +661,8 @@ export class SessionManager {
         if (ev.kind === "metadata") this.#d.ledger.recordPrivateMetering(acc, ev.metering);
       });
       this.#openPrivates.add(session);
-      return { session, harnessSession, agent: profile.nick, detach };
+      opened = { session, harnessSession, agent: profile.nick, detach };
+      return opened;
     } catch (err) {
       logger.error("private session could not be opened", {
         agent: profile.nick,
@@ -645,6 +675,28 @@ export class SessionManager {
         logger.error("private session failure notice failed", { reason: messageOf(noticeErr) });
       }
       return undefined;
+    }
+  }
+
+  /**
+   * Idle timeout of a Private_Session: tells the human once, then closes it like a QUIT does
+   * (detach the output, close the Session, close the harness session, which removes the container
+   * in podman mode). No worktree reset and no PART: there is no channel. The `closed` state change
+   * removes the entry, so the next private message opens a fresh session.
+   */
+  async #releaseIdlePrivate(entry: PrivateEntry, human: string, idleTimeoutS: number): Promise<void> {
+    if (entry.session.state === "closed") return;
+    try {
+      this.#d.host.noticeTo(human, `${entry.agent} idle for ${idleMinutes(idleTimeoutS)} min, releasing the session`);
+    } catch (err) {
+      this.#d.logger.error("private session idle notice failed", { agent: entry.agent, human, reason: messageOf(err) });
+    }
+    entry.detach();
+    entry.session.close("idle");
+    try {
+      await entry.harnessSession.close();
+    } catch (err) {
+      this.#d.logger.error("private session close failed", { agent: entry.agent, reason: messageOf(err) });
     }
   }
 

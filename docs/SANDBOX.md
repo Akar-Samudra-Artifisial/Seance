@@ -73,6 +73,7 @@ macOS and Windows are not supported in podman mode. Develop with `none`; run `po
 | `SEANCE_SANDBOX_CPUS` | `2` | Decimal greater than 0, at most 64 |
 | `SEANCE_SANDBOX_PIDS` | `256` | Integer 16 to 4096 |
 | `SEANCE_SANDBOX_TIMEOUT_S` | `86400` | Integer 60 to 604800. Hard lifetime of a container |
+| `SEANCE_IDLE_TIMEOUT_S` | `900` | Integer 60 to 86400. Not a sandbox flag: the runner exorcises a session idle for this long, which removes its container well before `SEANCE_SANDBOX_TIMEOUT_S`. Applies with `SEANCE_SANDBOX=none` too |
 | `SEANCE_SANDBOX_KIRO_BIN` | `kiro-cli` | A bare command name found on the image's PATH (`/usr/local/bin`) or an absolute path in the image. Refused under `/home/agent`, `/tmp` and `/run`, which are `noexec` or credential mounts. Passed to the container as `SEANCE_KIRO_BIN`. The host's `SEANCE_KIRO_BIN` is ignored in this mode |
 | `SEANCE_SANDBOX_EGRESS_PROBES` | `1.1.1.1:443` | 1 to 8 `<IPv4>:<port>` targets outside the allow-list; the start-up probe fails when one is reachable, in every podman start |
 | `SEANCE_SANDBOX_BLOCKED_CIDRS` | unset; required with `IRCD_PUBLIC=1` | 1 to 8 IPv4 CIDRs your host rule blocks (the VPC, other private ranges), same values as `@VPC_CIDR@`. The probe tries the first address after the network address of each on port 443 and fails when it connects. Best effort, see "Verify at every start" |

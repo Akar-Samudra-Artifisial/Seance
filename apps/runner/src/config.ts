@@ -48,6 +48,11 @@ export interface RunnerConfig {
   readonly workspaces: string;
   readonly agentsDir: string;
   readonly promptTimeoutMs: number;
+  /**
+   * agent-runner Requirement 9.18: seconds without activity before an idle session is exorcised
+   * (`SEANCE_IDLE_TIMEOUT_S`, 60 to 86400, default 900, both sandbox modes). Absent means 900.
+   */
+  readonly idleTimeoutS?: number;
   /** Per-channel credit cap; undefined means no cap. */
   readonly channelCreditCap: number | undefined;
   readonly inviteRate: number;
@@ -178,6 +183,14 @@ const CPUS = /^[0-9]+(?:\.[0-9]+)?$/;
 const INTEGER = /^[0-9]+$/;
 const PROBE_TARGET = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3}):(\d{1,5})$/;
 const MAX_EGRESS_PROBES = 8;
+
+/** Default of `SEANCE_IDLE_TIMEOUT_S` (agent-runner Requirement 9.18). */
+export const DEFAULT_IDLE_TIMEOUT_S = 900;
+
+/** The `<N>` of `idle for <N> min` (agent-runner Requirement 9.18): minutes, rounded, at least 1. */
+export function idleMinutes(timeoutS: number): number {
+  return Math.max(1, Math.round(timeoutS / 60));
+}
 
 function boundedInteger(env: EnvSource, name: string, fallback: number, min: number, max: number): number {
   const raw = readString(env, name);
@@ -331,6 +344,11 @@ export function loadRunnerConfig(env: EnvSource, cwd: string = process.cwd()): R
     workspaces,
     agentsDir,
     promptTimeoutMs: positiveInteger(env, "SEANCE_PROMPT_TIMEOUT_MS", DEFAULT_PROMPT_TIMEOUT_MS),
+    // Present only when set, so the config of an unconfigured runner is unchanged; the runner applies
+    // DEFAULT_IDLE_TIMEOUT_S (900) when it is absent.
+    ...(readString(env, "SEANCE_IDLE_TIMEOUT_S") !== undefined
+      ? { idleTimeoutS: boundedInteger(env, "SEANCE_IDLE_TIMEOUT_S", DEFAULT_IDLE_TIMEOUT_S, 60, 86_400) }
+      : {}),
     channelCreditCap: parseCreditCap(env),
     inviteRate: positiveInteger(env, "SEANCE_INVITE_RATE", DEFAULT_INVITE_RATE),
     inviters: parseInviters(env),

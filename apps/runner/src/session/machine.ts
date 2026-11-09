@@ -25,7 +25,7 @@ export type MachineEvent =
   | { readonly kind: "turn-ended"; readonly outcome: TurnOutcome }
   | { readonly kind: "cooldown-elapsed" }
   | { readonly kind: "begin-closing" }
-  | { readonly kind: "close"; readonly reason: "exorcism" | "process-exit" | "shutdown" };
+  | { readonly kind: "close"; readonly reason: "exorcism" | "process-exit" | "shutdown" | "idle" };
 
 export type DropReason = "overflow" | "closed" | "closing" | "credit-blocked";
 

@@ -135,6 +135,7 @@ The Kiroween budget is 4,000 credits. `deploy/seance.env.example` sets:
 | `SEANCE_CHANNEL_CREDIT_CAP` | `30` | A channel is blocked at 30 credits until an authenticated inviter with `+o` sends `!reset-credits` |
 | `SEANCE_MAX_AGENT_CHANNELS` | `2` | Channels with agents at once |
 | `SEANCE_MAX_CONTAINERS` | `3` | Agent sessions at once (memory: 3 × 768 MiB on 4 GiB) |
+| `SEANCE_IDLE_TIMEOUT_S` | `900` | Seconds without activity before an abandoned agent is released and its container removed (60 to 86400) |
 | `SEANCE_INVITE_RATE` | `3` | Invites per inviter and minute |
 | `SEANCE_INVITERS` | the judges' account nicks | Only logged-in accounts on the list summon agents |
 

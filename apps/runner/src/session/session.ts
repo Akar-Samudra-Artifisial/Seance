@@ -3,6 +3,7 @@ import type { HarnessSession, SessionEvent } from "../harness/harness.js";
 import type { RunnerLogger } from "../log.js";
 import type { Unsubscribe } from "../ports.js";
 import type { WhoisSnapshot } from "../whois/snapshot.js";
+import type { PendingPermissions } from "./pending-permissions.js";
 import {
   COOLDOWN_MS,
   initialModel,
@@ -56,6 +57,16 @@ export type SessionDeps = {
    * closing, before `turn-ended` is posted, so the next prompt waits for it. Must not reject.
    */
   readonly afterTurn?: () => Promise<void>;
+  /**
+   * agent-runner Requirement 9.18: `onIdle` runs once the Session has been idle (no prompt in
+   * flight, empty queue, no pending permission) and without activity for `timeoutS` seconds.
+   * The timer uses `timers`, never the wall clock. Absent means no idle timeout.
+   */
+  readonly idle?: {
+    readonly timeoutS: number;
+    readonly onIdle: () => void;
+    readonly permissions?: PendingPermissions;
+  };
 };
 
 const MAX_NOTICE_BYTES = 512;
@@ -91,6 +102,8 @@ export class Session {
   readonly #unsubscribe: Unsubscribe;
   #model: SessionModel = initialModel();
   #cooldownTimer: TimerHandle | undefined;
+  #idleTimer: TimerHandle | undefined;
+  #offPermissions: Unsubscribe | undefined;
   /** Id of a prompt whose gate check is pending (no `session/prompt` sent yet). */
   #gating: number | undefined;
   /** True while `afterTurn` runs: the turn is over, so a cancel must not reach the wire. */
@@ -106,6 +119,10 @@ export class Session {
     this.#unsubscribe = deps.harnessSession.onEvent((e) => {
       this.#onHarnessEvent(e);
     });
+    this.#offPermissions = deps.idle?.permissions?.onChange(() => {
+      this.#syncIdle();
+    });
+    this.#syncIdle();
   }
 
   get state(): SessionState {
@@ -146,7 +163,7 @@ export class Session {
 
   enqueue(prompt: Prompt): void {
     if (this.#deps.isBlocked(this.channel)) {
-      this.#deps.sink.dropped(prompt, "credit-blocked");
+      this.#deps.sink.dropped(prompt, "credit-blocked"); // a dropped prompt is not activity
       return;
     }
     this.#post({ kind: "enqueue", prompt });
@@ -160,13 +177,51 @@ export class Session {
     this.#post({ kind: "begin-closing" });
   }
 
-  close(reason: "exorcism" | "process-exit" | "shutdown"): void {
+  close(reason: "exorcism" | "process-exit" | "shutdown" | "idle"): void {
     this.#post({ kind: "close", reason });
     this.#unsubscribe();
+    this.#offPermissions?.();
+    this.#offPermissions = undefined;
+  }
+
+  /**
+   * (Re)starts the idle countdown when the Session is idle, has nothing queued, no pending
+   * permission and is not closing; otherwise clears it. Called after every state change and
+   * every activity, so activity always restarts the full timeout (Requirement 9.18).
+   */
+  #syncIdle(): void {
+    const idle = this.#deps.idle;
+    if (idle === undefined) return;
+    if (this.#idleTimer !== undefined) {
+      this.#deps.timers.clear(this.#idleTimer);
+      this.#idleTimer = undefined;
+    }
+    if (!this.#isQuiet()) return;
+    this.#idleTimer = this.#deps.timers.set(() => {
+      this.#idleTimer = undefined;
+      if (!this.#isQuiet()) return;
+      try {
+        idle.onIdle();
+      } catch (err) {
+        this.#deps.logger?.error("idle handler failed", { agent: this.agent, channel: this.channel, reason: messageOf(err) });
+      }
+    }, idle.timeoutS * 1000);
+  }
+
+  #isQuiet(): boolean {
+    const m = this.#model;
+    return (
+      m.state === "idle" &&
+      m.queue.length === 0 &&
+      m.inFlight === undefined &&
+      !m.closing &&
+      (this.#deps.idle?.permissions?.count ?? 0) === 0
+    );
   }
 
   #post(event: MachineEvent): void {
-    const result = transition(this.#model, event);
+    const before = this.#model;
+    const result = transition(before, event);
     const stateChanged = result.model.state !== this.#model.state;
     this.#model = result.model;
     if (stateChanged) {
@@ -180,6 +235,9 @@ export class Session {
       }
     }
     for (const effect of result.effects) this.#run(effect);
+    // The reducer returns the same model for a no-op event (a cancel while idle, a prompt refused
+    // by a closing or closed session); that is not activity.
+    if (result.model !== before) this.#syncIdle();
   }
 
   #run(effect: Effect): void {
@@ -310,6 +368,10 @@ export class Session {
   }
 
   #onHarnessEvent(e: SessionEvent): void {
+    // A streamed event is activity only while a prompt is in flight; one that arrives while the
+    // session is idle must not restart the countdown (Requirement 9.18).
+    const s = this.#model.state;
+    if (s === "prompting" || s === "cancelling" || s === "cooldown") this.#syncIdle();
     if (e.kind === "metadata" && e.turnDurationMs !== undefined && this.#model.state === "cooldown") {
       this.#post({ kind: "cooldown-elapsed" });
     }

@@ -5,11 +5,14 @@ import { SandboxError } from "../sandbox/errors.js";
 import { inviteKey } from "../session/session-manager.js";
 import type { SessionManager } from "../session/session-manager.js";
 import type { Session } from "../session/session.js";
-import { filesReverted, sessionEnded } from "../services/notices.js";
+import { filesReverted, sessionEnded, sessionIdle } from "../services/notices.js";
 import type { ResetReport, WorktreeManager } from "../worktree/worktree-manager.js";
 
-/** What removed the Agent: `kick`, its own `part`, or `quit` (the `ERROR` from `close()`). */
-export type ExorcismTrigger = "kick" | "part" | "quit";
+/**
+ * What removed the Agent: `kick`, its own `part`, `quit` (the `ERROR` from `close()`), or `idle`
+ * (the idle timeout of agent-runner Requirement 9.18, handled like a kick).
+ */
+export type ExorcismTrigger = "kick" | "part" | "quit" | "idle";
 
 export type ExorcismDeps = {
   readonly host: Pick<IrcHost, "modeOf">;
@@ -31,6 +34,8 @@ export type ExorcismDeps = {
   readonly chanServ?: (channel: string, text: string) => void;
   /** `CreditLedger.amount(agent, channel)`: the `used` value of `WHOIS 320` (Req 6.3, 7.3). */
   readonly creditsOf?: (agent: string, channel: string) => number;
+  /** The idle timeout in minutes, named in the `idle` notice and the PART reason (default 15). */
+  readonly idleMinutes?: number;
 };
 
 const DEFAULT_POLL_MS = 25;
@@ -93,6 +98,16 @@ async function run(deps: ExorcismDeps, session: Session, trigger: ExorcismTrigge
   // Req 6.1: "cancelled" only when a prompt was in flight when the exorcism began.
   const wasPrompting = session.state === "prompting";
 
+  // Req 9.18: one extra ChanServ line before the KICK-style notices.
+  const idleMinutes = deps.idleMinutes ?? 15;
+  if (trigger === "idle" && deps.chanServ !== undefined) {
+    try {
+      deps.chanServ(channel, sessionIdle({ agent, minutes: idleMinutes }));
+    } catch (err) {
+      deps.logger.error("exorcism: idle notice failed", { agent, channel, reason: messageOf(err) });
+    }
+  }
+
   // 0. Refuse new prompts, drop the queue, never drain.
   session.beginClosing();
 
@@ -146,7 +161,8 @@ async function run(deps: ExorcismDeps, session: Session, trigger: ExorcismTrigge
   if (client !== undefined) {
     if (trigger !== "quit" && deps.host.modeOf(channel, agent) !== undefined) {
       try {
-        client.dispatch({ command: "PART", params: [channel, `*** ${agent} has been exorcised`] });
+        const reason = trigger === "idle" ? `idle for ${String(idleMinutes)} min` : `*** ${agent} has been exorcised`;
+        client.dispatch({ command: "PART", params: [channel, reason] });
       } catch (err) {
         deps.logger.error("exorcism: leave failed", { agent, channel, reason: messageOf(err) });
       }

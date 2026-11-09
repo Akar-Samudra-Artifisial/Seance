@@ -4,7 +4,14 @@ import { join } from "node:path";
 import { irc_lower } from "@seance/irc-protocol";
 import { realClock, TimerSet } from "./clock.js";
 import type { Clock } from "./clock.js";
-import { assertInvitersConfigured, ConfigError, HARDENING_DEFAULTS, validateRunnerPaths } from "./config.js";
+import {
+  assertInvitersConfigured,
+  ConfigError,
+  DEFAULT_IDLE_TIMEOUT_S,
+  HARDENING_DEFAULTS,
+  idleMinutes,
+  validateRunnerPaths,
+} from "./config.js";
 import type { RunnerConfig } from "./config.js";
 import { DailyBudget } from "./credits/budget.js";
 import { CreditsFile } from "./credits/credits-file.js";
@@ -34,6 +41,7 @@ import { AgentRegistry } from "./registry/agent-registry.js";
 import { verifyAgentFiles } from "./registry/verify-agent-files.js";
 import { installHungHandler } from "./session/hung-handler.js";
 import { MemorySessionStore } from "./session/memory-session-store.js";
+import { PendingPermissions } from "./session/pending-permissions.js";
 import { SessionManager } from "./session/session-manager.js";
 import type { AgentRegistration } from "./session/session-manager.js";
 import type { Session } from "./session/session.js";
@@ -360,6 +368,7 @@ export function createRunner(opts: RunnerOptions): Runner {
           opNotice: notifyOps,
         })
       : undefined;
+    const idleTimeoutS = config.idleTimeoutS ?? DEFAULT_IDLE_TIMEOUT_S;
     const channelDeps: ChannelSessionDeps = {
       host,
       worktrees,
@@ -370,6 +379,15 @@ export function createRunner(opts: RunnerOptions): Runner {
       logger,
       opNotice: notifyOps,
       ...(commitTurn !== undefined ? { commitTurn } : {}),
+      // agent-runner Requirement 9.18: an idle session is exorcised like a KICK, in both sandbox modes.
+      idle: {
+        timeoutS: idleTimeoutS,
+        onIdle: (session) => {
+          if (shuttingDown || session.state === "closed") return;
+          logger.info("session idle, exorcising", { agent: session.agent, channel: session.channel, idleTimeoutS });
+          void exorcise(session, "idle");
+        },
+      },
     };
     // Requirements 5.2, 5.3: the daily cap and the kill switch refuse new turns everywhere.
     const globallyBlocked = (): boolean => ledger.dailyCapReached() || paused();
@@ -414,6 +432,7 @@ export function createRunner(opts: RunnerOptions): Runner {
     const openRevived = async (reg: AgentRegistration, channel: string): Promise<Session> => {
       const info = await worktrees.ensure(channel);
       let harnessSession: HarnessSession;
+      const permissions = new PendingPermissions();
       try {
         harnessSession = await harness.openSession(reg.profile, {
           cwd: info.realPath,
@@ -423,6 +442,7 @@ export function createRunner(opts: RunnerOptions): Runner {
             channel,
             info.realPath,
             reg.output,
+            permissions,
           ),
         });
       } catch (err) {
@@ -441,6 +461,7 @@ export function createRunner(opts: RunnerOptions): Runner {
           harnessSession,
           reg.output,
           isBlocked,
+          permissions,
         );
         harnessSessions.set(session, harnessSession);
         return session;
@@ -466,6 +487,7 @@ export function createRunner(opts: RunnerOptions): Runner {
       inviters,
       globallyBlocked,
       privateCapacity: () => containersFull(invites.pendingStarts()),
+      idleTimeoutS,
     });
     const sessionManager = sessions;
 
@@ -495,6 +517,7 @@ export function createRunner(opts: RunnerOptions): Runner {
         services.chanServ(channel, text);
       },
       creditsOf: (agent, channel) => ledger.amount(agent, channel),
+      idleMinutes: idleMinutes(idleTimeoutS),
     });
     const triggers = createExorcismTriggers({
       host,
@@ -543,6 +566,7 @@ export function createRunner(opts: RunnerOptions): Runner {
       logger,
       opNotice: notifyOps,
       isBlocked,
+      ...(channelDeps.idle !== undefined ? { idle: channelDeps.idle } : {}),
       services: { chanServ: services.chanServ, workspaces: config.workspaces },
       secrets: [config.kiroApiKey],
       redactor,

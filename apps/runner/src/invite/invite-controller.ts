@@ -25,7 +25,9 @@ import type { ToolsSandboxMode } from "../whois/tools-label.js";
 import type { WhoisSnapshot } from "../whois/snapshot.js";
 import type { WorktreeInfo, WorktreeManager } from "../worktree/worktree-manager.js";
 import type { AllowList } from "./allow-list.js";
+import { PendingPermissions } from "../session/pending-permissions.js";
 import { buildChannelSession, channelPermissionHandler } from "./channel-session.js";
+import type { ChannelSessionDeps } from "./channel-session.js";
 import type { BanList } from "./ban-list.js";
 import type { InviteGate } from "./invite-gate.js";
 
@@ -79,6 +81,8 @@ export type InviteControllerDeps = {
   readonly sessionOpenTimeoutMs?: number;
   /** agent-sandbox Requirement 14 (podman mode only): host-side commit after an `end_turn`. */
   readonly commitTurn?: (agent: string, channel: string) => Promise<void>;
+  /** agent-runner Requirement 9.18: idle timeout of the channel Sessions this controller creates. */
+  readonly idle?: NonNullable<ChannelSessionDeps["idle"]>;
   /**
    * web-client-extras Req 6: decides the `shell(host)` / `shell(sandbox)` label in WHOIS. Required, so
    * no caller can show the wrong label by forgetting it.
@@ -241,6 +245,7 @@ export class InviteController {
     let entry: AgentEntry | undefined;
     let joined = false;
     let harnessSession: HarnessSession | undefined;
+    const permissions = new PendingPermissions();
     const check = (): void => {
       if (isAborted()) throw new AbortedError();
     };
@@ -280,7 +285,7 @@ export class InviteController {
         harnessSession = await this.#withTimeout(
           d.harness.openSession(profile, {
             cwd: info.realPath,
-            onPermission: channelPermissionHandler(d, profile, channel, info.realPath, output),
+            onPermission: channelPermissionHandler(d, profile, channel, info.realPath, output, permissions),
           }),
           d.sessionOpenTimeoutMs ?? SESSION_OPEN_TIMEOUT_MS,
           "session/new timed out",
@@ -304,7 +309,7 @@ export class InviteController {
       const resume =
         (previous !== undefined && previous.state === "closed") || this.#started.has(startedKey);
       this.#started.add(startedKey);
-      const session = buildChannelSession(d, profile, channel, harnessSession, entry.output, d.isBlocked);
+      const session = buildChannelSession(d, profile, channel, harnessSession, entry.output, d.isBlocked, permissions);
       d.onHarnessSession?.(session, harnessSession);
       d.sessions.addChannelSession(session);
       // public-hardening Requirement 4.1: the inviter may prompt this agent here without a mode.
