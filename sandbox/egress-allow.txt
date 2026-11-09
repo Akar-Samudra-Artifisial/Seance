@@ -13,6 +13,10 @@ desktop-release.q.us-east-1.amazonaws.com
 # Token refresh for an IAM Identity Center login (AWS SSO OIDC). Add the other sign-in endpoints
 # listed on the Kiro firewall page for your login method.
 oidc.us-east-1.amazonaws.com
+# Token refresh for a social login (Google/GitHub): POST /refreshToken. The access token lives one
+# hour; after that kiro-cli refreshes on start, and with this name dropped `initialize` hangs until
+# the runner reports "session/new timed out" (EC2, 2026-11-09).
+prod.us-east-1.auth.desktop.kiro.dev
 # Package registries.
 registry.npmjs.org
 pypi.org
