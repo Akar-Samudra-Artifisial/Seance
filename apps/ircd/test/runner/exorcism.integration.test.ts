@@ -92,7 +92,9 @@ async function setup(): Promise<World> {
   await writeFile(stdinLog, "");
   await writeFile(wrapper, `#!/bin/sh\ntee -a '${stdinLog}' | '${FAKE_KIRO_BIN}' "$@"\n`, { mode: 0o755 });
   const clock = new ManualClock();
-  const fx = await startIntegration({ clock, script: SCRIPT, env: { SEANCE_KIRO_BIN: wrapper } });
+  // `op` sends more lines than the default flood burst (10) faster than the wall-clock refill
+  // (1/s) on a fast host; lift the burst so flood control never closes the test's own link.
+  const fx = await startIntegration({ clock, script: SCRIPT, env: { SEANCE_KIRO_BIN: wrapper }, floodBurst: 10_000 });
   const op = await fx.connectClient("op");
   world = { fx, clock, op, scratch, stdinLog };
   return world;
