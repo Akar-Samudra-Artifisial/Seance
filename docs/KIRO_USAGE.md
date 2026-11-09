@@ -461,6 +461,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: `tools/smoke-wss.mjs` fixes (reply only after the prompt was delivered, SIGINT/SIGTERM and socket errors kick the agent, output cleaned and redacted, secret input checks, JOIN/INVITE error numerics), DEPLOY.md note, tests in `sandbox-files.test.ts`
 - Notes: a scripted fake IRC server showed that agent chatter during the 1.5 s delay no longer counts as the reply
 
+### 2026-11-10 — Plain-secret login and /kick with a channel (browser test of the deployed host)
+- Kiro features: specs web-client-basic (tasks 19, 20; requirements 3.5, 7.4) and public-hardening (task 17; requirement 1.5a), steering (web-ui, irc-protocol, security)
+- Produced: the web client sends `PASS <nick>:<secret>` for a plain password, the ircd accepts `<nick>:<server password>` as a guest, the connect dialog gets a help text, `/kick [<channel>] <nick>[ <reason>]`, tests in the store, dialog, parser and ircd suites, docs
+- Notes: found by using the deployed host in a browser; the two changes depend on each other (the prefix would have broken a plain server password), so the ircd side has its own test for every PASS form
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

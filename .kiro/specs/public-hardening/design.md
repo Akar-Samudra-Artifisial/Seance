@@ -50,6 +50,7 @@ authed + pendingNick + user --> reserved check --> setNick --> registered
 ```
 
 - `PASS` while a verification is pending is ignored (one at a time).
+- `handleAuthPass` order (requirement 1.5a): (1) the exact server password is a Guest; (2) `<nick>:<secret>` is verified as an Account; (3) when that fails, or no accounts exist, and a server password is set and the part after the FIRST `:` equals it (`safeEqual`), the connection is a Guest; (4) otherwise a strike. Step 2 before step 3 keeps an Account whose secret equals the server password an Account. The web client prefixes a plain password with the nick, so a server password typed there arrives as `<nick>:<serverpw>`.
 - With only a server password and no accounts, Auth_Mode still defers the claim. The existing 464 behaviour for a missing or wrong password is kept, so a client that sends `NICK`/`USER` without `PASS` gets `464` and the connection is closed.
 - Outside Auth_Mode (local development) nothing changes: `NICK` claims at once, as today. Existing tests run in this mode.
 - Virtual clients are exempt from auth: they are in-process and created only by the runner. This also fixes a latent bug: agents could not register on a password-protected server.

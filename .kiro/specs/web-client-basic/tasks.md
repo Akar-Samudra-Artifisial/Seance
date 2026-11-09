@@ -380,6 +380,14 @@ All code is TypeScript (strict, ESM). The IRC_Core in `apps/web/src/irc` imports
 - [x] 18. Final checkpoint - Ensure all tests pass
   - Run `pnpm --filter @seance/web typecheck`, `pnpm --filter @seance/web test` and `pnpm --filter @seance/web lint`, then try the root `pnpm typecheck && pnpm test` (report if turbo times out and fall back to per-package runs). Ensure all tests pass, ask the user if questions arise.
 
+- [x] 19. Login with a plain secret (requirement 3.5, follow-up 2026-11-10)
+  - [x] 19.1 `client-store.ts` sends `PASS <nick>:<password>` for a password without `:` and unchanged otherwise; `ConnectDialog.tsx` shows the help text `Account secret, or the server password`; tests in `client-store.test.ts` and `ConnectDialog.test.tsx` (the ircd side is public-hardening task 17)
+    - _Requirements: 3.5_
+
+- [x] 20. `/kick [<channel>] <nick>[ <reason>]` (requirement 7.4, follow-up 2026-11-10)
+  - [x] 20.1 `command-parser.ts` takes an explicit channel; usage error `/kick [<channel>] <nick>[ <reason>]`; tests in `command-parser.test.ts`; README and DEPLOY.md mention both forms
+    - _Requirements: 7.4_
+
 ## Notes
 
 - Tasks marked with `*` are optional polish and can be skipped for the demo: the mention sound, the component tests and extra accessibility niceties.

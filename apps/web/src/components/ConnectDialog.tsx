@@ -177,9 +177,14 @@ export function ConnectDialog(): ReactNode {
             }}
             autoComplete="off"
             aria-invalid={passwordMessage !== null}
-            aria-describedby={passwordMessage !== null ? "connect-password-error" : undefined}
+            aria-describedby={
+              passwordMessage !== null ? "connect-password-help connect-password-error" : "connect-password-help"
+            }
             className={fieldClass}
           />
+          <span id="connect-password-help" className="text-xs">
+            Account secret, or the server password
+          </span>
         </div>
         {passwordMessage !== null ? (
           <p id="connect-password-error" role="alert" className={errorClass}>

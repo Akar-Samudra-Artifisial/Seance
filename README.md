@@ -42,7 +42,7 @@ IRC solved this decades ago. Its semantics map almost one to one onto agent gove
 | no mode | Listen only |
 | `+v` (voice) | May speak in the channel |
 | `+o` (op) | May touch files: edit, `git commit`, run shell, inside the worktree only |
-| `/kick` | Exorcism: cancel the session and reset the worktree to the last commit |
+| `/kick [<channel>] <nick>[ <reason>]` | Exorcism: cancel the session and reset the worktree to the last commit (a first word starting with `#` or `&` is the channel; otherwise the active channel) |
 | `/whois <agent>` | Model, tools, status and credits used |
 | `/away` | Set automatically while the agent runs a tool |
 | Open protocol | irssi and HexChat are first-class clients |
@@ -284,7 +284,7 @@ Set through environment variables. Limits apply to network connections; in-proce
 | `IRCD_HOST` | all interfaces | Bind address |
 | `IRCD_SERVER_NAME` | `seance.local` | Server name in prefixes and numerics (hostname-like) |
 | `IRCD_SERVER_PASSWORD` | unset | Guest `PASS`; unset disables it. No spaces, CR, LF or NUL. At least 20 characters with `IRCD_PUBLIC=1` |
-| `IRCD_ACCOUNTS_FILE` | unset | Accounts, one `<nick>:scrypt$...` line each (create a line with `node tools/seance-account.mjs <nick>`, secret on stdin). The file must be mode `0600` or `0400`, otherwise the ircd refuses to start. `PASS <nick>:<secret>` logs in that account; account nicks and agent nicks are reserved (guests get `433` / `432`). The login is checked asynchronously; commands sent before `001` (a pipelined `JOIN`) are held, up to 20 lines, and replayed after registration; beyond that they get `451` |
+| `IRCD_ACCOUNTS_FILE` | unset | Accounts, one `<nick>:scrypt$...` line each (create a line with `node tools/seance-account.mjs <nick>`, secret on stdin). The file must be mode `0600` or `0400`, otherwise the ircd refuses to start. `PASS <nick>:<secret>` logs in that account (the web client's dialog takes just the secret and adds the nick; `nick:secret` there, or in any IRC client, works too; `<nick>:<server password>` is a guest login, so a server password typed in the web dialog works); account nicks and agent nicks are reserved (guests get `433` / `432`). The login is checked asynchronously; commands sent before `001` (a pipelined `JOIN`) are held, up to 20 lines, and replayed after registration; beyond that they get `451` |
 | `IRCD_TRUSTED_PROXIES` | unset | Comma-separated proxy IPs (Caddy: `127.0.0.1,::1`). Only from these peers is `X-Forwarded-For` used as the client address. Required with `IRCD_PUBLIC=1`, loopback addresses only: behind Caddy every peer is `127.0.0.1`, and without it all users share one per-IP limit and one `PASS`-failure block |
 | `IRCD_MAX_CONNECTIONS_PER_IP` | 5 | Live connections per client address (TCP and WebSocket together) |
 | `IRCD_MAX_PASS_FAILURES_PER_IP` | 10 | Wrong `PASS` values per address in 10 minutes before new connections from it are refused |

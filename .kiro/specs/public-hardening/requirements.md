@@ -39,6 +39,7 @@ Before the deploy-aws spec puts Séance on the internet for the Kiroween judges,
 3. WHEN `PASS <nick>:<secret>` matches an Account, THE client SHALL be authenticated as that Account. Its `NICK` SHALL equal the Account nick (case-mapped), otherwise `432`.
 4. WHEN `PASS <server password>` matches, THE client SHALL be a Guest. A Guest SHALL get `433` for an Account nick and `432` for an agent registry nick, at registration and on a later `NICK`.
 5. An authenticated Account SHALL NOT change its nick (`432`).
+5a. (Follow-up, deploy test of 2026-11-10.) WHEN a server password is set and `PASS <nick>:<value>` does not match an Account (or no accounts are configured) AND `<value>`, the part after the FIRST `:`, equals the server password (compared with `safeEqual`), THE client SHALL be a Guest instead of getting a strike. The order is unchanged: an exact server-password match is a Guest, `<nick>:<secret>` is verified as an Account first, so an Account whose secret equals the server password still logs in as the Account. Any other wrong value SHALL strike exactly as before (3 strikes close the connection; the per-address failures are unchanged). The web client sends a plain password as `<nick>:<password>`, which is why this form exists.
 6. A `tools/` script SHALL create a hash from a secret read on stdin. No secret or hash SHALL be committed.
 7. Secrets SHALL be compared through scrypt with `timingSafeEqual`, and verification SHALL NOT block the event loop.
 

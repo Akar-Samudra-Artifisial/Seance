@@ -85,7 +85,7 @@ describe("client store", () => {
     expect(a.sock().sent).toEqual(["NICK alice\r\n", "USER alice 0 * alice\r\n"]);
     const b = setup();
     register(b, "pw");
-    expect(b.sock().sent[0]).toBe("PASS pw\r\n");
+    expect(b.sock().sent[0]).toBe("PASS alice:pw\r\n");
     expect(b.store.getState().client.phase).toBe("registering");
   });
 
@@ -178,7 +178,29 @@ describe("client store", () => {
   it("registration frames are PASS, NICK, USER in order with a password", () => {
     const t = setup();
     register(t, "pw");
-    expect(t.sock().sent).toEqual(["PASS pw\r\n", "NICK alice\r\n", "USER alice 0 * alice\r\n"]);
+    expect(t.sock().sent).toEqual(["PASS alice:pw\r\n", "NICK alice\r\n", "USER alice 0 * alice\r\n"]);
+  });
+
+  it("sends a plain secret as <nick>:<secret> and a value with a colon unchanged", () => {
+    const plain = setup();
+    register(plain, "s3cret");
+    expect(plain.sock().sent[0]).toBe("PASS alice:s3cret\r\n");
+
+    const account = setup();
+    register(account, "bob:s3cret");
+    expect(account.sock().sent[0]).toBe("PASS bob:s3cret\r\n");
+
+    const trailing = setup();
+    register(trailing, "a:b:c");
+    expect(trailing.sock().sent[0]).toBe("PASS a:b:c\r\n");
+  });
+
+  it("sends no PASS for an undefined or empty password", () => {
+    for (const password of [undefined, ""]) {
+      const t = setup();
+      register(t, password);
+      expect(t.sock().sent.some((line) => line.startsWith("PASS"))).toBe(false);
+    }
   });
 
   it("omits PASS for an empty password", () => {

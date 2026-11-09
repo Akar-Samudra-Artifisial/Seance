@@ -208,6 +208,31 @@ describe("command details", () => {
   });
 });
 
+describe("/kick [<channel>] <nick>[ <reason>]", () => {
+  it("uses the active channel when the first word is not a channel", () => {
+    expect(msgs("/kick coder", channel)).toEqual([{ command: "KICK", params: ["#Ghosts", "coder"] }]);
+  });
+
+  it("takes an explicit channel (# or &) and keeps the reason whole", () => {
+    expect(msgs("/kick #b coder bye now", channel)).toEqual([{ command: "KICK", params: ["#b", "coder", "bye now"] }]);
+    expect(msgs("/kick &local coder", status)).toEqual([{ command: "KICK", params: ["&local", "coder"] }]);
+    expect(msgs("/kick #b coder", query)).toEqual([{ command: "KICK", params: ["#b", "coder"] }]);
+  });
+
+  it("reports the new usage when the nick is missing or there is no channel", () => {
+    for (const [line, ctx] of [
+      ["/kick #b", channel],
+      ["/kick", channel],
+      ["/kick coder", status],
+      ["/kick coder", query],
+    ] as const) {
+      const r = parseInput(line, ctx);
+      expect(r.kind).toBe("error");
+      expect(r.kind === "error" && r.text).toBe("/kick: usage: /kick [<channel>] <nick>[ <reason>]");
+    }
+  });
+});
+
 describe("usage errors per command", () => {
   const cases: readonly (readonly [string, string, InputContext])[] = [
     ["join", "/join", channel],

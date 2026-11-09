@@ -253,7 +253,17 @@ function handleAuthPass(ctx: RouterContext, client: Client, given: string): void
   }
   const colon = given.indexOf(":");
   const accounts = ctx.accounts;
+  // `<nick>:<serverpw>` is a guest login too: the web client prefixes a plain password with the nick,
+  // so a server password typed there arrives in this form. Only tried after the account check failed.
+  const prefixedGuest =
+    ctx.serverPassword !== undefined && colon >= 0 && safeEqual(given.slice(colon + 1), ctx.serverPassword);
   if (accounts === undefined || colon < 1) {
+    if (prefixedGuest) {
+      state.kind = "guest";
+      ctx.connections.acceptPass(client);
+      tryRegister(ctx, client);
+      return;
+    }
     strike(ctx, client);
     return;
   }
@@ -263,6 +273,12 @@ function handleAuthPass(ctx: RouterContext, client: Client, given: string): void
   accounts.verify(nick, secret).then(
     (ok) => {
       if (!stillPending(ctx, client)) return;
+      if (!ok && prefixedGuest) {
+        state.kind = "guest";
+        ctx.connections.acceptPass(client);
+        tryRegister(ctx, client);
+        return;
+      }
       if (!ok) {
         strike(ctx, client);
         releaseHeld(ctx, client, state); // the login failed: each held line gets its 451 now

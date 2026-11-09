@@ -58,7 +58,7 @@ Do not continue to the Kiro login while a row fails: fix the host, then run the 
 
 ## 4. Accounts and inviters
 
-Judges log in with `PASS <nick>:<secret>`. For each judge (secret on stdin, never on the command line):
+Judges log in with `PASS <nick>:<secret>`. In the web client's connect dialog they type only the secret in the password field: the client adds the nick, so `PASS <nick>:<secret>` goes out. Typing `nick:secret` there also works, and it is the form every other IRC client sends. The server password typed in the dialog gives a guest login too (the ircd accepts `<nick>:<server password>` as a guest). For each judge (secret on stdin, never on the command line):
 
 ```sh
 node /opt/seance/tools/seance-account.mjs judge1 | sudo -u seance tee -a /etc/seance/accounts

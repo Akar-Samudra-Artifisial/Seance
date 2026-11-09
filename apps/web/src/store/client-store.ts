@@ -339,7 +339,12 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       const endpoint = describeEndpoint(last.serverUrl);
       status("join", `Connected to ${endpoint.host}${endpoint.tls ? " (TLS)" : ""}`);
       const { nick, password } = last;
-      if (password !== undefined && password !== "") sendMessage(s, { command: "PASS", params: [password] });
+      if (password !== undefined && password !== "") {
+        // A plain secret is an account login, which the ircd reads as `<nick>:<secret>`; a value that
+        // already has a colon is sent as typed (any IRC client's form). The value is never logged.
+        const pass = password.includes(":") ? password : `${nick}:${password}`;
+        sendMessage(s, { command: "PASS", params: [pass] });
+      }
       sendMessage(s, { command: "NICK", params: [nick] });
       sendMessage(s, { command: "USER", params: [nick, "0", "*", nick] });
     };

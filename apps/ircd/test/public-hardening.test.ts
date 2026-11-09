@@ -231,6 +231,99 @@ describe("Auth_Mode registration (Requirement 1)", () => {
     });
   });
 
+  describe("PASS forms of the web client (a plain value gets the nick prefixed)", () => {
+    const BOB_ACCOUNTS: Accounts = parseAccounts(
+      `Alice:${hashSecret(ALICE_SECRET, FAST)}\nBob:${hashSecret(SERVER_PASSWORD, FAST)}\n`,
+    );
+
+    it("a plain server password is a guest", () => {
+      for (const withAccounts of [false, true]) {
+        const { connect } = setup({ password: SERVER_PASSWORD, ...(withAccounts ? { accounts } : {}) });
+        const g = connect();
+        g.run("PASS", SERVER_PASSWORD);
+        g.register("guest1");
+        expect(g.client.registered).toBe(true);
+        expect(g.client.account).toBeUndefined();
+      }
+    });
+
+    it("<nick>:<server password> is a guest too, with and without accounts configured", async () => {
+      for (const withAccounts of [false, true]) {
+        const { connect } = setup({ password: SERVER_PASSWORD, ...(withAccounts ? { accounts } : {}) });
+        const g = connect();
+        g.run("PASS", `guest1:${SERVER_PASSWORD}`);
+        g.register("guest1");
+        await vi.waitFor(() => {
+          expect(g.client.registered).toBe(true);
+        });
+        expect(g.client.account).toBeUndefined();
+        expect(g.close).not.toHaveBeenCalled();
+      }
+    });
+
+    it("a valid account still logs in as the account", async () => {
+      const { connect } = setup({ password: SERVER_PASSWORD, accounts });
+      const a = connect();
+      a.run("PASS", `alice:${ALICE_SECRET}`);
+      a.register("alice");
+      await vi.waitFor(() => {
+        expect(a.client.registered).toBe(true);
+      });
+      expect(a.client.account).toBe("Alice");
+    });
+
+    it("an account whose secret equals the server password logs in as the account", async () => {
+      const { connect } = setup({ password: SERVER_PASSWORD, accounts: BOB_ACCOUNTS });
+      const b = connect();
+      b.run("PASS", `bob:${SERVER_PASSWORD}`);
+      b.register("bob");
+      await vi.waitFor(() => {
+        expect(b.client.registered).toBe(true);
+      });
+      expect(b.client.account).toBe("Bob");
+      // The same value for a nick that is not an account is a guest, which may not take an account nick.
+      const g = connect();
+      g.run("PASS", `carol:${SERVER_PASSWORD}`);
+      g.register("bob");
+      await vi.waitFor(() => {
+        expect(codes(g.sent)).toContain("433");
+      });
+      expect(g.client.account).toBeUndefined();
+    });
+
+    it("a wrong value is a strike and three close the connection, with accounts or without", async () => {
+      for (const withAccounts of [false, true]) {
+        let settled = 0;
+        const counting: Accounts = {
+          size: accounts.size,
+          has: (n) => accounts.has(n),
+          nameOf: (n) => accounts.nameOf(n),
+          verify: (n, s) => accounts.verify(n, s).finally(() => {
+            settled += 1;
+          }),
+        };
+        const { connect } = setup({ password: SERVER_PASSWORD, ...(withAccounts ? { accounts: counting } : {}) });
+        const c = connect();
+        for (const wrong of ["alice:wrong-1", "guest1:wrong-2"]) {
+          c.run("PASS", wrong);
+          if (withAccounts) {
+            const target = settled + 1;
+            await vi.waitFor(() => {
+              expect(settled).toBe(target);
+            });
+          }
+          expect(c.close).not.toHaveBeenCalled();
+          expect(c.client.registered).toBe(false);
+        }
+        c.run("PASS", "alice:wrong-3");
+        await vi.waitFor(() => {
+          expect(c.close).toHaveBeenCalledTimes(1);
+        });
+        expect(codes(c.sent)).toEqual(["464"]);
+      }
+    });
+  });
+
   it("trusted in-process clients (agents) skip PASS and may use agent nicks", () => {
     const { connect } = setup({ password: SERVER_PASSWORD, accounts });
     const agent = connect({ virtual: true, trusted: true });

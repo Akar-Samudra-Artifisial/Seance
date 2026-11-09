@@ -85,6 +85,17 @@ describe("ConnectDialog", () => {
     expect((screen.getByLabelText("Nick") as HTMLInputElement).value).toBe("alice");
   });
 
+  it("explains the password field under it and keeps its label", () => {
+    setup();
+    expect(screen.getByText("Account secret, or the server password")).toBeTruthy();
+    const input = screen.getByLabelText("Password (optional)");
+    expect(input.getAttribute("id")).toBe("connect-password");
+    expect(input.getAttribute("type")).toBe("password");
+    const help = document.getElementById("connect-password-help");
+    expect(help?.textContent).toBe("Account secret, or the server password");
+    expect(input.getAttribute("aria-describedby")).toContain("connect-password-help");
+  });
+
   it("focuses the nick field when empty", () => {
     setup();
     expect(document.activeElement).toBe(screen.getByLabelText("Nick"));

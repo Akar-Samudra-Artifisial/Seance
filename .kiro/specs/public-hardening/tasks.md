@@ -127,6 +127,10 @@ ircd first (accounts, registration, client address, guard), then the runner (inv
   - [x] 16.5 `docs/DEPLOY.md`: Caddy overwrites `X-Forwarded-For` (Caddyfile snippet); hard disk quota for `SEANCE_WORKSPACES`
     - _Requirements: 14.3_
 
+- [x] 17. Guest login through `<nick>:<server password>` (requirement 1.5a)
+  - [x] 17.1 `handleAuthPass`: after the exact server-password check and the account check, accept `<nick>:<server password>` as a Guest instead of a strike; wrong values still strike; tests in `test/public-hardening.test.ts` (plain password, prefixed password with and without accounts, valid account, account secret equal to the server password, wrong value, three wrong closes)
+    - _Requirements: 1.4, 1.5a_
+
 ## Notes
 
 - Outside Auth_Mode the ircd behaves as before, so the existing ircd tests run unchanged.

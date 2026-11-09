@@ -157,9 +157,13 @@ const inviteCommand: CommandHandler = (args, ctx) => {
 };
 
 const kickCommand: CommandHandler = (args, ctx) => {
-  const channel = activeChannel(ctx);
-  const [nick, reason] = splitFirst(args);
-  if (nick.length === 0 || channel === undefined) return usageError("kick", "/kick <nick>[ <reason>] (in a channel window)");
+  // `/kick [<channel>] <nick>[ <reason>]`: a first word starting with # or & is the channel;
+  // otherwise the active channel is used, as before.
+  const [first, afterFirst] = splitFirst(args);
+  const explicit = /^[#&]/.test(first);
+  const channel = explicit ? first : activeChannel(ctx);
+  const [nick, reason] = splitFirst(explicit ? afterFirst : args);
+  if (nick.length === 0 || channel === undefined) return usageError("kick", "/kick [<channel>] <nick>[ <reason>]");
   return send([{ command: "KICK", params: reason.length === 0 ? [channel, nick] : [channel, nick, reason] }]);
 };
 

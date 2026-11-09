@@ -270,7 +270,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore>;
 
 Store responsibilities:
 
-- On `connect`: validate nick (`isValidNick`) and URL (`validateServerUrl`); on failure set inline errors and stop. Otherwise create the socket, apply `socket-open` → send `PASS` (only if set), `NICK`, `USER`.
+- On `connect`: validate nick (`isValidNick`) and URL (`validateServerUrl`); on failure set inline errors and stop. Otherwise create the socket, apply `socket-open` → send `PASS` (only if set; a password without `:` is sent as `<nick>:<password>`, one with `:` unchanged, because the ircd reads `<nick>:<secret>` as an account and the exact server password as a guest), `NICK`, `USER`. `/kick [<channel>] <nick>[ <reason>]` treats a first word starting with `#` or `&` as the channel and uses the Active_Window channel otherwise. The password help text sits under the field in `ConnectDialog` (`#connect-password-help`).
 - On each frame: reject non-string frames (diagnostic line, ignore); a string frame longer than 64 KiB (`TextEncoder` byte length, checked before framing) closes the socket and writes an error line (R15.4); then `LineFramer.push`, `parse`, `reduce`, send outbound messages with `serialize` (one frame per message).
 - `LineFramer` overlong events and `parse` errors produce a diagnostic line in the Status_Window and processing continues (R11.8).
 - `try`/`catch` around `reduce` and around each effect: on failure write `error: <step> failed on <COMMAND>: <message>` to the Status_Window and continue (R15.7).
