@@ -234,11 +234,19 @@ describe("Kiro login refresh (deploy-aws)", () => {
       at("if live_wal_busy; then"),
       at('py backup "$live_db" "$copy_db"'),
       at("timeout 60 kiro-cli whoami"),
-      at('now=$(py expiry "$live_db"'),
+      at('now=$(py live-expiry "$live_db"'),
       at('py checkpoint "$copy_db"'),
+      at('sync "$staged"'),
       at('mv -f -- "$staged" "$live_db"'),
     ];
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // Leftovers of a killed run are removed right after the lock (they hold a token).
+    expect(at('rm -f -- "$AUTH_DIR"/.data.sqlite3.*')).toBeGreaterThan(at("flock -n 9"));
+    expect(at('rm -f -- "$AUTH_DIR"/.data.sqlite3.*')).toBeLessThan(at("if live_wal_busy; then"));
+    expect(text).toContain("|| sync"); // plain sync when the file argument is not supported
+    // The live database is only read, so it is opened read-only; the copy stays read-write.
+    expect(text).toContain("?mode=ro");
+    expect(text).toContain("uri=True");
     expect(text).toContain("login changed during refresh");
     expect(text).toContain(".backup(dst)");
     expect(text).not.toMatch(/\bcp -a\b/); // a live database is never copied with cp
@@ -248,6 +256,14 @@ describe("Kiro login refresh (deploy-aws)", () => {
     expect(text).toContain('env -i "HOME=$work"');
     expect(text).toMatch(/\?"?, \(KEY,\)/); // parameterised queries
     expect(text).not.toContain("KIRO_API_KEY");
+  });
+
+  it("bootstrap.sh fixes the ownership of the auth dir without following symlinks", () => {
+    const line = read("deploy/bootstrap.sh")
+      .split("\n")
+      .find((l) => l.includes('"$AUTH_DIR"') && /\bchown\b/.test(l));
+    expect(line).toBeDefined();
+    expect(line).toMatch(/chown -hR /);
   });
 
   it("CI shellcheck covers deploy/*.sh, so the script is checked", () => {
@@ -301,6 +317,9 @@ for name, rows in (("login.db", [("kirocli:social:token", json.dumps({"access_to
       expect((await run("moved", "2000-01-01T00:00:00Z", "1999-01-01T00:00:00Z")).code).toBe(1);
       expect((await run("checkpoint", db)).code).toBe(0);
       expect((await run("expiry", join(dir, "empty.db"))).code).toBe(3);
+      // The read-only open reads the same row, and cannot write to the database.
+      expect(await run("live-expiry", db)).toEqual({ stdout: "2000-01-01T00:00:00Z", code: 0 });
+      expect((await run("live-expiry", join(dir, "missing.db"))).code).toBe(4);
       // The backup API copies the database; changing the copy leaves the original alone.
       const copy = join(dir, "copy.db");
       expect((await run("backup", db, copy)).code).toBe(0);

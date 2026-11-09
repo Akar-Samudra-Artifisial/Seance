@@ -50,12 +50,15 @@ File-writing tasks first (Terraform, host files, CI, runbook), then the operator
 - [x] 7. Kiro login refresh (criterion 5.5)
   - [x] 7.1 `deploy/seance-kiro-refresh.sh` (POSIX sh, shellcheck clean): forced refresh on a copy, atomic install only when `expires_at` moved forward and the live WAL is empty, no secrets in output
     - _Requirements: 5.5_
-  - [x] 7.2 `deploy/systemd/seance-kiro-refresh.{service,timer}`; `bootstrap.sh` installs the script (0750) and enables the timer with the agents; `update.sh` reinstalls both
+  - [x] 7.2 `deploy/systemd/seance-kiro-refresh.{service,timer}`; `bootstrap.sh` installs the script (root-owned, 0755) and enables the timer with the agents; `update.sh` reinstalls both
     - _Requirements: 5.5_
   - [x] 7.3 `docs/DEPLOY.md` steps 5 and 9, `docs/SANDBOX.md` (why a copy, Kiro#4847 and #9783, egress), `docs/KIRO_USAGE.md`; tests in `apps/runner/test/sandbox-files.test.ts`; CI `infra` already runs `shellcheck deploy/*.sh`
     - _Requirements: 5.3, 5.5, 6.2_
 
   - [x] 7.4 Review fixes: run as `seance` (no root, no `runuser`/`chown`), `flock`, WAL check before the network, SQLite backup API, abort when the live login changed, timer on `OnUnitInactiveSec`, unit hardening, `update.sh` enables the timer, DEPLOY.md re-login stops and starts the timer; tests in `sandbox-files.test.ts`
+    - _Requirements: 5.5_
+
+  - [x] 7.5 Small fixes: delete leftover `.data.sqlite3.*` staged files after taking the lock; `sync` the staged file before the rename; open the live database read-only (`mode=ro`) where it is only read; `bootstrap.sh` fixes the auth dir ownership with `chown -hR`; task 7.2 text says 0755; tests in `sandbox-files.test.ts`
     - _Requirements: 5.5_
 
 ## Notes
@@ -78,7 +81,8 @@ File-writing tasks first (Terraform, host files, CI, runbook), then the operator
     { "id": 7, "tasks": ["5"] },
     { "id": 8, "tasks": ["6"] },
     { "id": 9, "tasks": ["7.1", "7.2", "7.3"] },
-    { "id": 10, "tasks": ["7.4"] }
+    { "id": 10, "tasks": ["7.4"] },
+    { "id": 11, "tasks": ["7.5"] }
   ]
 }
 ```

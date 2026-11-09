@@ -446,6 +446,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: the refresh now runs as `seance` in a hardened unit (no root, `flock`, SQLite backup API, abort when the live login changed), `OnUnitInactiveSec` timer, `update.sh` enables the timer, tests in `sandbox-files.test.ts`
 - Notes: the review found a root-to-seance symlink escalation; a local run under dash with shims found that a missing `flock` was read as "another refresh is running"
 
+### 2026-11-10 — Kiro login refresh small fixes (deploy-aws task 7.5)
+- Kiro features: spec deploy-aws task 7.5 (and the 7.2 text aligned to 0755), steering (security), hook guard-shell
+- Produced: leftover staged files removed after the lock, `sync` before the rename, live database opened read-only (`mode=ro`), `chown -hR` on the auth dir in `bootstrap.sh`, tests in `sandbox-files.test.ts`
+- Notes: `pnpm typecheck` regenerated `apps/web/next-env.d.ts`; it was left alone and flagged for `git checkout`
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

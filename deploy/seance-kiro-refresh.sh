@@ -41,9 +41,10 @@ fail() {
 
 # SQLite access with parameterised queries. Subcommands:
 #   expiry <db>            print expires_at of the login row (exit 3: no row or no table)
+#   live-expiry <db>       the same for the LIVE database, opened read-only
 #   expire <db> <value>    set expires_at of the login row
 #   moved <before> <after> exit 0 when <after> is later than <before>
-#   backup <src> <dst>     copy a live database with sqlite3.Connection.backup
+#   backup <src> <dst>     copy a live database (opened read-only) with sqlite3.Connection.backup
 #   checkpoint <db>        PRAGMA wal_checkpoint(TRUNCATE); exit 5 when it could not finish
 py() {
   python3 - "$@" <<'PY'
@@ -51,8 +52,16 @@ import json
 import sqlite3
 import sys
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 KEY = "kirocli:social:token"
+
+
+def connect(path, read_only=False):
+    # The live database is only ever read, so it is opened read-only; the copy stays read-write.
+    if read_only:
+        return sqlite3.connect("file:" + quote(path) + "?mode=ro", uri=True, timeout=10)
+    return sqlite3.connect(path, timeout=10)
 
 
 def parse(text):
@@ -85,7 +94,7 @@ def main(argv):
     if cmd == "moved":
         return 0 if parse(argv[3]) > parse(argv[2]) else 1
     if cmd == "backup":
-        src = sqlite3.connect(argv[2], timeout=10)
+        src = connect(argv[2], read_only=True)
         dst = sqlite3.connect(argv[3])
         try:
             src.backup(dst)
@@ -93,7 +102,7 @@ def main(argv):
             dst.close()
             src.close()
         return 0
-    con = sqlite3.connect(argv[2], timeout=10)
+    con = connect(argv[2], read_only=(cmd == "live-expiry"))
     try:
         if cmd == "checkpoint":
             busy, _log, _done = con.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
@@ -102,7 +111,7 @@ def main(argv):
         if found is None:
             return 3
         shape, raw = found
-        if cmd == "expiry":
+        if cmd in ("expiry", "live-expiry"):
             if shape == "column":
                 value = raw
             else:
@@ -150,6 +159,9 @@ if [ "$status" -ne 0 ]; then
   log "another refresh is running"
   exit 0
 fi
+
+# 1a'. Staged copies of an earlier run that was killed (they hold a token). Safe under the lock.
+rm -f -- "$AUTH_DIR"/.data.sqlite3.*
 
 # 1b. Before any network call: a non-empty write-ahead log means a kiro-cli process is writing.
 live_wal_busy() { [ -s "$live_db-wal" ]; }
@@ -202,7 +214,7 @@ fi
 log "kiro-cli whoami exited $status; token refreshed on the copy (expires $new)"
 
 # 3a. A login that changed meanwhile (a manual re-login) is never overwritten.
-now=$(py expiry "$live_db" 2>/dev/null) || now=''
+now=$(py live-expiry "$live_db" 2>/dev/null) || now=''
 if [ "$now" != "$old" ]; then
   fail "refresh aborted, login changed during refresh (login kept, expires ${now:-unreadable})"
 fi
@@ -215,6 +227,8 @@ py checkpoint "$copy_db" || fail "refresh FAILED, login kept (expires $old): the
 staged=$(mktemp "$AUTH_DIR/.$DB_NAME.XXXXXX")
 cat -- "$copy_db" > "$staged"
 chmod 0600 "$staged"
+# Flush the file to disk first, so a power loss after the rename cannot leave an empty login.
+sync "$staged" 2>/dev/null || sync
 mv -f -- "$staged" "$live_db"
 staged=''
 log "refreshed, login expires $new (was $old)"

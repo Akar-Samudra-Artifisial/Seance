@@ -428,7 +428,8 @@ install_units() {
 ready_for_agents() {
   local blocked=0
   if [ -d "$AUTH_DIR" ]; then
-    chown -R "$SEANCE_USER:$SEANCE_USER" "$AUTH_DIR"
+    # -h: never follow a symlink inside the seance-owned directory, so it cannot redirect root.
+    chown -hR "$SEANCE_USER:$SEANCE_USER" "$AUTH_DIR"
     chmod 0700 "$AUTH_DIR"
   fi
   # The egress rule is stopped at this point (or was never loaded), so whoami can reach Kiro.
