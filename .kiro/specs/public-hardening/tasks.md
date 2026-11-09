@@ -130,6 +130,10 @@ ircd first (accounts, registration, client address, guard), then the runner (inv
 - [x] 17. Guest login through `<nick>:<server password>` (requirement 1.5a)
   - [x] 17.1 `handleAuthPass`: after the exact server-password check and the account check, accept `<nick>:<server password>` as a Guest instead of a strike; wrong values still strike; tests in `test/public-hardening.test.ts` (plain password, prefixed password with and without accounts, valid account, account secret equal to the server password, wrong value, three wrong closes)
     - _Requirements: 1.4, 1.5a_
+  - [x] 17.2 Security review fix (Medium): the fallback no longer costs a scrypt per connection. A nick that is not an account is accepted as a Guest at once (no `verify`); an account nick is verified first, and a failure with the server password records `passFailures` (no strike) before the Guest is accepted; `docs/DEPLOY.md` warns not to reuse the server password as an account secret; tests in `test/public-hardening.test.ts` (no verify for a non-account, one verify and one recorded failure for an account, repeated attempts block the address, right secret, leading colon, colon in the server password, pipelined JOIN, 433 then a free nick releases the held lines)
+    - _Requirements: 1.5a_
+  - [x] 17.3 Follow-up review fix (Medium): a failed `verify` is recorded in `passFailures` even when the client left while the scrypt ran (the `stillPending` early return no longer skips it), exactly once per attempt: `strike()` still records for a client that stays, the prefixed-guest fallback keeps its single record; a successful verify records nothing; tests in `test/public-hardening.test.ts` (wrong secret and `alice:<serverpw>` followed by a disconnect, the strike path once, a correct secret and a disconnect records nothing, `ALICE:<serverpw>` goes through verify, a blocked address is refused with the server password over TCP)
+    - _Requirements: 1.5a, 7.3_
 
 ## Notes
 

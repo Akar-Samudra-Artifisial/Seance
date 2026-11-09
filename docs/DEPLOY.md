@@ -65,7 +65,7 @@ node /opt/seance/tools/seance-account.mjs judge1 | sudo -u seance tee -a /etc/se
 sudo sed -i 's/^SEANCE_INVITERS=.*/SEANCE_INVITERS=judge1,judge2,operator/' /etc/seance/seance.env
 ```
 
-Send each judge their nick and secret, and the URL, out of band. The guest password (chat only, no invites) is `IRCD_SERVER_PASSWORD` in `/etc/seance/seance.env`.
+Send each judge their nick and secret, and the URL, out of band. The guest password (chat only, no invites) is `IRCD_SERVER_PASSWORD` in `/etc/seance/seance.env`. Do not reuse the server password as an account secret: anyone who knows the server password could then log in as that account.
 
 ## 5. Kiro login
 

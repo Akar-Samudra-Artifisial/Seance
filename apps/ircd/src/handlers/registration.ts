@@ -257,7 +257,10 @@ function handleAuthPass(ctx: RouterContext, client: Client, given: string): void
   // so a server password typed there arrives in this form. Only tried after the account check failed.
   const prefixedGuest =
     ctx.serverPassword !== undefined && colon >= 0 && safeEqual(given.slice(colon + 1), ctx.serverPassword);
-  if (accounts === undefined || colon < 1) {
+  // A nick that is not an account needs no scrypt run: the guest is accepted at once, so the fallback
+  // cannot be used to burn one scrypt per connection. The 433 for account nicks already shows which
+  // nicks are accounts, so skipping the verify reveals nothing new.
+  if (accounts === undefined || colon < 1 || (prefixedGuest && !accounts.has(given.slice(0, colon)))) {
     if (prefixedGuest) {
       state.kind = "guest";
       ctx.connections.acceptPass(client);
@@ -272,8 +275,16 @@ function handleAuthPass(ctx: RouterContext, client: Client, given: string): void
   state.kind = "pending";
   accounts.verify(nick, secret).then(
     (ok) => {
-      if (!stillPending(ctx, client)) return;
+      if (!stillPending(ctx, client)) {
+        // The client left while the scrypt ran. The attempt still cost one, so a wrong secret counts
+        // against the address (strike() would have recorded it); nothing is written to the closed link.
+        if (!ok) ctx.passFailures?.record(client.host);
+        return;
+      }
       if (!ok && prefixedGuest) {
+        // A real account name with a wrong secret still counts against the address (no connection
+        // strike, so the guest login succeeds), which rate-limits a holder of the server password.
+        ctx.passFailures?.record(client.host);
         state.kind = "guest";
         ctx.connections.acceptPass(client);
         tryRegister(ctx, client);
@@ -292,7 +303,10 @@ function handleAuthPass(ctx: RouterContext, client: Client, given: string): void
       tryRegister(ctx, client);
     },
     () => {
-      if (!stillPending(ctx, client)) return;
+      if (!stillPending(ctx, client)) {
+        ctx.passFailures?.record(client.host); // a scrypt error counts as a wrong PASS
+        return;
+      }
       strike(ctx, client);
       releaseHeld(ctx, client, state);
     },

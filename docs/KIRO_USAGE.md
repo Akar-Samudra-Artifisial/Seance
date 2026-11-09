@@ -466,6 +466,16 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: the web client sends `PASS <nick>:<secret>` for a plain password, the ircd accepts `<nick>:<server password>` as a guest, the connect dialog gets a help text, `/kick [<channel>] <nick>[ <reason>]`, tests in the store, dialog, parser and ircd suites, docs
 - Notes: found by using the deployed host in a browser; the two changes depend on each other (the prefix would have broken a plain server password), so the ircd side has its own test for every PASS form
 
+### 2026-11-10 — Guest fallback no longer costs a scrypt per connection (public-hardening task 17.2)
+- Kiro features: spec public-hardening task 17.2 (requirement 1.5a and the design note first), steering (security, irc-protocol)
+- Produced: `handleAuthPass` accepts `<non-account>:<serverpw>` without `verify`, records `passFailures` (no strike) for an account nick with the server password, DEPLOY.md warning, nine tests in `public-hardening.test.ts`
+- Notes: came from a security review of task 17; a test shows 100 fallback attempts on real account names now block the address
+
+### 2026-11-10 — Failed logins count even when the client already left (public-hardening task 17.3)
+- Kiro features: spec public-hardening task 17.3 (design note first), steering (security)
+- Produced: `handleAuthPass` records a failed `verify` in `passFailures` also after the client disconnected, once per attempt; six tests in `public-hardening.test.ts`, one over real TCP
+- Notes: from a second security review of task 17; connect, `PASS alice:<wrong>`, disconnect used to cost a scrypt and count nothing
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

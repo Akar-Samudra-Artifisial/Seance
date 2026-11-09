@@ -1,6 +1,7 @@
 // public-hardening Requirements 1, 2 and 7 (ircd side): accounts, Auth_Mode registration,
 // reserved nicks, PASS strikes, the client address behind a proxy and the per-address limits.
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { connect as netConnect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -18,6 +19,7 @@ import { ConnectionManager } from "../src/connection-manager.js";
 import { registerJoinHandler } from "../src/handlers/join.js";
 import { MAX_HELD_LINES, MAX_PASS_STRIKES, registerRegistrationHandlers } from "../src/handlers/registration.js";
 import { DEFAULT_LIMITS, PassFailures, PerIpGate } from "../src/limits.js";
+import { createServer } from "../src/server.js";
 
 /** Cheap scrypt parameters keep the tests fast; production uses DEFAULT_SCRYPT. */
 const FAST = { N: 1024, r: 8, p: 1 } as const;
@@ -288,6 +290,261 @@ describe("Auth_Mode registration (Requirement 1)", () => {
       await vi.waitFor(() => {
         expect(codes(g.sent)).toContain("433");
       });
+      expect(g.client.account).toBeUndefined();
+    });
+
+    /** The account store with a spy on `verify`, so a test can see whether scrypt would have run. */
+    const spied = (): { readonly store: Accounts; readonly verify: ReturnType<typeof vi.fn> } => {
+      const verify = vi.fn((n: string, s: string) => accounts.verify(n, s));
+      return {
+        verify,
+        store: { size: accounts.size, has: (n) => accounts.has(n), nameOf: (n) => accounts.nameOf(n), verify },
+      };
+    };
+
+    it("x:<server password> with x not an account is a guest at once, without any verify", () => {
+      const { store, verify } = spied();
+      const { connect, passFailures } = setup({ password: SERVER_PASSWORD, accounts: store });
+      const record = vi.spyOn(passFailures, "record");
+      const g = connect();
+      g.run("PASS", `x:${SERVER_PASSWORD}`);
+      g.register("guest1");
+      // Synchronous: no scrypt, nothing to wait for.
+      expect(g.client.registered).toBe(true);
+      expect(g.client.account).toBeUndefined();
+      expect(verify).not.toHaveBeenCalled();
+      expect(record).not.toHaveBeenCalled();
+    });
+
+    it("alice:<server password> with alice an account: one verify, one recorded failure, no strike, guest", async () => {
+      const { store, verify } = spied();
+      const { connect, passFailures } = setup({ password: SERVER_PASSWORD, accounts: store });
+      const record = vi.spyOn(passFailures, "record");
+      const g = connect();
+      g.run("PASS", `alice:${SERVER_PASSWORD}`);
+      g.register("guest1");
+      await vi.waitFor(() => {
+        expect(g.client.registered).toBe(true);
+      });
+      expect(g.client.account).toBeUndefined();
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record).toHaveBeenCalledWith("198.51.100.7");
+      // No connection strike: it is neither closed nor told 464.
+      expect(g.close).not.toHaveBeenCalled();
+      expect(codes(g.sent)).not.toContain("464");
+    });
+
+    it("repeated alice:<server password> attempts add up per address and finally refuse the address", async () => {
+      const { connect, passFailures } = setup({ password: SERVER_PASSWORD, accounts });
+      for (let i = 0; i < 100; i += 1) {
+        const g = connect();
+        g.run("PASS", `alice:${SERVER_PASSWORD}`);
+        g.register(`guest${i}`);
+        await vi.waitFor(() => {
+          expect(g.client.registered).toBe(true);
+        });
+      }
+      expect(passFailures.blocked("198.51.100.7")).toBe(true);
+    }, 60_000);
+
+    /** Waits until the one verify of a test has settled, then lets the rest of the callback run. */
+    const settledVerify = async (verify: ReturnType<typeof vi.fn>): Promise<void> => {
+      await vi.waitFor(() => {
+        expect(verify).toHaveBeenCalledTimes(1);
+      });
+      await (verify.mock.results[0]?.value as Promise<boolean>);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
+
+    it("PASS alice:<wrong> and a disconnect before the verify resolves still records one failure", async () => {
+      const { store, verify } = spied();
+      const { ctx, connect, passFailures } = setup({ password: SERVER_PASSWORD, accounts: store });
+      const record = vi.spyOn(passFailures, "record");
+      const g = connect();
+      g.run("PASS", "alice:wrong-secret");
+      ctx.connections.remove(g.client.id); // gone before the scrypt finishes
+      await settledVerify(verify);
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record).toHaveBeenCalledWith("198.51.100.7");
+      expect(g.sent).toHaveLength(0); // nothing is written to the closed connection
+    });
+
+    it("PASS alice:<server password> and a disconnect before the verify resolves records one failure", async () => {
+      const { store, verify } = spied();
+      const { ctx, connect, passFailures } = setup({ password: SERVER_PASSWORD, accounts: store });
+      const record = vi.spyOn(passFailures, "record");
+      const g = connect();
+      g.run("PASS", `alice:${SERVER_PASSWORD}`);
+      ctx.connections.remove(g.client.id);
+      await settledVerify(verify);
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(g.sent).toHaveLength(0);
+      expect(g.client.registered).toBe(false);
+    });
+
+    it("a wrong secret from a client that stays records exactly once (the strike path)", async () => {
+      const { store, verify } = spied();
+      const { connect, passFailures } = setup({ password: SERVER_PASSWORD, accounts: store });
+      const record = vi.spyOn(passFailures, "record");
+      const g = connect();
+      g.run("PASS", "alice:wrong-secret");
+      await settledVerify(verify);
+      expect(record).toHaveBeenCalledTimes(1);
+    });
+
+    it("a correct account secret followed by a disconnect records nothing", async () => {
+      const { store, verify } = spied();
+      const { ctx, connect, passFailures } = setup({ password: SERVER_PASSWORD, accounts: store });
+      const record = vi.spyOn(passFailures, "record");
+      const a = connect();
+      a.run("PASS", `alice:${ALICE_SECRET}`);
+      ctx.connections.remove(a.client.id);
+      await settledVerify(verify);
+      expect(record).not.toHaveBeenCalled();
+    });
+
+    it("PASS ALICE:<server password> (case-folded account nick) goes through verify, not the fast guest path", async () => {
+      const { store, verify } = spied();
+      const { connect, passFailures } = setup({ password: SERVER_PASSWORD, accounts: store });
+      const record = vi.spyOn(passFailures, "record");
+      const g = connect();
+      g.run("PASS", `ALICE:${SERVER_PASSWORD}`);
+      g.register("guest1");
+      expect(g.client.registered).toBe(false); // still waiting for the scrypt
+      await vi.waitFor(() => {
+        expect(g.client.registered).toBe(true);
+      });
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(g.client.account).toBeUndefined();
+    });
+
+    it("an address blocked by its failures is refused before any PASS, also with the server password", async () => {
+      const path = join(dir, "accounts-blocked");
+      writeFileSync(path, `Alice:${hashSecret(ALICE_SECRET, FAST)}\n`);
+      chmodSync(path, 0o600);
+      const server = createServer(
+        loadConfig({
+          IRCD_TCP_PORT: "0",
+          IRCD_WS_PORT: "0",
+          IRCD_HOST: "127.0.0.1",
+          IRCD_SERVER_PASSWORD: SERVER_PASSWORD,
+          IRCD_ACCOUNTS_FILE: path,
+          IRCD_MAX_PASS_FAILURES_PER_IP: "2",
+        }),
+        { error: () => undefined, debug: () => undefined },
+      );
+      const { tcpPort } = await server.start();
+      const talk = (payload: string): Promise<string> =>
+        new Promise((resolve) => {
+          let received = "";
+          const socket = netConnect(tcpPort, "127.0.0.1", () => {
+            socket.end(payload);
+          });
+          socket.setEncoding("utf8");
+          socket.on("data", (chunk: string) => {
+            received += chunk;
+          });
+          socket.on("error", () => undefined);
+          socket.on("close", () => {
+            resolve(received);
+          });
+        });
+      try {
+        // Two clients that send alice:<server password> and leave at once: each costs a scrypt.
+        await talk(`PASS alice:${SERVER_PASSWORD}\r\n`);
+        await talk(`PASS alice:${SERVER_PASSWORD}\r\n`);
+        // Once the second failure is recorded, the plain server password is refused as well.
+        await vi.waitFor(async () => {
+          const reply = await talk(`PASS ${SERVER_PASSWORD}\r\nNICK guest1\r\nUSER g 0 * G\r\n`);
+          expect(reply).toContain("Closing Link: Too many failed PASS attempts");
+          expect(reply).not.toContain(" 001 ");
+        });
+      } finally {
+        await server.stop();
+      }
+    }, 30_000);
+
+    it("alice:<right secret> is the account, with no failure recorded", async () => {
+      const { store } = spied();
+      const { connect, passFailures } = setup({ password: SERVER_PASSWORD, accounts: store });
+      const record = vi.spyOn(passFailures, "record");
+      const a = connect();
+      a.run("PASS", `alice:${ALICE_SECRET}`);
+      a.register("alice");
+      await vi.waitFor(() => {
+        expect(a.client.registered).toBe(true);
+      });
+      expect(a.client.account).toBe("Alice");
+      expect(record).not.toHaveBeenCalled();
+    });
+
+    it(":<server password> (leading colon) is a guest", () => {
+      const { store, verify } = spied();
+      const { connect } = setup({ password: SERVER_PASSWORD, accounts: store });
+      const g = connect();
+      g.run("PASS", `:${SERVER_PASSWORD}`);
+      g.register("guest1");
+      expect(g.client.registered).toBe(true);
+      expect(g.client.account).toBeUndefined();
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    it("a server password that itself contains a colon, sent as is, is a guest through the exact match", () => {
+      const { store, verify } = spied();
+      const { connect } = setup({ password: "guest:pass:word", accounts: store });
+      const g = connect();
+      g.run("PASS", "guest:pass:word");
+      g.register("guest1");
+      expect(g.client.registered).toBe(true);
+      expect(g.client.account).toBeUndefined();
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    it("pipelined PASS x:<server password>, NICK, USER and JOIN registers as a guest and processes the JOIN", () => {
+      const { ctx, connect } = setup({ password: SERVER_PASSWORD, accounts });
+      const g = connect();
+      g.run("PASS", `x:${SERVER_PASSWORD}`);
+      g.register("guest1");
+      g.run("JOIN", "#haunt");
+      expect(g.client.registered).toBe(true);
+      expect(codes(g.sent)).not.toContain("451");
+      expect(ctx.channels.get("#haunt")?.members.has(g.client.id)).toBe(true);
+    });
+
+    it("pipelined JOIN behind the asynchronous fallback is released after registration", async () => {
+      const { ctx, connect } = setup({ password: SERVER_PASSWORD, accounts });
+      const g = connect();
+      g.run("PASS", `alice:${SERVER_PASSWORD}`);
+      g.register("guest1");
+      g.run("JOIN", "#haunt");
+      expect(codes(g.sent)).not.toContain("451");
+      await vi.waitFor(() => {
+        expect(ctx.channels.get("#haunt")?.members.has(g.client.id)).toBe(true);
+      });
+      expect(codes(g.sent)).not.toContain("451");
+    });
+
+    it("a fallback guest that asks for an account nick gets 433, and the held lines run once a free nick follows", async () => {
+      const { ctx, connect } = setup({ password: SERVER_PASSWORD, accounts });
+      const g = connect();
+      g.run("PASS", `alice:${SERVER_PASSWORD}`); // asynchronous fallback: the lines below are held
+      g.register("alice");
+      g.run("JOIN", "#haunt");
+      await vi.waitFor(() => {
+        expect(codes(g.sent)).toContain("433");
+      });
+      expect(g.client.registered).toBe(false);
+      expect(ctx.channels.get("#haunt")).toBeUndefined();
+      g.run("NICK", "guest1");
+      await vi.waitFor(() => {
+        expect(g.client.registered).toBe(true);
+      });
+      await vi.waitFor(() => {
+        expect(ctx.channels.get("#haunt")?.members.has(g.client.id)).toBe(true);
+      });
+      expect(codes(g.sent)).not.toContain("451");
       expect(g.client.account).toBeUndefined();
     });
 
