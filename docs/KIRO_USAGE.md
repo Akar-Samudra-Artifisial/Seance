@@ -422,3 +422,8 @@ Include correctness properties (e.g. no write tool call is ever allowed for a no
 - Kiro features: spec (`public-hardening` Requirements 11–16, tasks 10–15), steering (security, irc-protocol, runner-acp, testing), hook (guard-shell)
 - Produced: `IRCD_TRUSTED_PROXIES` required on public servers (ircd and runner guard); private `/msg` credits in the daily budget, private turns cancelled at the cap, private opens and revivals in the container cap; worktree size checked after each finished tool call with `git clean -fdx` resets; account-login commands held (20 lines) and replayed after `001`; fsynced, coalesced credits file that logs skipped entries; `docs/DEPLOY.md` and a plainer `docs/SANDBOX.md`
 - Notes: one existing assertion changed on purpose (daily-state writes are now coalesced: one write per flush instead of one per add), with a comment.
+
+### 2026-11-08 — public-hardening security re-check: five fixes
+- Kiro features: spec (`public-hardening` task 16), steering (security, testing, irc-protocol), hook (guard-shell)
+- Produced: fail-closed worktree size walk (ENOENT skipped, other errors count as over the cap); size watcher with re-check on overlap, late results applied and a final check at every turn end; one canonical address form with a loopback `BlockList` in ircd and runner guards; `privateCount()` drops closed private sessions at once; `docs/DEPLOY.md` Caddyfile that overwrites `X-Forwarded-For` and a required disk quota
+- Notes: each fix has its own test, including a real `chmod 000` directory for the fail-closed walk.

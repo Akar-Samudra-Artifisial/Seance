@@ -103,31 +103,73 @@ function watchWorktreeSize(d: ChannelSessionDeps, agent: string, channel: string
   const exceedsCap = d.worktrees.exceedsCap?.bind(d.worktrees);
   const reset = d.worktrees.reset?.bind(d.worktrees);
   if (exceedsCap === undefined || reset === undefined) return;
+  const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
   let checking = false;
+  /** A tool-done (or the turn end) arrived while a check ran: check again afterwards. */
+  let pending = false;
+  /** The running turn was cancelled for size; the worktree is reset when it ends. */
   let oversize = false;
-  session.sessionEvents((ev) => {
-    if (ev.kind !== "tool-done" || checking || oversize) return;
+  /** Incremented at every turn end, so a late result knows its turn is over. */
+  let turnSeq = 0;
+
+  const resetNow = (): void => {
+    reset(channel, { ignored: true }).catch((err: unknown) => {
+      d.logger.error("reset after oversize turn failed", { agent, channel, reason: reasonOf(err) });
+    });
+  };
+
+  // public-hardening re-check: a failed check counts as over the cap (fail closed).
+  const check = (): Promise<boolean> =>
+    exceedsCap(channel).catch((err: unknown) => {
+      d.logger.error("worktree size check failed, treated as over the cap", { agent, channel, reason: reasonOf(err) });
+      return true;
+    });
+
+  const applyOver = (seq: number): void => {
+    if (seq === turnSeq && session.state === "prompting") {
+      if (oversize) return;
+      oversize = true;
+      d.logger.warn("turn cancelled: worktree over the size cap", { agent, channel });
+      d.opNotice(channel, `${agent}: turn cancelled in ${channel}, the worktree is over its size cap; it will be reset`);
+      session.cancel();
+      return;
+    }
+    // The turn ended before the result arrived: the result still applies.
+    d.logger.warn("worktree over the size cap after the turn, reset", { agent, channel });
+    d.opNotice(channel, `${agent}: the worktree in ${channel} is over its size cap; it was reset`);
+    resetNow();
+  };
+
+  const runCheck = (): void => {
+    if (checking) {
+      pending = true;
+      return;
+    }
     checking = true;
-    exceedsCap(channel)
+    pending = false;
+    const seq = turnSeq;
+    void check()
       .then((over) => {
-        if (!over || session.state !== "prompting") return;
-        oversize = true;
-        d.logger.warn("turn cancelled: worktree over the size cap", { agent, channel });
-        d.opNotice(channel, `${agent}: turn cancelled in ${channel}, the worktree is over its size cap; it will be reset`);
-        session.cancel();
-      })
-      .catch((err: unknown) => {
-        d.logger.error("worktree size check failed", { agent, channel, reason: err instanceof Error ? err.message : String(err) });
+        if (over) applyOver(seq);
       })
       .finally(() => {
         checking = false;
+        if (pending) runCheck();
       });
+  };
+
+  session.sessionEvents((ev) => {
+    if (ev.kind !== "tool-done" || oversize) return;
+    runCheck();
   });
   session.turnEnding(() => {
-    if (!oversize) return;
-    oversize = false;
-    reset(channel, { ignored: true }).catch((err: unknown) => {
-      d.logger.error("reset after oversize turn failed", { agent, channel, reason: err instanceof Error ? err.message : String(err) });
-    });
+    turnSeq += 1;
+    if (oversize) {
+      oversize = false;
+      resetNow();
+      return;
+    }
+    // One final check for every agent, also those that never commit (no +o, none mode).
+    runCheck();
   });
 }

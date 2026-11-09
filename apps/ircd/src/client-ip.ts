@@ -1,11 +1,45 @@
 // public-hardening Requirement 7.1: the real client address behind a reverse proxy (Caddy).
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 import { normalizeHost } from "./host.js";
 
-/** Lower-cased, IPv4-mapped prefix removed, so `::ffff:127.0.0.1` and `127.0.0.1` compare equal. */
+/**
+ * One spelling per address, so sets and comparisons agree: IPv4 stays dotted; IPv6 is lower-case
+ * and compressed (`0:0:0:0:0:0:0:1` -> `::1`); an IPv4-mapped IPv6 address in either form
+ * (`::ffff:127.0.0.1`, `::ffff:7f00:1`) becomes its IPv4 address. Anything that is not an IP
+ * literal is returned trimmed and lower-cased.
+ */
 export function canonicalIp(ip: string): string {
   const t = ip.trim().toLowerCase();
-  return t.startsWith("::ffff:") && isIP(t.slice(7)) === 4 ? t.slice(7) : t;
+  if (isIP(t) !== 6) return t;
+  if (t.startsWith("::ffff:") && isIP(t.slice(7)) === 4) return t.slice(7);
+  let compressed: string;
+  try {
+    // WHATWG URL serialises IPv6 hosts in the RFC 5952 compressed form.
+    compressed = new URL(`http://[${t}]/`).hostname.slice(1, -1);
+  } catch {
+    return t; // e.g. a zone index (`fe80::1%en0`)
+  }
+  const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(compressed);
+  if (mapped?.[1] !== undefined && mapped[2] !== undefined) {
+    const hi = parseInt(mapped[1], 16);
+    const lo = parseInt(mapped[2], 16);
+    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  return compressed;
+}
+
+/** Loopback ranges: 127.0.0.0/8 and ::1. Checked on the canonical form. */
+const LOOPBACK = new BlockList();
+LOOPBACK.addSubnet("127.0.0.0", 8, "ipv4");
+LOOPBACK.addAddress("::1", "ipv6");
+LOOPBACK.addSubnet("::ffff:7f00:0", 104, "ipv6"); // in case a mapped form is not canonicalised
+
+/** True for a loopback IP literal in any spelling (`127.0.0.2`, `::1`, `0:0:0:0:0:0:0:1`, `::ffff:127.0.0.1`). */
+export function isLoopbackIp(ip: string): boolean {
+  const c = canonicalIp(ip);
+  const family = isIP(c);
+  if (family === 0) return false;
+  return LOOPBACK.check(c, family === 4 ? "ipv4" : "ipv6");
 }
 
 /** Parses `IRCD_TRUSTED_PROXIES` entries; throws naming the variable on a non-IP entry. */

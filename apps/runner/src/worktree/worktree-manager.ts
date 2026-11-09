@@ -61,24 +61,53 @@ export type TurnCommitResult =
   /** public-hardening Requirement 9: too large or git timed out; the worktree was reset to HEAD. */
   | { readonly kind: "reset"; readonly reason: string };
 
+/** The filesystem calls of `exceedsBytes`; injectable so tests can simulate races and errors. */
+export type SizeWalkIo = {
+  readonly readdir: (path: string) => Promise<readonly { readonly name: string; isDirectory(): boolean; isFile(): boolean }[]>;
+  readonly lstat: (path: string) => Promise<{ readonly size: number }>;
+};
+
+const realSizeIo: SizeWalkIo = {
+  readdir: (path) => readdir(path, { withFileTypes: true }),
+  lstat: (path) => lstat(path),
+};
+
+const isEnoent = (err: unknown): boolean => (err as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+
 /**
  * True when the files below `dir` (not `.git`, symlinks not followed) add up to more than
  * `max` bytes. Stops as soon as the limit is passed.
+ *
+ * public-hardening re-check: an entry that vanishes during the walk (ENOENT) is skipped, since
+ * the agent may delete files while it runs. Any other error (EACCES, ELOOP, EIO...) means the size
+ * is unknown, and an unknown size counts as over the cap (fail closed): an agent must not escape
+ * the check by making a directory unreadable.
  */
-export async function exceedsBytes(dir: string, max: number): Promise<boolean> {
+export async function exceedsBytes(dir: string, max: number, io: SizeWalkIo = realSizeIo): Promise<boolean> {
   let total = 0;
   const stack: string[] = [dir];
   while (stack.length > 0) {
     const current = stack.pop();
     if (current === undefined) break;
-    const entries = await readdir(current, { withFileTypes: true });
+    let entries: Awaited<ReturnType<SizeWalkIo["readdir"]>>;
+    try {
+      entries = await io.readdir(current);
+    } catch (err) {
+      if (isEnoent(err)) continue;
+      return true;
+    }
     for (const entry of entries) {
       if (current === dir && entry.name === ".git") continue;
       const abs = join(current, entry.name);
       if (entry.isDirectory()) {
         stack.push(abs);
       } else if (entry.isFile()) {
-        total += (await lstat(abs)).size;
+        try {
+          total += (await io.lstat(abs)).size;
+        } catch (err) {
+          if (isEnoent(err)) continue;
+          return true;
+        }
         if (total > max) return true;
       }
     }
@@ -378,7 +407,16 @@ export class WorktreeManager {
    */
   async exceedsCap(channel: string): Promise<boolean> {
     if (this.#maxBytes === undefined) return false;
-    const realPath = await resolveInside(this.#root, join(this.#root, sanitizeChannel(channel)), channel);
+    const path = join(this.#root, sanitizeChannel(channel));
+    try {
+      await lstat(path);
+    } catch (err) {
+      // An exorcism removed the worktree: nothing left to measure. Other errors propagate and
+      // the caller treats them as over the cap.
+      if (isEnoent(err)) return false;
+      throw err;
+    }
+    const realPath = await resolveInside(this.#root, path, channel);
     return exceedsBytes(realPath, this.#maxBytes);
   }
 

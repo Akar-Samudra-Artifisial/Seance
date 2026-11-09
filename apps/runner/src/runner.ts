@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 import { join } from "node:path";
 import { irc_lower } from "@seance/irc-protocol";
 import { realClock, TimerSet } from "./clock.js";
 import type { Clock } from "./clock.js";
-import { assertInvitersConfigured, ConfigError, HARDENING_DEFAULTS, isLoopbackHost, validateRunnerPaths } from "./config.js";
+import { assertInvitersConfigured, ConfigError, HARDENING_DEFAULTS, validateRunnerPaths } from "./config.js";
 import type { RunnerConfig } from "./config.js";
 import { DailyBudget } from "./credits/budget.js";
 import { CreditsFile } from "./credits/credits-file.js";
@@ -122,6 +122,23 @@ type Parts = {
   readonly agentNicks: readonly string[];
 };
 
+/** 127.0.0.0/8 and ::1, plus their IPv4-mapped IPv6 form (::ffff:127.0.0.0/104). */
+const LOOPBACK = new BlockList();
+LOOPBACK.addSubnet("127.0.0.0", 8, "ipv4");
+LOOPBACK.addAddress("::1", "ipv6");
+LOOPBACK.addSubnet("::ffff:7f00:0", 104, "ipv6");
+
+/**
+ * True for a loopback IP literal in any spelling (`::1`, `0:0:0:0:0:0:0:1`, `::ffff:127.0.0.1`).
+ * Host names are not IP literals. Same rule as the ircd's `isLoopbackIp` (client-ip.ts).
+ */
+export function isLoopbackIpLiteral(entry: string): boolean {
+  const ip = entry.trim().toLowerCase();
+  const family = isIP(ip);
+  if (family === 0) return false;
+  return LOOPBACK.check(ip, family === 4 ? "ipv4" : "ipv6");
+}
+
 /**
  * public-hardening Requirement 8: with IRCD_PUBLIC=1 the runner also refuses to start without
  * SEANCE_INVITERS and SEANCE_DAILY_CREDIT_CAP (the ircd's guard names them first; this repeats it
@@ -136,11 +153,7 @@ export function assertPublicRunner(
   // Requirement 11.2: behind the proxy every peer is loopback; without the proxy list all users
   // would share one per-IP limit and one PASS-failure block.
   const proxies = trustedProxies ?? [];
-  const loopbackIp = (p: string): boolean => {
-    const ip = p.trim().toLowerCase();
-    return isIP(ip) !== 0 && (isLoopbackHost(ip.replace(/^::ffff:/, "")) || ip === "0:0:0:0:0:0:0:1");
-  };
-  if (proxies.length === 0 || !proxies.every(loopbackIp)) {
+  if (proxies.length === 0 || !proxies.every(isLoopbackIpLiteral)) {
     throw new ConfigError(
       "IRCD_TRUSTED_PROXIES",
       "IRCD_PUBLIC=1 requires IRCD_TRUSTED_PROXIES listing the proxy's loopback addresses only (e.g. 127.0.0.1,::1)",

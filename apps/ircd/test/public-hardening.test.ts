@@ -9,7 +9,8 @@ import { AccountsFileError, hashSecret, loadAccounts, parseAccounts } from "../s
 import type { Accounts } from "../src/accounts.js";
 import { ChannelRegistry } from "../src/channel-registry.js";
 import type { Client } from "../src/client.js";
-import { canonicalIp, clientIp, parseTrustedProxies } from "../src/client-ip.js";
+import { canonicalIp, clientIp, isLoopbackIp, parseTrustedProxies } from "../src/client-ip.js";
+import { trustedProxiesOk } from "../src/public-guard.js";
 import { CommandRouter } from "../src/command-router.js";
 import type { RouterContext } from "../src/command-router.js";
 import { loadConfig } from "../src/config.js";
@@ -323,6 +324,40 @@ describe("client address behind a proxy (Requirement 7.1)", () => {
     expect(clientIp("127.0.0.1", undefined, trusted)).toBe("127.0.0.1");
     expect(clientIp(undefined, "203.0.113.9", trusted)).toBeUndefined();
     expect(canonicalIp("::FFFF:10.0.0.1")).toBe("10.0.0.1");
+  });
+});
+
+describe("one spelling per address (re-check 3)", () => {
+  it.each([
+    ["0:0:0:0:0:0:0:1", "::1"],
+    ["::FFFF:127.0.0.1", "127.0.0.1"],
+    ["::ffff:7f00:1", "127.0.0.1"],
+    ["2001:DB8:0:0:0:0:0:1", "2001:db8::1"],
+    [" 10.0.0.1 ", "10.0.0.1"],
+    ["not-an-ip", "not-an-ip"],
+  ])("canonicalIp(%j) is %j", (raw, expected) => {
+    expect(canonicalIp(raw)).toBe(expected);
+  });
+
+  it("isLoopbackIp agrees for every spelling, and the guard uses the same rule", () => {
+    for (const ip of ["127.0.0.1", "127.9.9.9", "::1", "0:0:0:0:0:0:0:1", "::ffff:127.0.0.1", "::ffff:7f00:1"]) {
+      expect(isLoopbackIp(ip)).toBe(true);
+      expect(trustedProxiesOk(ip)).toBe(true);
+    }
+    for (const ip of ["10.0.0.1", "::2", "::ffff:10.0.0.1", "localhost", "128.0.0.1"]) {
+      expect(isLoopbackIp(ip)).toBe(false);
+      expect(trustedProxiesOk(ip)).toBe(false);
+    }
+  });
+
+  it("a proxy written one way is trusted when the socket reports it another way", () => {
+    // Long, short and IPv4-mapped spellings of the same proxy match each other in both directions.
+    expect(clientIp("::1", "203.0.113.9", parseTrustedProxies("0:0:0:0:0:0:0:1"))).toBe("203.0.113.9");
+    expect(clientIp("0:0:0:0:0:0:0:1", "203.0.113.9", parseTrustedProxies("::1"))).toBe("203.0.113.9");
+    expect(clientIp("::ffff:127.0.0.1", "203.0.113.9", parseTrustedProxies("127.0.0.1"))).toBe("203.0.113.9");
+    expect(clientIp("127.0.0.1", "203.0.113.9", parseTrustedProxies("::ffff:7f00:1"))).toBe("203.0.113.9");
+    // A forged entry in another spelling of a trusted proxy is skipped, never taken as the client.
+    expect(clientIp("127.0.0.1", "198.51.100.4, 0:0:0:0:0:0:0:1", parseTrustedProxies("127.0.0.1,::1"))).toBe("198.51.100.4");
   });
 });
 

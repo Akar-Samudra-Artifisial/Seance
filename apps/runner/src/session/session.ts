@@ -87,6 +87,7 @@ export class Session {
   readonly #deps: SessionDeps;
   readonly #listeners = new Set<(e: SessionEvent) => void>();
   readonly #turnEnding = new Set<TurnEndingHook>();
+  readonly #stateListeners = new Set<(state: SessionState) => void>();
   readonly #unsubscribe: Unsubscribe;
   #model: SessionModel = initialModel();
   #cooldownTimer: TimerHandle | undefined;
@@ -127,6 +128,14 @@ export class Session {
     };
   }
 
+  /** Called synchronously with each new state (public-hardening: private sessions leave the count when closed). */
+  stateChanges(listener: (state: SessionState) => void): Unsubscribe {
+    this.#stateListeners.add(listener);
+    return () => {
+      this.#stateListeners.delete(listener);
+    };
+  }
+
   /** Runs `hook` synchronously before each `turn-ended` is posted. */
   turnEnding(hook: TurnEndingHook): Unsubscribe {
     this.#turnEnding.add(hook);
@@ -162,6 +171,13 @@ export class Session {
     this.#model = result.model;
     if (stateChanged) {
       this.#deps.snapshot.setState(this.agent, this.channel, result.model.state);
+      for (const listener of [...this.#stateListeners]) {
+        try {
+          listener(result.model.state);
+        } catch (err) {
+          this.#deps.logger?.error("state listener failed", { agent: this.agent, channel: this.channel, reason: messageOf(err) });
+        }
+      }
     }
     for (const effect of result.effects) this.#run(effect);
   }

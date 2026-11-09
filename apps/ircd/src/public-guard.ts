@@ -1,9 +1,11 @@
 // agent-sandbox Requirement 2 and public-hardening Requirement 8: a public server refuses to start
 // unless it is locked down. Pure apart from reading the accounts file; `main` calls it before any
 // listener is opened.
-import { isIP } from "node:net";
 import { assertSandboxForPublic, isLoopbackHost } from "@seance/runner";
 import { loadAccounts } from "./accounts.js";
+import { isLoopbackIp } from "./client-ip.js";
+
+export { isLoopbackIp };
 
 /** Thrown for an `IRCD_PUBLIC` value other than unset, empty, `0` or `1` (Requirement 2.1). */
 export class PublicConfigError extends Error {
@@ -38,16 +40,11 @@ type Env = Readonly<Record<string, string | undefined>>;
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** True for a loopback IP literal (`127.x.y.z`, `::1`, `::ffff:127.x.y.z`); host names are not accepted. */
-export function isLoopbackIp(entry: string): boolean {
-  const ip = entry.trim().toLowerCase();
-  if (isIP(ip) === 0) return false;
-  if (ip === "::1" || ip === "0:0:0:0:0:0:0:1") return true;
-  const v4 = ip.startsWith("::ffff:") ? ip.slice(7) : ip;
-  return isIP(v4) === 4 && v4.startsWith("127.");
-}
-
-/** Non-empty, and every entry a loopback IP (the proxy runs on the same host as the ircd). */
+/**
+ * Non-empty, and every entry a loopback IP (the proxy runs on the same host as the ircd). Uses
+ * the same canonical form and loopback BlockList as `client-ip.ts`, so every spelling the
+ * transports may see (`0:0:0:0:0:0:0:1`, `::ffff:127.0.0.1`) is judged the same way.
+ */
 export function trustedProxiesOk(raw: string | undefined): boolean {
   const entries = (raw ?? "").split(",").map((e) => e.trim()).filter((e) => e !== "");
   return entries.length > 0 && entries.every(isLoopbackIp);

@@ -817,3 +817,24 @@ describe("public-hardening Requirement 12: private sessions and the budget", () 
     expect(env.host.notices).toEqual([{ nick: "alice", text: `${GHOST}: at most 6 agent sessions may run at once` }]);
   });
 });
+
+describe("public-hardening re-check: privateCount counts open private sessions only", () => {
+  it("a private session leaves the count the moment it closes, whatever closed it", async () => {
+    const env = await setup();
+    env.privateMessage("alice", GHOST, "hello");
+    env.privateMessage("bob", WRAITH, "hello");
+    await flush();
+    expect(env.manager.privateCount()).toBe(2);
+    const alices = env.manager.allSessions().find((s) => s.channel === "alice");
+    expect(alices).toBeDefined();
+    // Closed directly (not through closePrivateSessions): before the fix it kept counting until
+    // alice wrote again.
+    alices?.close("process-exit");
+    expect(env.manager.privateCount()).toBe(1);
+    expect(env.manager.allSessions().some((s) => s.channel === "alice")).toBe(false);
+    // A new message opens a fresh session and counts again.
+    env.privateMessage("alice", GHOST, "again");
+    await flush();
+    expect(env.manager.privateCount()).toBe(2);
+  });
+});

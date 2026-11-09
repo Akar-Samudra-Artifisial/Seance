@@ -115,6 +115,18 @@ ircd first (accounts, registration, client address, guard), then the runner (inv
   - [x] 15.2 Tests; `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm --filter @seance/web test:e2e`; `docs/KIRO_USAGE.md`
     - _Requirements: 10.1, 10.2_
 
+- [x] 16. Security re-check fixes (each with a test)
+  - [x] 16.1 `exceedsBytes`: skip ENOENT per entry, any other error counts as over the cap; a failed check in the session watcher is over the cap too
+    - _Requirements: 14.1_
+  - [x] 16.2 Size watcher: a tool-done during a running check re-runs it; a late result still resets; a final check at every turn end, for every agent
+    - _Requirements: 14.1_
+  - [x] 16.3 One canonical address form (`canonicalIp`, loopback `BlockList`) in `client-ip.ts`, `public-guard.ts` and the runner guard
+    - _Requirements: 7.1, 11.1, 11.2_
+  - [x] 16.4 `privateCount()` counts open private sessions only; a private session leaves `#privates` when it closes, whatever the reason
+    - _Requirements: 12.3_
+  - [x] 16.5 `docs/DEPLOY.md`: Caddy overwrites `X-Forwarded-For` (Caddyfile snippet); hard disk quota for `SEANCE_WORKSPACES`
+    - _Requirements: 14.3_
+
 ## Notes
 
 - Outside Auth_Mode the ircd behaves as before, so the existing ircd tests run unchanged.
@@ -136,7 +148,9 @@ ircd first (accounts, registration, client address, guard), then the runner (inv
     { "id": 7, "tasks": ["10.1", "11.1", "12.1", "13.1", "14", "15.1"] },
     { "id": 8, "tasks": ["10.2", "11.2", "12.2", "13.2"] },
     { "id": 9, "tasks": ["11.3", "12.3"] },
-    { "id": 10, "tasks": ["15.2"] }
+    { "id": 10, "tasks": ["15.2"] },
+    { "id": 11, "tasks": ["16.1", "16.3", "16.4", "16.5"] },
+    { "id": 12, "tasks": ["16.2"] }
   ]
 }
 ```

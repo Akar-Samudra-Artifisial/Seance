@@ -3,7 +3,7 @@
 // worktree size cap.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -17,7 +17,7 @@ import type { RunnerLogger } from "../src/log.js";
 import { AgentOutput } from "../src/output/agent-output.js";
 import type { HostVirtualClient } from "../src/ports.js";
 import type { AgentProfile } from "../src/registry/agent-profile.js";
-import { assertPublicRunner } from "../src/runner.js";
+import { assertPublicRunner, isLoopbackIpLiteral } from "../src/runner.js";
 import { DailyBudget, utcDay } from "../src/credits/budget.js";
 import { CREDITS_FILE_NAME, CreditsFile, CreditsFileError } from "../src/credits/credits-file.js";
 import { CreditAccumulator } from "../src/credits/accumulator.js";
@@ -414,7 +414,8 @@ describe("worktree size during a turn (Requirement 14.1)", () => {
     for (let i = 0; i < 40; i++) await new Promise<void>((r) => setImmediate(r));
   };
 
-  function build(over: boolean) {
+  function build(over: boolean | (() => Promise<boolean>), mode: { op: boolean; voice: boolean } = { op: true, voice: false }) {
+    const exceedsCap = typeof over === "function" ? over : async () => over;
     const h = new HangingSession();
     const reset = vi.fn(async () => ({ target: "abc1234", filesReverted: 1 }));
     const notices: string[] = [];
@@ -423,8 +424,8 @@ describe("worktree size during a turn (Requirement 14.1)", () => {
     const clock = new ManualClock();
     const session = buildChannelSession(
       {
-        host: { modeOf: () => ({ op: true, voice: false }) },
-        worktrees: { guardBeforePrompt: async () => ({ ok: true }), exceedsCap: async () => over, reset },
+        host: { modeOf: () => mode },
+        worktrees: { guardBeforePrompt: async () => ({ ok: true }), exceedsCap, reset },
         snapshot: new WhoisSnapshot(),
         ledger: { recordMetering: () => ({ accepted: 0, rejected: [] }) } as unknown as Pick<CreditLedger, "recordMetering">,
         clock,
@@ -461,6 +462,128 @@ describe("worktree size during a turn (Requirement 14.1)", () => {
     expect(h.cancels).toBe(0);
     expect(reset).not.toHaveBeenCalled();
     h.cancel();
+  });
+
+  /** exceedsCap results the test resolves by hand, in order. */
+  function manualChecks() {
+    const waiting: ((over: boolean) => void)[] = [];
+    const fn = vi.fn(() => new Promise<boolean>((resolve) => waiting.push(resolve)));
+    const next = (over: boolean): void => {
+      const r = waiting.shift();
+      if (r === undefined) throw new Error("no size check is waiting");
+      r(over);
+    };
+    return { fn, next, waiting };
+  }
+
+  it("a tool-done during a running check makes the check run again afterwards (re-check 2)", async () => {
+    const checks = manualChecks();
+    const { h, session } = build(checks.fn);
+    session.enqueue({ id: 1, text: "work" });
+    await flushAll();
+    h.emit({ kind: "tool-done", status: "completed" });
+    h.emit({ kind: "tool-done", status: "completed" }); // arrives while the first check runs
+    h.emit({ kind: "tool-done", status: "failed" });
+    await flushAll();
+    expect(checks.fn).toHaveBeenCalledTimes(1);
+    checks.next(false);
+    await flushAll();
+    // Exactly one follow-up check covers both tool calls that arrived meanwhile.
+    expect(checks.fn).toHaveBeenCalledTimes(2);
+    checks.next(true);
+    await flushAll();
+    expect(h.cancels).toBe(1);
+  });
+
+  it("a result that resolves after the turn ended still applies (re-check 2)", async () => {
+    const checks = manualChecks();
+    const { h, session, reset, notices } = build(checks.fn);
+    session.enqueue({ id: 1, text: "work" });
+    await flushAll();
+    h.emit({ kind: "tool-done", status: "completed" });
+    await flushAll();
+    h.cancel(); // the turn ends (here by a cancel from elsewhere) while the check still runs
+    await flushAll();
+    expect(session.state).not.toBe("prompting");
+    checks.next(true); // the late result: over the cap
+    await flushAll();
+    expect(reset).toHaveBeenCalledWith("#dev", { ignored: true });
+    expect(notices).toContain("coder: the worktree in #dev is over its size cap; it was reset");
+    // The final check from the turn end runs after it (pending) and resets again if still over.
+    checks.next(false);
+    await flushAll();
+  });
+
+  it("a final check runs at every turn end, also for an agent without +o that never commits (re-check 2)", async () => {
+    const checks = manualChecks();
+    const { h, session, reset } = build(checks.fn, { op: false, voice: true });
+    session.enqueue({ id: 1, text: "talk" });
+    await flushAll();
+    expect(checks.fn).not.toHaveBeenCalled(); // no tool call happened
+    h.cancel(); // the turn ends
+    await flushAll();
+    expect(checks.fn).toHaveBeenCalledTimes(1);
+    checks.next(true);
+    await flushAll();
+    expect(reset).toHaveBeenCalledWith("#dev", { ignored: true });
+  });
+
+  it("a failing size check counts as over the cap (fail closed, re-check 1)", async () => {
+    const { h, session } = build(() => Promise.reject(new Error("EACCES: permission denied")));
+    session.enqueue({ id: 1, text: "work" });
+    await flushAll();
+    h.emit({ kind: "tool-done", status: "completed" });
+    await flushAll();
+    expect(h.cancels).toBe(1);
+  });
+});
+
+describe("exceedsBytes walk errors (re-check 1)", () => {
+  type Entry = { readonly name: string; isDirectory(): boolean; isFile(): boolean };
+  const file = (name: string): Entry => ({ name, isDirectory: () => false, isFile: () => true });
+  const folder = (name: string): Entry => ({ name, isDirectory: () => true, isFile: () => false });
+  const errno = (code: string): Error => Object.assign(new Error(code), { code });
+
+  it("skips entries that vanish during the walk (ENOENT)", async () => {
+    const io = {
+      readdir: async (p: string) => (p === "/wt" ? [file("gone.txt"), folder("gone-dir"), file("a")] : Promise.reject(errno("ENOENT"))),
+      lstat: async (p: string) => (p === "/wt/gone.txt" ? Promise.reject(errno("ENOENT")) : { size: 10 }),
+    };
+    expect(await exceedsBytes("/wt", 100, io)).toBe(false);
+    expect(await exceedsBytes("/wt", 5, io)).toBe(true);
+  });
+
+  it.each(["EACCES", "EIO", "ELOOP"])("any other error (%s) counts as over the cap", async (code) => {
+    const failingReaddir = {
+      readdir: async (p: string) => (p === "/wt" ? [folder("locked")] : Promise.reject(errno(code))),
+      lstat: async () => ({ size: 1 }),
+    };
+    expect(await exceedsBytes("/wt", 1_000_000, failingReaddir)).toBe(true);
+    const failingLstat = {
+      readdir: async () => [file("x")],
+      lstat: async () => Promise.reject(errno(code)),
+    };
+    expect(await exceedsBytes("/wt", 1_000_000, failingLstat)).toBe(true);
+  });
+
+  it("an unreadable directory on disk counts as over the cap", async () => {
+    await mkdir(join(dir, "locked"));
+    await writeFile(join(dir, "locked", "f"), "x");
+    await chmod(join(dir, "locked"), 0o000);
+    try {
+      expect(await exceedsBytes(dir, 1_000_000)).toBe(true);
+    } finally {
+      await chmod(join(dir, "locked"), 0o755);
+    }
+  });
+});
+
+describe("loopback proxy addresses in the runner guard (re-check 3)", () => {
+  it.each(["127.0.0.1", "127.1.2.3", "::1", "0:0:0:0:0:0:0:1", "::ffff:127.0.0.1", "::FFFF:7f00:1"])("%s is loopback", (ip) => {
+    expect(isLoopbackIpLiteral(ip)).toBe(true);
+  });
+  it.each(["10.0.0.1", "::2", "::ffff:10.0.0.1", "localhost", "", "128.0.0.1"])("%s is not", (ip) => {
+    expect(isLoopbackIpLiteral(ip)).toBe(false);
   });
 });
 

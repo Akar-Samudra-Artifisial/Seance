@@ -267,7 +267,10 @@ export class SessionManager {
     return [...this.#channelSessions.values(), ...this.#openPrivates];
   }
 
-  /** Private_Sessions started or starting (each is a container in podman mode). */
+  /**
+   * Private_Sessions that are open or still starting (each is a container in podman mode). A
+   * closed one is removed from the map when it closes, so it never counts.
+   */
   privateCount(): number {
     return this.#privates.size;
   }
@@ -559,7 +562,24 @@ export class SessionManager {
       return Promise.resolve(undefined);
     }
     const created = this.#openPrivate(reg, human).then((entry) => {
-      if (entry === undefined && this.#privates.get(key) === created) this.#privates.delete(key);
+      if (entry === undefined) {
+        if (this.#privates.get(key) === created) this.#privates.delete(key);
+        return entry;
+      }
+      // public-hardening re-check: a Private_Session leaves the count the moment it closes,
+      // whatever closed it (process exit, shutdown, a failed turn), not at the next message.
+      const forget = (): void => {
+        this.#openPrivates.delete(entry.session);
+        if (this.#privates.get(key) === created) this.#privates.delete(key);
+      };
+      if (entry.session.state === "closed") forget();
+      else {
+        const off = entry.session.stateChanges((state) => {
+          if (state !== "closed") return;
+          off();
+          forget();
+        });
+      }
       return entry;
     });
     this.#privates.set(key, created);
