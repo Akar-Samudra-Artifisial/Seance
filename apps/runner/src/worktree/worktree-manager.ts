@@ -130,7 +130,7 @@ export type WorktreeManagerOptions = {
 };
 
 /** Case-insensitive gitignore-style globs: sparse-checkout patterns are case-sensitive. */
-const AGENTS_MD_CI = "[Aa][Gg][Ee][Nn][Tt][Ss].md";
+const AGENTS_MD_CI = "[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]";
 const DOT_KIRO_CI = ".[Kk][Ii][Rr][Oo]";
 
 export const SPARSE_PATTERNS: readonly string[] = [

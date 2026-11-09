@@ -138,8 +138,8 @@ describe("ensure is single-flight per channel", () => {
 
 describe("sparse-checkout patterns", () => {
   it("are case-insensitive", () => {
-    expect(SPARSE_PATTERNS).toContain("![Aa][Gg][Ee][Nn][Tt][Ss].md");
-    expect(SPARSE_PATTERNS).toContain("!**/[Aa][Gg][Ee][Nn][Tt][Ss].md");
+    expect(SPARSE_PATTERNS).toContain("![Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]");
+    expect(SPARSE_PATTERNS).toContain("!**/[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]");
   });
 
   it("keep differently-cased agent config out of a fresh worktree", async () => {
@@ -157,7 +157,7 @@ describe("sparse-checkout patterns", () => {
       await git(info.realPath, "sparse-checkout", "set", "--no-cone", "/*", "!AGENTS.md");
       expect(await git(info.realPath, "sparse-checkout", "list")).not.toContain("[Aa]");
       await manager.ensure("#dev");
-      expect(await git(info.realPath, "sparse-checkout", "list")).toContain("[Aa][Gg][Ee][Nn][Tt][Ss].md");
+      expect(await git(info.realPath, "sparse-checkout", "list")).toContain("[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]");
       await manager.ensure("#dev"); // idempotent
       const list = (await git(info.realPath, "sparse-checkout", "list")).trim().split("\n");
       expect(list).toEqual([...SPARSE_PATTERNS]);

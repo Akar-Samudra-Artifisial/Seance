@@ -398,7 +398,7 @@ Running log of Kiro features used while building Séance. It is raw material for
 
 ### 2026-11-08 — guard-shell blocks a command outside the repository
 - Kiro features: hook (`.kiro/hooks/guard-shell.json`, `PreToolUse` on shell tools, script `.kiro/hooks/scripts/guard-shell.mjs`)
-- Produced: the agent ran `ls /tmp` while cleaning up; the hook stopped it before execution with `Blocked by .kiro/hooks/guard-shell: path "/tmp" resolves outside the repository root (/Users/yhoyoex/Project/seance).` and exit code 2, and the tool reported "The tool was NOT executed"
+- Produced: the agent ran `ls /tmp` while cleaning up; the hook stopped it before execution with `Blocked by .kiro/hooks/guard-shell: path "/tmp" resolves outside the repository root (<repo>).` and exit code 2, and the tool reported "The tool was NOT executed"
 - Notes: why: `security.md` keeps development agents inside the repository root, and the hook resolves every path-like word (absolute, `~`, `..`) against the root; the same deny-list stops `rm -rf` outside `node_modules`/`dist`/`.turbo`, `git push --force`, `git reset --hard`, `git clean -f`, `curl | sh` and reading `.env` files
 
 ### 2026-11-08 — Repo hygiene before the public deploy
