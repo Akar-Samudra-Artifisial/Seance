@@ -1,8 +1,9 @@
 import type { HostVirtualClient, IrcHost } from "../ports.js";
 import type { RunnerLogger } from "../log.js";
 import type { WhoisSnapshot } from "../whois/snapshot.js";
-import { redact, redactValues } from "../acp/redact.js";
+import { redact } from "../acp/redact.js";
 import { budgetFor, formatLines, stripControls } from "./line-format.js";
+import { SecretRedactor } from "./secret-redactor.js";
 
 /** The runner clamps AWAY to this many bytes, matching what the ircd stores. */
 export const AWAY_MAX_BYTES = 200;
@@ -33,6 +34,11 @@ export type AgentOutputOptions = {
   readonly snapshot?: WhoisSnapshot;
   /** Known secret values (for example KIRO_API_KEY) removed from every outgoing text. */
   readonly secrets?: readonly (string | undefined)[];
+  /**
+   * public-hardening Requirement 6.2: one redactor shared by all agents (it holds the Kiro token
+   * values read from the auth dir). Without it, one is built from `secrets`.
+   */
+  readonly redactor?: SecretRedactor;
 };
 
 /**
@@ -42,18 +48,32 @@ export type AgentOutputOptions = {
  */
 export class AgentOutput {
   readonly #o: AgentOutputOptions;
+  readonly #redactor: SecretRedactor;
 
   constructor(options: AgentOutputOptions) {
     this.#o = options;
+    this.#redactor = options.redactor ?? new SecretRedactor(options.secrets ?? []);
   }
 
   #prefix(): string {
     return `${this.#o.nick}!${this.#o.user}@${this.#o.host}`;
   }
 
-  /** Strips controls first (so obfuscated secrets match), then redacts known values and secret-looking keys. */
-  #clean(text: string): string {
-    return redact(redactValues(stripControls(text), this.#o.secrets ?? []));
+  #key(channel: string): string {
+    return `${this.#o.nick}\0${channel}`;
+  }
+
+  /**
+   * Strips controls first (so obfuscated secrets match), then redacts known values (raw, encoded,
+   * fragments, and continuations of the previous text in the same channel) and secret-looking keys.
+   */
+  #clean(text: string, channel?: string): string {
+    return redact(this.#redactor.redact(stripControls(text), channel === undefined ? undefined : this.#key(channel)));
+  }
+
+  /** A turn ended in `channel`: a secret split across turns is no longer joined (Requirement 6.2). */
+  endTurn(channel: string): void {
+    this.#redactor.endTurn(this.#key(channel));
   }
 
   #dispatch(command: "PRIVMSG" | "NOTICE", channel: string, text: string): void {
@@ -72,7 +92,7 @@ export class AgentOutput {
   /** One colored PRIVMSG per line, in order; a failing dispatch drops only that line. */
   say(channel: string, text: string): void {
     const budget = budgetFor(this.#prefix(), channel);
-    for (const line of formatLines(this.#clean(text), this.#o.color, budget)) {
+    for (const line of formatLines(this.#clean(text, channel), this.#o.color, budget)) {
       this.#dispatch("PRIVMSG", channel, line);
     }
   }
@@ -109,7 +129,7 @@ export class AgentOutput {
   /** NOTICE to the channel from the agent's virtual client, truncated to the line budget. */
   channelNotice(channel: string, text: string): void {
     const budget = budgetFor(this.#prefix(), channel);
-    const body = truncateBytes(this.#clean(text), budget);
+    const body = truncateBytes(this.#clean(text, channel), budget);
     if (body.trim() === "") return;
     this.#dispatch("NOTICE", channel, body);
   }

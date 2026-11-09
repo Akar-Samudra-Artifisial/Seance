@@ -6,6 +6,7 @@ import type { SessionRecord, SessionStore } from "../session/session-store.js";
 import type { SessionState } from "../session/machine.js";
 import type { WhoisSnapshot } from "../whois/snapshot.js";
 import { CreditAccumulator, type MeteringEntry, type MeteringResult } from "./accumulator.js";
+import type { DailyBudget, DailyState } from "./budget.js";
 
 /** Coalescing delay for `SessionStore.put`; well under the 1000 ms bound (Req 10.3). */
 export const LEDGER_FLUSH_MS = 250;
@@ -30,6 +31,14 @@ export interface CreditLedgerDeps {
   readonly opNotice: (channel: string, text: string) => void;
   /** ACP session id of an (agent, channel) pair, for the persisted record. */
   readonly acpSessionIdOf?: (agent: string, channel: string) => string | undefined;
+  /** public-hardening Requirement 5.2: the global daily budget; absent means not tracked. */
+  readonly daily?: DailyBudget;
+  /** Stores the daily state after each change (the credits file); failures are logged. */
+  readonly persistDaily?: (state: DailyState) => Promise<void>;
+  /** Every Session (all channels and private); prompting ones are cancelled when the day's cap is crossed. */
+  readonly allSessions?: () => readonly CancellableSession[];
+  /** Called once per UTC day when the daily cap is first exceeded (sends the ChanServ notices). */
+  readonly onDailyCapReached?: () => void;
 }
 
 type Cell = {
@@ -55,6 +64,7 @@ export class CreditLedger {
   readonly #dirty = new Set<string>();
   #timer: TimerHandle | undefined;
   #flushing: Promise<void> = Promise.resolve();
+  #dailyDirty = false;
 
   constructor(deps: CreditLedgerDeps) {
     if (deps.cap !== undefined && !(Number.isFinite(deps.cap) && deps.cap > 0)) {
@@ -104,6 +114,34 @@ export class CreditLedger {
     const c = irc_lower(channel);
     this.#set(a, c, this.amount(a, c) + n, true, agent, channel);
     this.#checkCap(c, channel);
+    this.#addDaily(n);
+  }
+
+  /** True while today's total (UTC, all agents) exceeds `SEANCE_DAILY_CREDIT_CAP`. */
+  dailyCapReached(): boolean {
+    return this.#deps.daily?.reached() === true;
+  }
+
+  #addDaily(n: number): void {
+    const daily = this.#deps.daily;
+    if (daily === undefined) return;
+    const crossed = daily.add(n);
+    this.#dailyDirty = true;
+    this.#schedule();
+    if (!crossed) return;
+    for (const s of this.#deps.allSessions?.() ?? []) {
+      if (s.state !== "prompting") continue;
+      try {
+        s.cancel();
+      } catch (err) {
+        this.#deps.logger?.error("cancel after daily credit cap failed", { agent: s.agent, error: String(err) });
+      }
+    }
+    try {
+      this.#deps.onDailyCapReached?.();
+    } catch (err) {
+      this.#deps.logger?.error("daily credit cap notice failed", { error: String(err) });
+    }
   }
 
   /**
@@ -119,6 +157,16 @@ export class CreditLedger {
   ): MeteringResult {
     const result = acc.add(entries);
     if (result.accepted > 0) this.add(agent, channel, result.accepted);
+    return result;
+  }
+
+  /**
+   * public-hardening Requirement 12.1: credits of a Private_Session count towards the daily
+   * budget only (a private session belongs to no channel, so no channel total or cap changes).
+   */
+  recordPrivateMetering(acc: CreditAccumulator, entries: readonly MeteringEntry[]): MeteringResult {
+    const result = acc.add(entries);
+    if (result.accepted > 0) this.#addDaily(result.accepted);
     return result;
   }
 
@@ -210,6 +258,18 @@ export class CreditLedger {
   }
 
   async #writeDirty(): Promise<void> {
+    // public-hardening Requirement 16.2: the daily state is written with the coalesced flush,
+    // not once per metering entry.
+    const daily = this.#deps.daily;
+    if (this.#dailyDirty && daily !== undefined && this.#deps.persistDaily !== undefined) {
+      this.#dailyDirty = false;
+      try {
+        await this.#deps.persistDaily(daily.state());
+      } catch (err) {
+        this.#dailyDirty = true;
+        this.#deps.logger?.error("persisting the daily credit total failed", { error: String(err) });
+      }
+    }
     const keys = [...this.#dirty];
     this.#dirty.clear();
     for (const key of keys) {

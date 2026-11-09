@@ -23,13 +23,16 @@ export class WorktreeError extends Error {
   readonly channel: string;
   readonly operation: WorktreeOperation;
   readonly detail: string;
+  /** public-hardening Requirement 9.1: the failing git call was killed by its timeout. */
+  readonly timedOut: boolean;
 
-  constructor(channel: string, operation: WorktreeOperation, detail: string) {
+  constructor(channel: string, operation: WorktreeOperation, detail: string, timedOut = false) {
     super(`worktree ${operation} failed for channel ${channel}: ${detail}`);
     this.name = "WorktreeError";
     this.channel = channel;
     this.operation = operation;
     this.detail = detail;
+    this.timedOut = timedOut;
   }
 }
 
@@ -54,7 +57,34 @@ export type GuardResult = { readonly ok: true } | { readonly ok: false; readonly
 export type TurnCommitResult =
   | { readonly kind: "committed"; readonly sha: string; readonly files: number }
   | { readonly kind: "clean" }
-  | { readonly kind: "refused"; readonly paths: readonly string[] };
+  | { readonly kind: "refused"; readonly paths: readonly string[] }
+  /** public-hardening Requirement 9: too large or git timed out; the worktree was reset to HEAD. */
+  | { readonly kind: "reset"; readonly reason: string };
+
+/**
+ * True when the files below `dir` (not `.git`, symlinks not followed) add up to more than
+ * `max` bytes. Stops as soon as the limit is passed.
+ */
+export async function exceedsBytes(dir: string, max: number): Promise<boolean> {
+  let total = 0;
+  const stack: string[] = [dir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined) break;
+    const entries = await readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      if (current === dir && entry.name === ".git") continue;
+      const abs = join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(abs);
+      } else if (entry.isFile()) {
+        total += (await lstat(abs)).size;
+        if (total > max) return true;
+      }
+    }
+  }
+  return false;
+}
 
 export type WorktreeManagerOptions = {
   readonly repo: string;
@@ -66,6 +96,8 @@ export type WorktreeManagerOptions = {
    * `.git` file is verified before each prompt. Default false: calls stay `git -C <worktree> ...`.
    */
   readonly hardened?: boolean;
+  /** public-hardening Requirement 9.2: `commitTurn` resets instead of committing above this size. */
+  readonly maxBytes?: number;
 };
 
 /** Case-insensitive gitignore-style globs: sparse-checkout patterns are case-sensitive. */
@@ -149,6 +181,7 @@ export class WorktreeManager {
   readonly #root: string;
   readonly #git: GitRunner;
   readonly #hardened: boolean;
+  readonly #maxBytes: number | undefined;
   readonly #ensuring = new Map<string, Promise<WorktreeInfo>>();
   /** Requirement 9.1: realpath of the worktree -> its git dir, read from the repository side. */
   readonly #gitDirs = new Map<string, string>();
@@ -158,6 +191,7 @@ export class WorktreeManager {
     this.#root = opts.root;
     this.#git = opts.git;
     this.#hardened = opts.hardened === true;
+    this.#maxBytes = opts.maxBytes;
   }
 
   /** Creates or reuses the channel's worktree; confined and free of agent config. */
@@ -217,7 +251,7 @@ export class WorktreeManager {
    * (runner-services Req 6.2, 6.3): the short sha the worktree now points at, and the number of
    * Dirty_Files counted just before the reset.
    */
-  async reset(channel: string): Promise<ResetReport> {
+  async reset(channel: string, opts: { readonly ignored?: boolean } = {}): Promise<ResetReport> {
     const path = join(this.#root, sanitizeChannel(channel));
     const realPath = await resolveInside(this.#root, path, channel);
     if ((await this.#toplevel(channel, realPath)) !== realPath) {
@@ -239,7 +273,9 @@ export class WorktreeManager {
         ]);
         const filesReverted = status.stdout.split("\0").filter((r) => r !== "").length;
         await this.#git.run([...wt, "reset", "--hard", target]);
-        await this.#git.run([...wt, "clean", "-fd"]);
+        // public-hardening Requirement 14.2: after an oversize turn ignored files go too, or a
+        // gitignored blob would survive every reset.
+        await this.#git.run([...wt, "clean", opts.ignored === true ? "-fdx" : "-fd"]);
         const short = (await this.#git.run([...wt, "rev-parse", "--short=7", "HEAD"])).stdout.trim();
         return { target: short, filesReverted };
       } catch (err) {
@@ -317,6 +353,41 @@ export class WorktreeManager {
     }
     const hits = await scanConfig(realPath);
     if (hits.length > 0) return { kind: "refused", paths: hits };
+    // public-hardening Requirement 9.2: an oversized worktree is never committed (a disk-filling
+    // turn); its work is discarded instead.
+    if (this.#maxBytes !== undefined && (await exceedsBytes(realPath, this.#maxBytes))) {
+      await this.reset(channel, { ignored: true });
+      return { kind: "reset", reason: `the worktree is larger than ${this.#maxBytes} bytes` };
+    }
+    let result: TurnCommitResult;
+    try {
+      result = await this.#commitLocked(channel, agent, realPath);
+    } catch (err) {
+      // Requirement 9.1: a hung git was killed and the mutex released; the turn's work is
+      // discarded so the next turn starts from a known state.
+      if (!(err instanceof WorktreeError && err.timedOut)) throw err;
+      await this.reset(channel, { ignored: true });
+      return { kind: "reset", reason: "git timed out" };
+    }
+    return result;
+  }
+
+  /**
+   * public-hardening Requirement 14.1: true when the channel's worktree is above `maxBytes`
+   * (always false without a cap). Checked after each completed tool call of a turn.
+   */
+  async exceedsCap(channel: string): Promise<boolean> {
+    if (this.#maxBytes === undefined) return false;
+    const realPath = await resolveInside(this.#root, join(this.#root, sanitizeChannel(channel)), channel);
+    return exceedsBytes(realPath, this.#maxBytes);
+  }
+
+  /** The cap in bytes, for messages; undefined without one. */
+  get maxBytes(): number | undefined {
+    return this.#maxBytes;
+  }
+
+  async #commitLocked(channel: string, agent: string, realPath: string): Promise<TurnCommitResult> {
     const wt = await this.#prefix(channel, realPath);
     return this.#git.locked(async () => {
       try {
@@ -352,7 +423,7 @@ export class WorktreeManager {
         const sha = (await this.#git.run([...wt, "rev-parse", "--short=7", "HEAD"])).stdout.trim();
         return { kind: "committed", sha, files };
       } catch (err) {
-        throw new WorktreeError(channel, "commit", message(err));
+        throw new WorktreeError(channel, "commit", message(err), err instanceof GitError && err.timedOut);
       }
     });
   }

@@ -4,6 +4,9 @@ import type { ChannelRegistry } from "./channel-registry.js";
 import type { Client } from "./client.js";
 import type { ConnectionManager } from "./connection-manager.js";
 import type { EventBus } from "./event-bus.js";
+import type { Accounts } from "./accounts.js";
+import type { PassFailures } from "./limits.js";
+import { holdUntilLoggedIn } from "./handlers/registration.js";
 
 /** Minimal structured logger; never pass message params or secrets. */
 export interface RouterLogger {
@@ -36,6 +39,12 @@ export interface RouterContext {
   readonly now?: () => number;
   /** Claims unregistered invite targets (Req 5.3); unset means none are claimed. */
   readonly inviteResolver?: InviteResolver;
+  /** public-hardening Requirement 2: accounts from IRCD_ACCOUNTS_FILE; unset means none. */
+  readonly accounts?: Accounts;
+  /** Agent registry nicks (coder, reviewer, ...), reserved for trusted clients in Auth_Mode. */
+  readonly reservedNicks?: () => Iterable<string>;
+  /** Wrong PASS values per client address (public-hardening Requirement 7.3). */
+  readonly passFailures?: PassFailures;
 }
 
 export type CommandHandlerFn = (
@@ -65,6 +74,7 @@ export type DispatchOutcome =
   | "handled"
   | "dropped"
   | "not-registered"
+  | "held"
   | "unknown-command"
   | "need-more-params"
   | "handler-error";
@@ -114,6 +124,11 @@ export class CommandRouter {
 
     try {
       if (!client.registered && !PRE_REGISTRATION_COMMANDS.has(command)) {
+        // public-hardening Requirement 13: during an asynchronous account login the line waits
+        // (bounded) and is replayed through this router after 001.
+        if (holdUntilLoggedIn(client, msg, (held) => this.dispatch(ctx, client, held)) === "held") {
+          return "held";
+        }
         this.reply(ctx, client, Numerics.ERR_NOTREGISTERED, "You have not registered");
         return "not-registered";
       }

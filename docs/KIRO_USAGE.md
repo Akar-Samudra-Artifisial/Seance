@@ -412,3 +412,13 @@ Include correctness properties (e.g. no write tool call is ever allowed for a no
   - Later waves: selectors (2.8, 2.9), Store lag and minimise (3.1–3.3), chrome (4.1–4.3), MDI/switchbar/status bar/topic bar (5.1–5.5), chat surfaces (6.1–6.6), e2e (7.1)
 - Produced: title bar, menu bar, toolbar, MDI child windows with minimise tray, switchbar credits counter, status bar lag, mode and away tracking, line-based WHOIS, exorcism line; `apps/web/README.md` documents the new chrome and its disabled items.
 - Notes: the visual comparison (task 7.2) is manual and not part of `pnpm test`.
+
+### 2026-11-08 — Spec public-hardening: make ircd and runner safe to expose
+- Kiro features: spec (`public-hardening` requirements/design/tasks, 9 security findings), steering (security, irc-protocol, runner-acp, testing), PBT (P1 reserved nicks, P2 redaction, P3 client IP), hook (guard-shell)
+- Produced: ircd accounts (`IRCD_ACCOUNTS_FILE`, scrypt, `tools/seance-account.mjs`), nicks claimed only after `PASS`, 3-strike close, 15 s registration timeout, reserved account and agent nicks; `IRCD_TRUSTED_PROXIES` with `X-Forwarded-For` and per-IP connection and `PASS` failure limits; inviters and `!reset-credits` need a logged-in account; only `+v`/`+o` senders or the inviter start a turn; credits file, `SEANCE_DAILY_CREDIT_CAP`, kill-switch file, WHOIS `budget:` line, channel and session caps; Kiro login tokens redacted from agent output (variants and 8-character fragments) and auth paths refused; git timeouts and a worktree size cap; `IRCD_PUBLIC=1` guard naming every missing variable
+- Notes: three existing tests changed on purpose (prompt gating, public guard), each with a comment; untrusted virtual clients still need `PASS`, so only the runner's agent clients are exempt.
+
+### 2026-11-08 — public-hardening follow-up: six review fixes
+- Kiro features: spec (`public-hardening` Requirements 11–16, tasks 10–15), steering (security, irc-protocol, runner-acp, testing), hook (guard-shell)
+- Produced: `IRCD_TRUSTED_PROXIES` required on public servers (ircd and runner guard); private `/msg` credits in the daily budget, private turns cancelled at the cap, private opens and revivals in the container cap; worktree size checked after each finished tool call with `git clean -fdx` resets; account-login commands held (20 lines) and replayed after `001`; fsynced, coalesced credits file that logs skipped entries; `docs/DEPLOY.md` and a plainer `docs/SANDBOX.md`
+- Notes: one existing assertion changed on purpose (daily-state writes are now coalesced: one write per flush instead of one per add), with a comment.

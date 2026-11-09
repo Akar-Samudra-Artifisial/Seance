@@ -6,6 +6,7 @@ import { AgentProfileNotLoadedError } from "../harness/acp-harness.js";
 import type { AgentHarness, HarnessSession } from "../harness/harness.js";
 import type { RunnerLogger } from "../log.js";
 import { AgentOutput, truncateBytes } from "../output/agent-output.js";
+import type { SecretRedactor } from "../output/secret-redactor.js";
 import type { HostEvents, HostVirtualClient, IrcHost, Unsubscribe } from "../ports.js";
 import { buildResumePrompt } from "../prompt/builder.js";
 import type { ChannelLog } from "../prompt/channel-log.js";
@@ -39,8 +40,18 @@ export type InviteControllerDeps = {
   readonly bans: Pick<BanList, "has">;
   readonly inviters: AllowList;
   readonly gate: Pick<InviteGate, "decide" | "release">;
-  readonly sessions: Pick<SessionManager, "addChannelSession" | "channelSession" | "registerAgent">;
-  readonly worktrees: Pick<WorktreeManager, "ensure" | "guardBeforePrompt"> & Partial<Pick<WorktreeManager, "shortHead">>;
+  readonly sessions: Pick<SessionManager, "addChannelSession" | "channelSession" | "registerAgent"> &
+    Partial<Pick<SessionManager, "setInviter">>;
+  /**
+   * public-hardening Requirement 5.5: a refusal text when one more agent channel or session would
+   * pass `SEANCE_MAX_AGENT_CHANNELS` / `SEANCE_MAX_CONTAINERS`; undefined allows the invite.
+   * `pendingChannels` are the channels of starts still in flight.
+   */
+  readonly capacity?: (channel: string, pendingChannels: readonly string[]) => string | undefined;
+  /** The WHOIS `budget:` line (Requirement 5.4); absent means none. */
+  readonly budgetLine?: () => string | undefined;
+  readonly worktrees: Pick<WorktreeManager, "ensure" | "guardBeforePrompt"> &
+    Partial<Pick<WorktreeManager, "shortHead" | "exceedsCap" | "reset">>;
   /**
    * ChanServ voice and the workspaces root for `worktree ready` (runner-services Req 5); optional
    * (design D12). `workspaces` only feeds `worktreeNoticeDir`, never IRC directly.
@@ -62,6 +73,8 @@ export type InviteControllerDeps = {
   readonly onHarnessSession?: (session: Session, harnessSession: HarnessSession) => void;
   /** Secret values (for example KIRO_API_KEY) removed from everything the agents say. */
   readonly secrets?: readonly (string | undefined)[];
+  /** public-hardening Requirement 6.2: one redactor shared by every agent (Kiro token values). */
+  readonly redactor?: SecretRedactor;
   readonly registerTimeoutMs?: number;
   readonly sessionOpenTimeoutMs?: number;
   /** agent-sandbox Requirement 14 (podman mode only): host-side commit after an `end_turn`. */
@@ -144,6 +157,11 @@ export class InviteController {
     });
   }
 
+  /** Channel Session starts still in flight (public-hardening Requirement 12.3: container count). */
+  pendingStarts(): number {
+    return this.#pending.size;
+  }
+
   /** The virtual client of an Agent, once created. */
   agentClient(nick: string): HostVirtualClient | undefined {
     return this.#agents.get(irc_lower(nick))?.client;
@@ -186,6 +204,13 @@ export class InviteController {
     }
 
     const key = `${e.targetKey}\0${irc_lower(e.channel)}`;
+    // Requirement 5.5: decided before the gate records the start, so a refusal leaves no state.
+    const pendingChannels = [...this.#pending.keys()].map((k) => k.slice(k.indexOf("\0") + 1));
+    const refusal = d.capacity?.(e.channel, pendingChannels);
+    if (refusal !== undefined) {
+      this.#noticeInviter(e.inviter, refusal);
+      return Promise.resolve();
+    }
     const decision = d.gate.decide(key, irc_lower(e.inviter), e.ts);
     if (decision.kind === "duplicate") return Promise.resolve();
     if (decision.kind === "rate-limited") {
@@ -282,6 +307,8 @@ export class InviteController {
       const session = buildChannelSession(d, profile, channel, harnessSession, entry.output, d.isBlocked);
       d.onHarnessSession?.(session, harnessSession);
       d.sessions.addChannelSession(session);
+      // public-hardening Requirement 4.1: the inviter may prompt this agent here without a mode.
+      d.sessions.setInviter?.(profile.nick, channel, e.inviter);
       if (resume) {
         const built = buildResumePrompt({
           channel,
@@ -394,7 +421,9 @@ export class InviteController {
     });
     const client = d.host.createVirtualClient({
       id: `agent:${nickKey}`,
-      whoisExtra: () => renderWhois(d.snapshot.get(profile.nick)),
+      // public-hardening Requirement 1.5: the agent's own client needs no PASS on a protected server.
+      trusted: true,
+      whoisExtra: () => renderWhois(d.snapshot.get(profile.nick), d.budgetLine?.()),
     });
     let off: Unsubscribe = () => undefined;
     const welcomed = new Promise<void>((resolve, reject) => {
@@ -434,6 +463,7 @@ export class InviteController {
       color: profile.color,
       snapshot: d.snapshot,
       ...(d.secrets !== undefined ? { secrets: d.secrets } : {}),
+      ...(d.redactor !== undefined ? { redactor: d.redactor } : {}),
     });
     d.sessions.registerAgent({ profile, client, output });
     return { profile, client, output };

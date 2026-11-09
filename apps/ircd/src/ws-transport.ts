@@ -5,7 +5,9 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import type { CommandRouter, RouterContext } from "./command-router.js";
 import { normalizeHost } from "./host.js";
-import { ConnectionGate, DEFAULT_LIMITS } from "./limits.js";
+import { canonicalIp, clientIp } from "./client-ip.js";
+import { ConnectionGate, DEFAULT_LIMITS, PerIpGate } from "./limits.js";
+import type { PassFailures } from "./limits.js";
 import type { SessionLimits } from "./limits.js";
 import { ConnectionSession } from "./network-client.js";
 import { isOriginAllowed } from "./origin.js";
@@ -29,6 +31,12 @@ export interface WsTransportOptions {
   readonly limits?: SessionLimits;
   /** Shared connection cap; defaults to an unshared gate with the default cap. */
   readonly gate?: ConnectionGate;
+  /** Live connections per client address (public-hardening Requirement 7.2). */
+  readonly perIp?: PerIpGate;
+  /** Addresses refused after too many wrong PASS values (Requirement 7.3). */
+  readonly passFailures?: PassFailures;
+  /** Proxies whose X-Forwarded-For is believed (Requirement 7.1); empty: always the socket peer. */
+  readonly trustedProxies?: ReadonlySet<string>;
 }
 
 /**
@@ -40,6 +48,7 @@ export class WsTransport {
   private readonly app: FastifyInstance;
   private readonly wss: WebSocketServer;
   private readonly gate: ConnectionGate;
+  private readonly perIp: PerIpGate;
   private readonly limits: SessionLimits;
 
   constructor(
@@ -48,6 +57,7 @@ export class WsTransport {
     private readonly options: WsTransportOptions = {},
   ) {
     this.gate = options.gate ?? new ConnectionGate();
+    this.perIp = options.perIp ?? new PerIpGate(Number.MAX_SAFE_INTEGER);
     this.limits = options.limits ?? DEFAULT_LIMITS;
     const allowedOrigins = options.allowedOrigins ?? [];
     this.app = Fastify({ logger: false });
@@ -63,9 +73,15 @@ export class WsTransport {
         }
       },
     });
-    this.wss.on("connection", (socket, request) =>
-      this.accept(socket, request.socket.remoteAddress),
-    );
+    this.wss.on("connection", (socket, request) => {
+      const header = request.headers["x-forwarded-for"];
+      const forwarded = Array.isArray(header) ? header.join(",") : header;
+      const peer = request.socket.remoteAddress;
+      const ip = clientIp(peer, forwarded, options.trustedProxies ?? new Set());
+      // The shown host stays the raw peer (normalised as before) unless a trusted proxy named the client.
+      const proxied = peer !== undefined && ip !== undefined && ip !== canonicalIp(peer);
+      this.accept(socket, ip, proxied ? ip : peer);
+    });
   }
 
   /** Start listening; resolves with the bound port (useful with port 0). */
@@ -89,19 +105,32 @@ export class WsTransport {
     await this.app.close();
   }
 
-  private accept(socket: WebSocket, remoteAddress: string | undefined): void {
+  private refuse(socket: WebSocket, reason: string): void {
+    // 1013 = Try Again Later. No client state is created.
+    socket.on("error", () => socket.terminate());
+    socket.close(1013, reason);
+    setTimeout(() => socket.terminate(), this.limits.closeGraceMs).unref();
+  }
+
+  private accept(socket: WebSocket, remoteAddress: string | undefined, hostSource: string | undefined): void {
+    if (this.options.passFailures?.blocked(remoteAddress) === true) {
+      this.refuse(socket, "Too many failed PASS attempts");
+      return;
+    }
     if (!this.gate.tryAcquire()) {
-      // 1013 = Try Again Later. No client state is created.
-      socket.on("error", () => socket.terminate());
-      socket.close(1013, "Too many connections");
-      setTimeout(() => socket.terminate(), this.limits.closeGraceMs).unref();
+      this.refuse(socket, "Too many connections");
+      return;
+    }
+    if (!this.perIp.tryAcquire(remoteAddress)) {
+      this.gate.release();
+      this.refuse(socket, "Too many connections from your address");
       return;
     }
     const session = new ConnectionSession(
       this.ctx,
       this.router,
       randomUUID(),
-      normalizeHost(remoteAddress),
+      normalizeHost(hostSource),
       {
         write: (line) => {
           if (socket.readyState === socket.OPEN) socket.send(line);
@@ -133,6 +162,7 @@ export class WsTransport {
     });
     socket.on("close", () => {
       this.gate.release();
+      this.perIp.release(remoteAddress);
       session.closed();
     });
   }

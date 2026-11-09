@@ -58,6 +58,18 @@ export interface RunnerConfig {
   readonly inviters: readonly string[] | undefined;
   /** Agent sandbox (agent-sandbox Requirement 1); `{ mode: "none" }` unless SEANCE_SANDBOX=podman. */
   readonly sandbox: SandboxConfig;
+  /** public-hardening Requirement 5.2: credits per UTC day for all agents; absent means no cap. */
+  readonly dailyCreditCap?: number;
+  /** Requirement 5.3: while this file exists no new turn starts; default `<workspaces>/.seance-paused`. */
+  readonly killSwitchFile?: string;
+  /** Requirement 5.5: channels with an open agent Session (default 2). */
+  readonly maxAgentChannels?: number;
+  /** Requirement 5.5: open agent sessions, channel and private (default 6). */
+  readonly maxContainers?: number;
+  /** Requirement 9.1: timeout per host git call (default 60000). */
+  readonly gitTimeoutMs?: number;
+  /** Requirement 9.2: worktree size before a host commit (default 500 MiB). */
+  readonly worktreeMaxBytes?: number;
 }
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -322,7 +334,59 @@ export function loadRunnerConfig(env: EnvSource, cwd: string = process.cwd()): R
     channelCreditCap: parseCreditCap(env),
     inviteRate: positiveInteger(env, "SEANCE_INVITE_RATE", DEFAULT_INVITE_RATE),
     inviters: parseInviters(env),
+    ...parseHardening(env),
   };
+}
+
+/** public-hardening defaults (Requirements 5 and 9); applied by the runner when a field is absent. */
+export const HARDENING_DEFAULTS = {
+  maxAgentChannels: 2,
+  maxContainers: 6,
+  gitTimeoutMs: 60_000,
+  worktreeMaxBytes: 500 * 1024 * 1024,
+} as const;
+
+/**
+ * public-hardening Requirements 5 and 9. Each field is present only when its variable is set, so
+ * a configuration without them stays exactly as before; the runner applies HARDENING_DEFAULTS.
+ */
+function parseHardening(env: EnvSource): {
+  readonly dailyCreditCap?: number;
+  readonly killSwitchFile?: string;
+  readonly maxAgentChannels?: number;
+  readonly maxContainers?: number;
+  readonly gitTimeoutMs?: number;
+  readonly worktreeMaxBytes?: number;
+} {
+  const out: Record<string, number | string> = {};
+  const capRaw = readString(env, "SEANCE_DAILY_CREDIT_CAP");
+  if (capRaw !== undefined) {
+    const value = capRaw.trim() === "" ? Number.NaN : Number(capRaw.trim());
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new ConfigError(
+        "SEANCE_DAILY_CREDIT_CAP",
+        `SEANCE_DAILY_CREDIT_CAP must be a finite number greater than 0 (got ${describe(capRaw)})`,
+      );
+    }
+    out["dailyCreditCap"] = value;
+  }
+  const kill = readString(env, "SEANCE_KILL_SWITCH_FILE");
+  if (kill !== undefined) {
+    if (kill.trim() === "") {
+      throw new ConfigError("SEANCE_KILL_SWITCH_FILE", `SEANCE_KILL_SWITCH_FILE must not be blank (got ${describe(kill)})`);
+    }
+    out["killSwitchFile"] = kill;
+  }
+  const ints: readonly (readonly [string, string])[] = [
+    ["SEANCE_MAX_AGENT_CHANNELS", "maxAgentChannels"],
+    ["SEANCE_MAX_CONTAINERS", "maxContainers"],
+    ["SEANCE_GIT_TIMEOUT_MS", "gitTimeoutMs"],
+    ["SEANCE_WORKTREE_MAX_BYTES", "worktreeMaxBytes"],
+  ];
+  for (const [name, field] of ints) {
+    if (readString(env, name) !== undefined) out[field] = positiveInteger(env, name, 1);
+  }
+  return out;
 }
 
 /** True for `localhost`, `::1`, `[::1]` and any `127.x.y.z`. An unset host (all interfaces) is not loopback. */

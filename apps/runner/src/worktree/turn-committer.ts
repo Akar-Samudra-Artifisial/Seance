@@ -35,6 +35,15 @@ export function createTurnCommitter(d: TurnCommitterDeps): (agent: string, chann
         case "refused":
           d.logger.warn("host commit refused: protected config in the worktree", { agent, channel, paths: result.paths });
           return;
+        case "reset":
+          // public-hardening Requirement 9: the turn's work was discarded, not committed.
+          d.logger.warn("host commit skipped: worktree reset", { agent, channel, reason: result.reason });
+          try {
+            d.opNotice(channel, `${agent}: turn not committed in ${channel}, worktree reset (${result.reason})`);
+          } catch (err) {
+            d.logger.error("reset notice failed", { agent, channel, reason: messageOf(err) });
+          }
+          return;
         case "committed":
           d.logger.info("host commit made", { agent, channel, sha: result.sha, files: result.files });
           try {

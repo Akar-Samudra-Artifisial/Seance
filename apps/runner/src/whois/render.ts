@@ -77,7 +77,7 @@ function byLoweredName(a: ChannelSnapshot, b: ChannelSnapshot): number {
  * at most {@link WHOIS_MAX_LINES} lines, each within {@link WHOIS_LINE_MAX_BYTES}.
  * Never throws and never mutates `entry`.
  */
-export function renderWhois(entry: AgentSnapshot | undefined): readonly string[] {
+export function renderWhois(entry: AgentSnapshot | undefined, budget?: string): readonly string[] {
   if (entry === undefined) return [];
 
   const open = [...entry.channels.values()].filter((c) => c.state !== "closed").sort(byLoweredName);
@@ -87,6 +87,8 @@ export function renderWhois(entry: AgentSnapshot | undefined): readonly string[]
   // agent-skills Req 3.1: only when the profile lists skills.
   if (entry.skills !== undefined && entry.skills.length > 0) lines.push(skillsLine(entry.skills));
   lines.push(`status: ${status(entry, open)}`);
+  // public-hardening Requirement 5.4: the global daily budget, right after the status.
+  if (budget !== undefined && budget !== "") lines.push(budget);
 
   const total = entry.total.toFixed(2);
   for (const c of open) {

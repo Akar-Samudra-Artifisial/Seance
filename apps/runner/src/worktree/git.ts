@@ -13,13 +13,16 @@ export class GitError extends Error {
   /** Exit code, or undefined when git could not be spawned or was killed by a signal. */
   readonly exitCode: number | undefined;
   readonly stderr: string;
+  /** public-hardening Requirement 9.1: the call ran past its timeout and was killed. */
+  readonly timedOut: boolean;
 
-  constructor(args: readonly string[], exitCode: number | undefined, stderr: string, cause: string) {
+  constructor(args: readonly string[], exitCode: number | undefined, stderr: string, cause: string, timedOut = false) {
     super(`git ${args.join(" ")} failed: ${cause}${stderr === "" ? "" : `: ${stderr.trim()}`}`);
     this.name = "GitError";
     this.args = args;
     this.exitCode = exitCode;
     this.stderr = stderr;
+    this.timedOut = timedOut;
   }
 }
 
@@ -32,6 +35,8 @@ export interface GitRunner {
 }
 
 const MAX_BUFFER = 16 * 1024 * 1024;
+/** public-hardening Requirement 9.1: default per-call timeout (SEANCE_GIT_TIMEOUT_MS). */
+export const DEFAULT_GIT_TIMEOUT_MS = 60_000;
 
 /** Environment for git: allow-listed names only (never KIRO_API_KEY), no prompts, C locale. */
 export function gitEnv(source: EnvLike): Record<string, string | undefined> {
@@ -53,7 +58,11 @@ const tails = new Map<string, Promise<void>>();
  * Runs `git <args>` through `execFile` (never a shell), so channel names and
  * paths are passed as plain argv elements.
  */
-export function runGit(args: readonly string[], env: Record<string, string | undefined> = gitEnv(process.env)): Promise<GitResult> {
+export function runGit(
+  args: readonly string[],
+  env: Record<string, string | undefined> = gitEnv(process.env),
+  timeoutMs: number = DEFAULT_GIT_TIMEOUT_MS,
+): Promise<GitResult> {
   return new Promise<GitResult>((resolve, reject) => {
     execFile(
       "git",
@@ -63,6 +72,10 @@ export function runGit(args: readonly string[], env: Record<string, string | und
         maxBuffer: MAX_BUFFER,
         windowsHide: true,
         env,
+        // A hung git (a lock, a slow filesystem, a hostile hook) is killed, so the caller and the
+        // per-repository mutex always settle.
+        timeout: timeoutMs,
+        killSignal: "SIGKILL",
       },
       (error, stdout, stderr) => {
         if (error === null) {
@@ -71,7 +84,9 @@ export function runGit(args: readonly string[], env: Record<string, string | und
         }
         const code = (error as NodeJS.ErrnoException & { code?: unknown }).code;
         const exitCode = typeof code === "number" ? code : undefined;
-        reject(new GitError(args, exitCode, stderr, error.message.split("\n")[0] ?? "unknown error"));
+        const timedOut = (error as { killed?: boolean }).killed === true && exitCode === undefined;
+        const cause = timedOut ? `timed out after ${timeoutMs} ms` : (error.message.split("\n")[0] ?? "unknown error");
+        reject(new GitError(args, exitCode, stderr, cause, timedOut));
       },
     );
   });
@@ -81,10 +96,14 @@ export function runGit(args: readonly string[], env: Record<string, string | und
  * Creates a runner whose `locked` calls are serialised per `repo` path. `hardened` (podman mode)
  * adds the environment of `hardenedGitEnv`.
  */
-export function createGitRunner(repo: string, opts: { readonly hardened?: boolean } = {}): GitRunner {
+export function createGitRunner(
+  repo: string,
+  opts: { readonly hardened?: boolean; readonly timeoutMs?: number } = {},
+): GitRunner {
   const hardened = opts.hardened === true;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_GIT_TIMEOUT_MS;
   return {
-    run: (args) => (hardened ? runGit(args, hardenedGitEnv(process.env)) : runGit(args)),
+    run: (args) => runGit(args, hardened ? hardenedGitEnv(process.env) : gitEnv(process.env), timeoutMs),
     locked<T>(fn: () => Promise<T>): Promise<T> {
       const previous = tails.get(repo) ?? Promise.resolve();
       const result = previous.then(fn);

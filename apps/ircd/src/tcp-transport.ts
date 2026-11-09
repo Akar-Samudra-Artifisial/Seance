@@ -3,7 +3,9 @@ import { createServer } from "node:net";
 import type { AddressInfo, Server, Socket } from "node:net";
 import type { CommandRouter, RouterContext } from "./command-router.js";
 import { normalizeHost } from "./host.js";
-import { ConnectionGate, DEFAULT_LIMITS } from "./limits.js";
+import { canonicalIp } from "./client-ip.js";
+import { ConnectionGate, DEFAULT_LIMITS, PerIpGate } from "./limits.js";
+import type { PassFailures } from "./limits.js";
 import type { SessionLimits } from "./limits.js";
 import { ConnectionSession } from "./network-client.js";
 import { logSocketError } from "./socket-errors.js";
@@ -17,6 +19,10 @@ export interface TcpTransportOptions {
   readonly limits?: SessionLimits;
   /** Shared connection cap; defaults to an unshared gate with the default cap. */
   readonly gate?: ConnectionGate;
+  /** Live connections per client address (public-hardening Requirement 7.2). */
+  readonly perIp?: PerIpGate;
+  /** Addresses refused after too many wrong PASS values (Requirement 7.3). */
+  readonly passFailures?: PassFailures;
 }
 
 /** Plain-TCP IRC listener (Req 2.1). One `LineFramer` per socket. */
@@ -24,6 +30,7 @@ export class TcpTransport {
   private readonly server: Server;
   private readonly sockets = new Set<Socket>();
   private readonly gate: ConnectionGate;
+  private readonly perIp: PerIpGate;
   private readonly limits: SessionLimits;
 
   constructor(
@@ -32,6 +39,7 @@ export class TcpTransport {
     private readonly options: TcpTransportOptions = {},
   ) {
     this.gate = options.gate ?? new ConnectionGate();
+    this.perIp = options.perIp ?? new PerIpGate(Number.MAX_SAFE_INTEGER);
     this.limits = options.limits ?? DEFAULT_LIMITS;
     this.server = createServer((socket) => this.accept(socket));
   }
@@ -56,12 +64,26 @@ export class TcpTransport {
     });
   }
 
+  private refuse(socket: Socket, reason: string): void {
+    // No client state is created for a refused connection.
+    socket.on("error", () => socket.destroy());
+    socket.end(`ERROR :Closing Link: ${reason}\r\n`);
+    setTimeout(() => socket.destroy(), this.limits.closeGraceMs).unref();
+  }
+
   private accept(socket: Socket): void {
+    const ip = socket.remoteAddress === undefined ? undefined : canonicalIp(socket.remoteAddress);
+    if (this.options.passFailures?.blocked(ip) === true) {
+      this.refuse(socket, "Too many failed PASS attempts from your address");
+      return;
+    }
     if (!this.gate.tryAcquire()) {
-      // No client state is created for a refused connection.
-      socket.on("error", () => socket.destroy());
-      socket.end("ERROR :Closing Link: Too many connections\r\n");
-      setTimeout(() => socket.destroy(), this.limits.closeGraceMs).unref();
+      this.refuse(socket, "Too many connections");
+      return;
+    }
+    if (!this.perIp.tryAcquire(ip)) {
+      this.gate.release();
+      this.refuse(socket, "Too many connections from your address");
       return;
     }
     this.sockets.add(socket);
@@ -91,6 +113,7 @@ export class TcpTransport {
     socket.on("close", () => {
       this.sockets.delete(socket);
       this.gate.release();
+      this.perIp.release(ip);
       session.closed();
     });
   }

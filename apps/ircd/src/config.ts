@@ -2,7 +2,15 @@ import {
   DEFAULT_IDLE_INTERVAL_MS,
   DEFAULT_PING_TIMEOUT_MS,
 } from "./connection-manager.js";
-import { DEFAULT_LIMITS, DEFAULT_MAX_CONNECTIONS } from "./limits.js";
+import { loadAccounts } from "./accounts.js";
+import type { Accounts } from "./accounts.js";
+import { parseTrustedProxies } from "./client-ip.js";
+import {
+  DEFAULT_LIMITS,
+  DEFAULT_MAX_CONNECTIONS,
+  DEFAULT_MAX_CONNECTIONS_PER_IP,
+  DEFAULT_MAX_PASS_FAILURES_PER_IP,
+} from "./limits.js";
 import { parseAllowedOrigins } from "./origin.js";
 import { DEFAULT_TCP_PORT } from "./tcp-transport.js";
 import { DEFAULT_WS_PORT } from "./ws-transport.js";
@@ -23,6 +31,12 @@ export type ServerConfig = {
   readonly closeGraceMs: number;
   /** Lower-case origins allowed to open a WebSocket, or `*`. Empty rejects browsers. */
   readonly wsAllowedOrigins: readonly string[];
+  /** public-hardening Requirement 2: accounts from IRCD_ACCOUNTS_FILE (read and checked at load). */
+  readonly accounts?: Accounts;
+  /** Proxy addresses whose X-Forwarded-For is believed (Requirement 7.1). */
+  readonly trustedProxies: ReadonlySet<string>;
+  readonly maxConnectionsPerIp: number;
+  readonly maxPassFailuresPerIp: number;
 };
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -88,6 +102,7 @@ export function loadConfig(env: Env): ServerConfig {
     throw new Error("IRCD_SERVER_PASSWORD must not contain spaces, CR, LF or NUL");
   }
   const host = env["IRCD_HOST"];
+  const accountsFile = env["IRCD_ACCOUNTS_FILE"];
   const wsPort = port(env, "IRCD_WS_PORT", DEFAULT_WS_PORT);
   assertBrowserSafeWsPort(wsPort);
   return {
@@ -113,5 +128,9 @@ export function loadConfig(env: Env): ServerConfig {
     ),
     closeGraceMs: positiveInt(env, "IRCD_CLOSE_GRACE_MS", DEFAULT_LIMITS.closeGraceMs),
     wsAllowedOrigins: parseAllowedOrigins(env["IRCD_WS_ALLOWED_ORIGINS"], "IRCD_WS_ALLOWED_ORIGINS"),
+    ...(accountsFile !== undefined && accountsFile !== "" ? { accounts: loadAccounts(accountsFile) } : {}),
+    trustedProxies: parseTrustedProxies(env["IRCD_TRUSTED_PROXIES"]),
+    maxConnectionsPerIp: positiveInt(env, "IRCD_MAX_CONNECTIONS_PER_IP", DEFAULT_MAX_CONNECTIONS_PER_IP),
+    maxPassFailuresPerIp: positiveInt(env, "IRCD_MAX_PASS_FAILURES_PER_IP", DEFAULT_MAX_PASS_FAILURES_PER_IP),
   };
 }

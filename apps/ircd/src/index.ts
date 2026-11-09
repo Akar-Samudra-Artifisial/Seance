@@ -62,7 +62,11 @@ async function main(): Promise<void> {
     config,
     logger,
     runnerEnabled
-      ? { inviteResolver: (t, c, i) => runner?.inviteResolver(t, c, i) ?? false }
+      ? {
+          inviteResolver: (t, c, i) => runner?.inviteResolver(t, c, i) ?? false,
+          // public-hardening Requirement 2.3: humans cannot take an agent's nick.
+          reservedNicks: () => runner?.agentNicks() ?? [],
+        }
       : {},
   );
 
@@ -73,6 +77,7 @@ async function main(): Promise<void> {
       ...(config.host !== undefined ? { bindHost: config.host } : {}),
       logger: runnerLogger,
       publicDeployment,
+      trustedProxies: [...config.trustedProxies],
     });
     runner = created;
     try {

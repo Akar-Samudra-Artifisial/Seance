@@ -29,6 +29,27 @@ The sandbox is one layer. The permission rules (`+o` to write, paths confined to
 
 **Residual credential risk.** The login state in `SEANCE_SANDBOX_AUTH_DIR` is copied into the container's memory-backed `$HOME`, so `kiro-cli` can use and refresh it. A prompt-injected agent can read that copy and send it to any host the egress rule allows (the Kiro endpoints and package registries accept uploads). Use a dedicated, low-privilege login for the public server, keep its spend limited, and rotate it after the event.
 
+**Token redaction (public-hardening, Requirement 6).** At start (podman mode) the runner reads the files in `SEANCE_SANDBOX_AUTH_DIR` (at most 4 levels deep, 1 MiB per file, 8 MiB in total, symlinks not followed) and collects every token-shaped value: JSON string values of 16 or more token characters with a digit or mixed case, and in other files (the SQLite store) runs of 24 or more such characters. URLs, dates and prose are not collected, so ordinary agent output is not touched. Every text an agent sends to IRC then loses each of those values in raw, base64, base64url and hex form, and every run covered by an 8-character window of one of them. A value split over two consecutive messages of one channel is still caught: the continuation is redacted. Tool calls whose paths touch the login (`/run/seance/auth`, `.local/share/kiro-cli`, `.aws/sso`, `.aws/credentials`) are refused for every mode and every tool class, reads included, and shell commands that name those paths are refused as `protected-path`.
+
+### The Kiro login can be stolen by a +o agent
+
+Plainly: **the Kiro login is readable inside the sandbox, and egress is open enough to send it out.** `kiro-cli` needs the login to work, so its copy in the container's `$HOME` is readable by every process the agent starts. The egress rule allows the Kiro endpoints and the package registries, and both accept uploads (a package publish, an issue body, a prompt to another account); treat egress as open for this purpose. A `+o` agent can run a shell, so a prompt-injected `+o` agent can read the login and exfiltrate it. Redaction (above) only keeps the token out of IRC; the path checks only stop the obvious spellings. Neither stops a determined agent with a shell.
+
+The mitigation is the account, not the code: the public server runs with **a dedicated Kiro account created for the demo**, with no other projects, a low spend limit, and it is **revoked right after judging** (log out, delete the login state in `SEANCE_SANDBOX_AUTH_DIR`, rotate anything the account can reach). Never stage a personal or company login there.
+
+### Known redactor bypasses (residual risk)
+
+The redactor recognises raw, base64, base64url and hex forms and any 8-character fragment of them. It does not recognise:
+
+- the value **reversed**;
+- **base32** (or base85, ROT13, any other encoding);
+- **URL-encoding** (`%41%74...`) or HTML entities;
+- **zero-width characters** (U+200B, U+200C, U+200D, U+2060, U+FEFF) or other separators inserted between the characters;
+- **fragments under 8 characters**, including the first piece of a value split over two messages, which is sent before the continuation is seen;
+- the value spread over many messages with other text in between, or drawn as ASCII art.
+
+Also: the textual path check is a floor, not a wall (a shell can build the path at run time, `cd ~/.lo""cal/sh*`).
+
 ## Modes and the production rule
 
 | `SEANCE_SANDBOX` | Meaning |
@@ -230,7 +251,7 @@ Then start the runner with `SEANCE_SANDBOX=podman` (and `IRCD_PUBLIC=1` on the p
 - `/home/agent` and `/tmp` are `noexec`. That `kiro-cli` starts with it (it runs from `/usr/local/bin` of the image and only reads its login from `$HOME`) is expected, not yet observed on Linux: spike S12 (`pnpm --filter @seance/spike-acp s12-auth`, task 0.4) runs it in the production flag set; `S12_HOME_EXEC=1` drops `noexec` for a comparison if it fails. Tools that execute from `$HOME` (`npx`, `uvx` caches) do not work.
 - A second `openSession` for an agent and session directory whose open is still in flight is rejected (`a session for <agent> in this session directory is already being opened`); it never receives the first caller's session.
 - DNS tunnelling is not prevented (see the table at the top).
-- The worktree has no disk quota.
+- The worktree size is checked after each tool call (`SEANCE_WORKTREE_MAX_BYTES`), but there is no hard disk quota; see [DEPLOY.md](./DEPLOY.md#disk-use-a-quota-is-still-needed).
 - Podman-in-Podman (running the runner itself in a container) is not supported.
-- The Kiro credential is readable by the agent (see "Residual credential risk").
+- The Kiro credential is readable by the agent (see "The Kiro login can be stolen by a +o agent").
 - Several agents in one channel share one worktree; a host-side commit after one agent's turn includes whatever the others changed meanwhile.

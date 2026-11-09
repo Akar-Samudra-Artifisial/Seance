@@ -90,21 +90,23 @@ describe("agent-to-agent loop guard (Fake_Agent + in-process ircd)", () => {
       expect(op.lines.some((l) => /limit/i.test(l))).toBe(false);
 
       // Req 11.4 (amended by review finding 1): a member without +v or +o does not reset the counts.
-      // Each agent answers the lurker once; the mentions in those answers stay over the limit.
+      // Changed by public-hardening Requirement 4: the lurker's line no longer prompts the agents at
+      // all (each used to answer it once, making 5), so the counts stay at 4.
       const lurker = await fx.connectClient("lurker");
       await lurker.join(CHANNEL);
       lurker.send(`PRIVMSG ${CHANNEL} :anyone here`);
       await op.waitFor(/^:lurker!\S+ PRIVMSG #loop /, 15_000);
       await settle(op);
-      expect(saidBy(op, "coder")).toHaveLength(5);
-      expect(saidBy(op, "reviewer")).toHaveLength(5);
+      expect(saidBy(op, "coder")).toHaveLength(4);
+      expect(saidBy(op, "reviewer")).toHaveLength(4);
+      expect(fx.logs.some((l) => l.msg === "no prompt: sender has no mode and is not the inviter")).toBe(true);
 
       // The op (+o) resets them: one reply to the op plus a full bounded round of 3, each.
-      // Expected counts moved from 8 to 9 because the lurker's line above added one reply each.
+      // Expected counts: 4 + 1 + 3 = 8 (9 while the lurker still prompted the agents).
       op.send(`PRIVMSG ${CHANNEL} :once more`);
       await settle(op);
-      expect(saidBy(op, "coder")).toHaveLength(9);
-      expect(saidBy(op, "reviewer")).toHaveLength(9);
+      expect(saidBy(op, "coder")).toHaveLength(8);
+      expect(saidBy(op, "reviewer")).toHaveLength(8);
     },
     TEST_TIMEOUT_MS,
   );

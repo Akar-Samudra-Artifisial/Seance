@@ -63,7 +63,15 @@ export interface IrcHost {
     id: string;
     host?: string;
     whoisExtra?: () => readonly string[];
+    /** An agent client: needs no PASS and may use an agent nick (public-hardening Req 1.5). */
+    trusted?: boolean;
   }): HostVirtualClient;
+  /** public-hardening Requirement 3: the ircd has accounts (IRCD_ACCOUNTS_FILE). Absent means no. */
+  readonly accountsEnabled?: boolean;
+  /** The account a registered client logged in as, or undefined (guest, unknown nick). */
+  accountOf?(nick: string): string | undefined;
+  /** True when `nick` is an account nick (whether or not it is connected). */
+  isAccount?(nick: string): boolean;
   subscribe<K extends keyof HostEvents>(
     name: K,
     l: (e: HostEvents[K]) => void,

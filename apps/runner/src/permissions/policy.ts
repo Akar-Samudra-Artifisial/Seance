@@ -3,7 +3,7 @@
  * Path canonicalisation (the only I/O) lives in `canonicalise.ts`.
  */
 import { posix } from "node:path";
-import { matchDenyList } from "./deny-list.js";
+import { isAuthPath, matchDenyList } from "./deny-list.js";
 
 export type PolicyMode = "op" | "voice" | "none";
 export type ToolClass = "read" | "write" | "shell" | "unclassified";
@@ -93,6 +93,11 @@ function evaluate(input: PolicyInput): PermissionResult {
     if (p.resolved === undefined || p.resolved === "" || p.resolved.includes("\0")) {
       return reject("unresolved-path");
     }
+  }
+
+  // 2b. public-hardening Requirement 6.3: the Kiro login is never a tool target, not even for reads.
+  for (const p of paths) {
+    if (isAuthPath(p.raw) || (p.resolved !== undefined && isAuthPath(p.resolved))) return reject("protected-path");
   }
 
   // 3. confinement, regardless of mode

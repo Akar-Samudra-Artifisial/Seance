@@ -575,7 +575,10 @@ export class AcpHarness implements AgentHarness {
         // Real kiro sends kind and paths here and in `tool_call`, not in the permission request.
         const id = asStr(update["toolCallId"]);
         if (id !== undefined) session.tools.record(id, update);
-        session.emit({ kind: "unknown", sessionUpdate: type });
+        // public-hardening Requirement 14.1: a finished tool call triggers the worktree size check.
+        const status = asStr(update["status"]);
+        if (status === "completed" || status === "failed") session.emit({ kind: "tool-done", status });
+        else session.emit({ kind: "unknown", sessionUpdate: type });
         return;
       }
       default:

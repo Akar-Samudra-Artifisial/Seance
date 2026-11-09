@@ -254,10 +254,10 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 
 | Risk | Mitigation |
 |---|---|
-| Credits | `+m` by default; per-channel credit cap; agent-to-agent replies capped at 3 per human line (runner-services Req 11); Haiku for researcher, Sonnet for coder; ChanServ/NickServ cost nothing (runner code, no model) |
+| Credits | `+m` by default; per-channel credit cap; a global daily cap (`SEANCE_DAILY_CREDIT_CAP`, UTC day) and a kill-switch file, both persisted with the totals in `.seance-credits.json` (spec `public-hardening`); only `+v`/`+o` senders or the agent's inviter start a turn; agent-to-agent replies capped at 3 per human line (runner-services Req 11); Haiku for researcher, Sonnet for coder; ChanServ/NickServ cost nothing (runner code, no model) |
 | Security | Shell only for `+o`; cwd locked to the worktree; deny-list hooks; Podman container (rootless, one per agent and session directory instead of one process per agent; spec `agent-sandbox`, [`docs/SANDBOX.md`](docs/SANDBOX.md); no git metadata inside it, so the runner commits an op agent's work on the host after each turn with hardened git; a commit command for ops is a later spec; egress limited to HTTPS towards Kiro and package registries by a host rule); only messages from human ops become instructions — everything else is wrapped in `<untrusted>`; agent output is never executed |
 | Latency | Stream per sentence; 120 s timeout → `NOTICE` |
-| Judge hosting | VPS + Podman + Caddy TLS; judge accounts via `PASS`; max 2 active agent channels |
+| Judge hosting | VPS + Podman + Caddy TLS; judge accounts via `PASS <nick>:<secret>` (`IRCD_ACCOUNTS_FILE`, scrypt hashes; guests via the server password cannot invite); nicks claimed only after `PASS`; max 2 active agent channels (`SEANCE_MAX_AGENT_CHANNELS`) and 6 sessions; real client IPs from `X-Forwarded-For` of trusted proxies for per-IP limits; `IRCD_PUBLIC=1` refuses to start until every item is set (spec `public-hardening`) |
 | Trademark | Never use "mIRC" in the product name |
 | Crew API | Not yet confirmed; MVP does not depend on it |
 

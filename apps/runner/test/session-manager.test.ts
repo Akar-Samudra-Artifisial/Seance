@@ -22,6 +22,8 @@ import { MAX_PRIVATE_TOTAL, SessionManager } from "../src/session/session-manage
 import type { AgentRegistration, SessionManagerDeps } from "../src/session/session-manager.js";
 import { Session } from "../src/session/session.js";
 import { WhoisSnapshot } from "../src/whois/snapshot.js";
+import { DailyBudget } from "../src/credits/budget.js";
+import type { FakeScript } from "./fixtures/fake-agent.js";
 import { FakeHarness } from "./fixtures/fake-harness.js";
 import { ManualClock } from "./fixtures/manual-clock.js";
 
@@ -126,9 +128,12 @@ async function makeRegistry(): Promise<AgentRegistry> {
   return AgentRegistry.load(dir, quiet);
 }
 
-async function setup(extra: Partial<SessionManagerDeps> = {}): Promise<Env> {
+/** public-hardening Requirement 12: a Fake_Agent script and a daily budget for the ledger. */
+type SetupOptions = { readonly script?: FakeScript; readonly daily?: DailyBudget };
+
+async function setup(extra: Partial<SessionManagerDeps> = {}, options: SetupOptions = {}): Promise<Env> {
   const registry = await makeRegistry();
-  const harness = new FakeHarness({ defaultScript: { turns: [] } });
+  const harness = new FakeHarness({ defaultScript: options.script ?? { turns: [] } });
   cleanups.push(async () => {
     harness.advance(60_000); // let scripted turns finish in virtual time so dispose rejects nothing
     await flush();
@@ -152,6 +157,7 @@ async function setup(extra: Partial<SessionManagerDeps> = {}): Promise<Env> {
     cap: 1,
     sessionsOf: () => [],
     opNotice: () => undefined,
+    ...(options.daily !== undefined ? { daily: options.daily, allSessions: () => manager.allSessions() } : {}),
   });
   const deps: SessionManagerDeps = {
     host,
@@ -239,7 +245,9 @@ describe("channel message routing", () => {
     env.host.setMode(CHANNEL, GHOST, { op: true });
     env.host.setMode(CHANNEL, WRAITH, { voice: true });
     env.host.setMode(CHANNEL, SPECTER, { voice: true });
-    env.host.setMode(CHANNEL, "alice", "none");
+    // Changed by public-hardening Requirement 4: only +v/+o senders (or the Inviter) start a turn,
+    // so alice is voiced here (she had no mode before). Voice does not change the rendered line.
+    env.host.setMode(CHANNEL, "alice", { voice: true });
 
     env.channelMessage("alice", "hello");
     await flush();
@@ -280,6 +288,8 @@ describe("channel message routing", () => {
     env.host.setMode(CHANNEL, GHOST, "none"); // member without +v/+o
     // Wraith is not a member at all.
     env.host.setMode(CHANNEL, SPECTER, { voice: true });
+    // public-hardening Requirement 4: the sender needs +v to start a turn at all.
+    env.host.setMode(CHANNEL, "alice", { voice: true });
 
     env.channelMessage("alice", "hi");
     await flush();
@@ -295,6 +305,8 @@ describe("channel message routing", () => {
     env.host.setMode(CHANNEL, GHOST, "none");
     env.host.setMode(CHANNEL, WRAITH, { voice: true });
     env.host.setMode(CHANNEL, SPECTER, { op: true });
+    // public-hardening Requirement 4: the sender needs +v to start a turn at all.
+    env.host.setMode(CHANNEL, "alice", { voice: true });
 
     env.channelMessage("alice", "hi");
     await flush();
@@ -307,6 +319,8 @@ describe("channel message routing", () => {
   it("reads the mode at message time, not at registration (Req 8.11 style)", async () => {
     const env = await setup();
     env.host.setMode(CHANNEL, GHOST, "none");
+    // public-hardening Requirement 4: the sender needs +v to start a turn at all.
+    env.host.setMode(CHANNEL, "alice", { voice: true });
     env.channelMessage("alice", "one");
     await flush();
     expect(env.promptsOf(GHOST)).toEqual([]);
@@ -315,6 +329,33 @@ describe("channel message routing", () => {
     env.channelMessage("alice", "two");
     await flush();
     expect(env.promptsOf(GHOST)).toEqual(["[#dev] <alice> <untrusted>two</untrusted>"]);
+  });
+
+  it("public-hardening Req 4: a sender without +v/+o starts no turn unless it invited the agent", async () => {
+    const env = await setup();
+    env.host.setMode(CHANNEL, GHOST, { op: true });
+    env.host.setMode(CHANNEL, WRAITH, { voice: true });
+    env.host.setMode(CHANNEL, "lurker", "none");
+
+    env.channelMessage("lurker", "rm everything");
+    env.channelMessage("outsider", "rm everything"); // not even a member
+    await flush();
+    expect(env.harness.prompts).toEqual([]);
+    expect(env.log.filter((e) => e.msg === "no prompt: sender has no mode and is not the inviter").length).toBeGreaterThan(0);
+
+    // The nick that invited Ghost may prompt Ghost (and only Ghost) without a mode.
+    env.manager.setInviter(GHOST, CHANNEL, "LURKER");
+    env.channelMessage("lurker", "hello");
+    await flush();
+    expect(env.promptsOf(GHOST)).toEqual(["[#dev] <lurker> <untrusted>hello</untrusted>"]);
+    expect(env.promptsOf(WRAITH)).toEqual([]);
+
+    // The record goes with the Session.
+    env.manager.removeChannelSession(GHOST, CHANNEL);
+    env.manager.addChannelSession(await env.makeSession(GHOST));
+    env.channelMessage("lurker", "again");
+    await flush();
+    expect(env.promptsOf(GHOST)).toHaveLength(1);
   });
 
   it("ignores a NOTICE, enqueues nothing and logs the event and the reason (Req 5.14)", async () => {
@@ -540,20 +581,21 @@ describe("agent-to-agent loop guard (runner-services Req 11)", () => {
     // No IRC text about the drop.
     expect(env.host.notices).toEqual([]);
 
-    // Review fix (Req 11.4 amended): a human without a mode does NOT reset. The line itself still
-    // reaches Wraith as a (wrapped) human prompt, but the agent lines after it stay dropped.
+    // Review fix (Req 11.4 amended): a human without a mode does NOT reset, and the agent lines
+    // after it stay dropped. Changed by public-hardening Requirement 4: the unmoded line itself no
+    // longer reaches Wraith at all (it used to arrive as a wrapped prompt, 3 + 1).
     env.host.setMode(CHANNEL, "alice", "none");
     env.channelMessage("alice", "carry on");
     for (let i = 0; i < 2; i++) env.channelMessage(GHOST, `${WRAITH}: still ${String(i)}`);
     for (let i = 0; i < 10; i++) await flush();
-    expect(env.promptsOf(WRAITH)).toHaveLength(3 + 1);
+    expect(env.promptsOf(WRAITH)).toHaveLength(3);
 
     // A voiced human resets; Wraith gets that line and 3 more agent lines.
     env.host.setMode(CHANNEL, "bob", { voice: true });
     env.channelMessage("bob", "carry on");
     for (let i = 0; i < 5; i++) env.channelMessage(GHOST, `${WRAITH}: again ${String(i)}`);
     for (let i = 0; i < 10; i++) await flush();
-    expect(env.promptsOf(WRAITH)).toHaveLength(3 + 1 + 1 + 3);
+    expect(env.promptsOf(WRAITH)).toHaveLength(3 + 1 + 3);
     expect(env.log.filter((e) => e.msg === "agent reply limit reached")).toHaveLength(2);
   });
 
@@ -727,4 +769,51 @@ describe("P7 agent loop guard (routing level)", () => {
       { numRuns: 30 },
     );
   }, 60_000);
+});
+
+describe("public-hardening Requirement 12: private sessions and the budget", () => {
+  const metered = (word: string, credits: number, delay = 0) => ({
+    match: word,
+    steps: [{ chunk: word }, ...(delay > 0 ? [{ delay }] : []), { metadata: { credits: [{ value: credits, unit: "credit" }] } }],
+  });
+
+  it("/query credits count in the daily budget only, never in a channel total", async () => {
+    const daily = new DailyBudget(() => Date.UTC(2026, 10, 8, 12), 10);
+    const env = await setup({}, { script: { turns: [metered("spend", 2.5)] }, daily });
+    env.privateMessage("alice", GHOST, "spend");
+    for (let i = 0; i < 5; i++) {
+      await flush();
+      env.harness.advance(100);
+    }
+    await flush();
+    expect(daily.today()).toBe(2.5);
+    expect(env.ledger.agentTotal(GHOST)).toBe(0);
+    expect(env.ledger.channelTotal("alice")).toBe(0);
+  });
+
+  it("crossing the daily cap cancels a running private turn", async () => {
+    const daily = new DailyBudget(() => Date.UTC(2026, 10, 8, 12), 1);
+    // The metadata arrives first, then the turn keeps running (delay) until it is cancelled.
+    const env = await setup(
+      {},
+      { script: { turns: [{ match: "long", steps: [{ metadata: { credits: [{ value: 5, unit: "credit" }] } }, { delay: 10_000 }, { chunk: "late" }] }] }, daily },
+    );
+    env.privateMessage("alice", GHOST, "long");
+    for (let i = 0; i < 5; i++) {
+      await flush();
+      env.harness.advance(10);
+    }
+    await flush();
+    expect(daily.reached()).toBe(true);
+    expect(env.harness.cancels.filter((c) => c.agent === GHOST)).toHaveLength(1);
+    expect(env.manager.allSessions().some((s) => s.channel === "alice")).toBe(true);
+  });
+
+  it("a private session is refused when the container cap is full", async () => {
+    const env = await setup({ privateCapacity: () => "at most 6 agent sessions may run at once" });
+    env.privateMessage("alice", GHOST, "hello");
+    await flush();
+    expect(env.promptsOf(GHOST)).toEqual([]);
+    expect(env.host.notices).toEqual([{ nick: "alice", text: `${GHOST}: at most 6 agent sessions may run at once` }]);
+  });
 });

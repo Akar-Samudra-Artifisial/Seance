@@ -160,6 +160,7 @@ const SHELLS: ReadonlySet<string> = new Set([
  */
 export function matchDenyList(command: string, worktree: string): DenyMatch | undefined {
   if (referencesProtectedPath(command)) return { reason: "protected-path" };
+  if (referencesAuthPath(command)) return { reason: "protected-path" };
 
   const commands = simpleCommands(command);
   let sawDownloader = false;
@@ -193,4 +194,26 @@ export function matchDenyList(command: string, worktree: string): DenyMatch | un
   // `bash <(curl …)`. Broader than the pipe alone on purpose (fail closed).
   if (sawDownloader && sawShell) return { reason: "deny-list" };
   return undefined;
+}
+
+/**
+ * public-hardening Requirement 6.3: the Kiro login inside the container. The auth mount, and the
+ * copy the entrypoint stages into `$HOME` (kiro-cli keeps its state under `.local/share/kiro-cli`
+ * and `.aws/sso`). Compared after removing quotes and backslashes, case-insensitively.
+ */
+export const AUTH_PATH_MARKERS: readonly string[] = ["/run/seance/auth", ".local/share/kiro-cli", ".aws/sso", ".aws/credentials"];
+
+/** True when a shell command names the Kiro login in any of its known places (a textual floor). */
+export function referencesAuthPath(command: string): boolean {
+  const plain = command.replace(/["'\\]/g, "").toLowerCase();
+  return AUTH_PATH_MARKERS.some((marker) => plain.includes(marker));
+}
+
+/** True when a resolved tool path is inside the Kiro login (any of the markers as path segments). */
+export function isAuthPath(resolved: string): boolean {
+  const p = resolved.replace(/\\/g, "/").toLowerCase();
+  return AUTH_PATH_MARKERS.some((marker) => {
+    const m = marker.toLowerCase();
+    return p === m || p.startsWith(`${m}/`) || p.includes(`/${m.replace(/^\//, "")}/`) || p.endsWith(`/${m.replace(/^\//, "")}`);
+  });
 }

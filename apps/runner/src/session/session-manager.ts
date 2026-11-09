@@ -3,6 +3,7 @@ import type { IrcMessage } from "@seance/irc-protocol";
 
 import type { Clock, TimerSet } from "../clock.js";
 import { createResetCreditsHandler, isResetCreditsCommand } from "../credits/reset-command.js";
+import { CreditAccumulator } from "../credits/accumulator.js";
 import type { CreditLedger } from "../credits/ledger.js";
 import type { AgentHarness, HarnessSession } from "../harness/harness.js";
 import type { RunnerLogger } from "../log.js";
@@ -65,6 +66,16 @@ export type SessionManagerDeps = {
   readonly inviters?: AllowList;
   /** Agent-to-agent loop guard (runner-services Req 11); defaults to one with `AGENT_REPLY_LIMIT`. */
   readonly loopGuard?: AgentLoopGuard;
+  /**
+   * public-hardening Requirement 5: the daily credit cap or the kill switch refuses new turns,
+   * also for Private_Sessions. Defaults to never blocked.
+   */
+  readonly globallyBlocked?: () => boolean;
+  /**
+   * public-hardening Requirement 12.3: a refusal text when no further agent session (one container
+   * each in podman mode) may start; checked before a Private_Session opens. Absent means no cap.
+   */
+  readonly privateCapacity?: () => string | undefined;
 };
 
 /** At most this many Private_Sessions per human nick (across agents). */
@@ -97,11 +108,15 @@ export class SessionManager {
   readonly #agents = new Map<string, AgentRegistration>();
   readonly #listeners = new Map<string, Unsubscribe>();
   readonly #privates = new Map<string, Promise<PrivateEntry | undefined>>();
+  /** Opened Private_Sessions, so the daily cap can cancel a running private turn (Requirement 12.2). */
+  readonly #openPrivates = new Set<Session>();
   readonly #resetCredits: (sender: string, agent: string) => unknown;
   readonly #reviving = new Map<string, Promise<Session | undefined>>();
   /** runner-services Requirement 11: Agent lines reach other Agents only when bounded. */
   readonly #loopGuard: AgentLoopGuard;
   #nextPromptId = 1;
+  /** Invite_Key -> nick that invited the agent into the channel (public-hardening Requirement 4.1). */
+  readonly #inviters = new Map<string, string>();
 
   constructor(deps: SessionManagerDeps) {
     this.#d = deps;
@@ -111,6 +126,7 @@ export class SessionManager {
       modeOf: (channel, nick) => deps.host.modeOf(channel, nick),
       noticeTo: (nick, text) => deps.host.noticeTo(nick, text),
       isAgentNick: (nick) => deps.registry.lookup(nick) !== undefined,
+      ...(deps.inviters !== undefined ? { isInviter: (nick: string) => deps.inviters?.allows(nick) === true } : {}),
       logger: deps.logger,
     });
   }
@@ -211,8 +227,14 @@ export class SessionManager {
     this.#channelSessions.set(key, session);
   }
 
+  /** Remembers who invited `agent` into `channel`; that nick may prompt it without a mode. */
+  setInviter(agent: string, channel: string, inviter: string): void {
+    this.#inviters.set(inviteKey(agent, channel), inviter);
+  }
+
   removeChannelSession(agent: string, channel: string): void {
     this.#channelSessions.delete(inviteKey(agent, channel));
+    this.#inviters.delete(inviteKey(agent, channel));
     this.#forgetIfNoOpenSession(channel);
   }
 
@@ -229,6 +251,25 @@ export class SessionManager {
   sessionsOf(channel: string): readonly Session[] {
     const c = irc_lower(channel);
     return [...this.#channelSessions.values()].filter((s) => irc_lower(s.channel) === c);
+  }
+
+  /** Every channel Session (any channel, any state); the daily cap cancels the prompting ones. */
+  allChannelSessions(): readonly Session[] {
+    return [...this.#channelSessions.values()];
+  }
+
+  /**
+   * Every Session that may be prompting: channel Sessions and opened Private_Sessions. The daily
+   * cap cancels the prompting ones (public-hardening Requirement 12.2).
+   */
+  allSessions(): readonly Session[] {
+    for (const s of this.#openPrivates) if (s.state === "closed") this.#openPrivates.delete(s);
+    return [...this.#channelSessions.values(), ...this.#openPrivates];
+  }
+
+  /** Private_Sessions started or starting (each is a container in podman mode). */
+  privateCount(): number {
+    return this.#privates.size;
   }
 
   /** All channel Sessions of `agent` (any channel, any state). */
@@ -345,8 +386,20 @@ export class SessionManager {
     const moderated = this.#d.host.channel(channel)?.modes.moderated === true;
     const fromKey = irc_lower(from);
 
+    const senderHasMode = sender !== undefined && (sender.op || sender.voice);
     for (const session of sessions) {
       if (irc_lower(session.agent) === fromKey) continue; // never prompt the sender
+      // public-hardening Requirement 4.1: only +v/+o senders, or the nick that invited this agent here,
+      // start a turn. The line is already in the channel log, so it still informs later prompts.
+      const invitedBy = this.#inviters.get(inviteKey(session.agent, channel));
+      if (!senderHasMode && (invitedBy === undefined || irc_lower(invitedBy) !== fromKey)) {
+        this.#d.logger.debug("no prompt: sender has no mode and is not the inviter", {
+          agent: session.agent,
+          channel,
+          from,
+        });
+        continue;
+      }
       const mode = this.#d.host.modeOf(channel, session.agent); // read now, never cached
       const hasMode = mode !== undefined && (mode.op || mode.voice);
       // No mode: listen only (Req 5.8). Under +m only +v/+o may act (Req 5.7).
@@ -499,6 +552,12 @@ export class SessionManager {
       this.#refusePrivate(human, reg.profile.nick, "too many private sessions are open");
       return Promise.resolve(undefined);
     }
+    // public-hardening Requirement 12.3: a private session is a container too.
+    const full = this.#d.privateCapacity?.();
+    if (full !== undefined) {
+      this.#refusePrivate(human, reg.profile.nick, full);
+      return Promise.resolve(undefined);
+    }
     const created = this.#openPrivate(reg, human).then((entry) => {
       if (entry === undefined && this.#privates.get(key) === created) this.#privates.delete(key);
       return entry;
@@ -542,10 +601,17 @@ export class SessionManager {
         opNotice: (_channel, text) => {
           logger.info("private session notice", { agent: profile.nick, human, text });
         },
-        isBlocked: () => false,
+        // Private_Sessions ignore the channel cap, but not the daily cap or the kill switch.
+        isBlocked: () => this.#d.globallyBlocked?.() === true,
         logger,
       });
       const detach = attachSessionOutput({ session, output: reg.output, clock: this.#d.clock });
+      // public-hardening Requirement 12.1: /query spend counts towards SEANCE_DAILY_CREDIT_CAP.
+      const acc = new CreditAccumulator(`${profile.nick}@private:${human}:${harnessSession.id}`, logger);
+      session.sessionEvents((ev) => {
+        if (ev.kind === "metadata") this.#d.ledger.recordPrivateMetering(acc, ev.metering);
+      });
+      this.#openPrivates.add(session);
       return { session, harnessSession, agent: profile.nick, detach };
     } catch (err) {
       logger.error("private session could not be opened", {

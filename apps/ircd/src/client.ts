@@ -33,6 +33,13 @@ export interface Client {
    */
   readonly virtual?: boolean;
   /**
+   * public-hardening Requirement 1.5: an in-process client created by the runner for an agent. It
+   * needs no PASS and may use an agent nick. Untrusted virtual clients authenticate like sockets.
+   */
+  readonly trusted?: boolean;
+  /** The account this client logged in as (`PASS <nick>:<secret>`); undefined for guests. */
+  account?: string;
+  /**
    * Optional extra WHOIS lines (model, tools, credits). Untrusted data.
    * Network clients leave it unimplemented.
    */

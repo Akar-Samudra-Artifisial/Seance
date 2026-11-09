@@ -19,6 +19,8 @@ export type SessionEvent =
   | { readonly kind: "message-chunk"; readonly text: string }
   | { readonly kind: "thought-chunk"; readonly text: string }
   | { readonly kind: "tool-call"; readonly tool: ToolInfo }
+  /** A tool call finished (`tool_call_update` with status `completed` or `failed`). */
+  | { readonly kind: "tool-done"; readonly status: "completed" | "failed" }
   | {
       readonly kind: "metadata";
       readonly turnDurationMs?: number;

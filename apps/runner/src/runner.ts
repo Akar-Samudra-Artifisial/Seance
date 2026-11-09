@@ -1,9 +1,17 @@
+import { existsSync } from "node:fs";
+import { isIP } from "node:net";
+import { join } from "node:path";
 import { irc_lower } from "@seance/irc-protocol";
 import { realClock, TimerSet } from "./clock.js";
 import type { Clock } from "./clock.js";
-import { assertInvitersConfigured, validateRunnerPaths } from "./config.js";
+import { assertInvitersConfigured, ConfigError, HARDENING_DEFAULTS, isLoopbackHost, validateRunnerPaths } from "./config.js";
 import type { RunnerConfig } from "./config.js";
+import { DailyBudget } from "./credits/budget.js";
+import { CreditsFile } from "./credits/credits-file.js";
 import { CreditLedger } from "./credits/ledger.js";
+import { SecretRedactor } from "./output/secret-redactor.js";
+import { readAuthSecrets } from "./sandbox/auth-secrets.js";
+import { DEFAULT_GIT_TIMEOUT_MS } from "./worktree/git.js";
 import { createExorcist } from "./exorcism/exorcism.js";
 import { createExorcismTriggers } from "./exorcism/triggers.js";
 import { AcpHarness } from "./harness/acp-harness.js";
@@ -51,7 +59,10 @@ export type RunnerOptions = {
   readonly clock?: Clock;
   /** Overrides the harness chosen by `config.harness` (tests). */
   readonly harness?: AgentHarness;
-  /** Defaults to an in-memory store. */
+  /**
+   * Defaults to the credits file `<SEANCE_WORKSPACES>/.seance-credits.json` (public-hardening
+   * Requirement 5.1), so totals and the daily budget survive a restart.
+   */
   readonly store?: SessionStore;
   /**
    * Address the ircd listens on (`IRCD_HOST`). Without SEANCE_INVITERS, startup fails unless this is
@@ -65,6 +76,11 @@ export type RunnerOptions = {
    * sandbox. Default false.
    */
   readonly publicDeployment?: boolean;
+  /**
+   * `IRCD_TRUSTED_PROXIES` of the ircd (public-hardening Requirement 11.2): with
+   * `publicDeployment`, `start()` refuses unless it is non-empty and loopback only.
+   */
+  readonly trustedProxies?: readonly string[];
   /** Podman command runner for the sandbox launcher (tests: the fake podman). */
   readonly podmanExec?: PodmanExec;
   /** Environment the podman process is built from; defaults to `process.env` (tests). */
@@ -85,6 +101,11 @@ export interface Runner {
   unban(channel: string, nick: string): boolean;
   /** Idempotent graceful shutdown (Req 11). */
   shutdown(): Promise<ShutdownReport>;
+  /**
+   * public-hardening Requirement 2.3: the registry's agent nicks, which humans may not take.
+   * Empty before `start()` resolves.
+   */
+  agentNicks(): readonly string[];
 }
 
 const SETTLE_POLL_MS = 25;
@@ -98,7 +119,40 @@ const EMPTY_REPORT: ShutdownReport = { errors: [], remainingTimers: 0, remaining
 type Parts = {
   readonly resolver: InviteResolver;
   readonly shutdown: ReturnType<typeof createShutdown>;
+  readonly agentNicks: readonly string[];
 };
+
+/**
+ * public-hardening Requirement 8: with IRCD_PUBLIC=1 the runner also refuses to start without
+ * SEANCE_INVITERS and SEANCE_DAILY_CREDIT_CAP (the ircd's guard names them first; this repeats it
+ * for embedders).
+ */
+export function assertPublicRunner(
+  config: RunnerConfig,
+  publicDeployment: boolean,
+  trustedProxies?: readonly string[],
+): void {
+  if (!publicDeployment) return;
+  // Requirement 11.2: behind the proxy every peer is loopback; without the proxy list all users
+  // would share one per-IP limit and one PASS-failure block.
+  const proxies = trustedProxies ?? [];
+  const loopbackIp = (p: string): boolean => {
+    const ip = p.trim().toLowerCase();
+    return isIP(ip) !== 0 && (isLoopbackHost(ip.replace(/^::ffff:/, "")) || ip === "0:0:0:0:0:0:0:1");
+  };
+  if (proxies.length === 0 || !proxies.every(loopbackIp)) {
+    throw new ConfigError(
+      "IRCD_TRUSTED_PROXIES",
+      "IRCD_PUBLIC=1 requires IRCD_TRUSTED_PROXIES listing the proxy's loopback addresses only (e.g. 127.0.0.1,::1)",
+    );
+  }
+  if (config.inviters === undefined || config.inviters.length === 0) {
+    throw new ConfigError("SEANCE_INVITERS", "IRCD_PUBLIC=1 requires SEANCE_INVITERS (the account nicks that may invite agents)");
+  }
+  if (config.dailyCreditCap === undefined) {
+    throw new ConfigError("SEANCE_DAILY_CREDIT_CAP", "IRCD_PUBLIC=1 requires SEANCE_DAILY_CREDIT_CAP (credits per UTC day for all agents)");
+  }
+}
 
 export function createRunner(opts: RunnerOptions): Runner {
   const { host, logger } = opts;
@@ -122,6 +176,18 @@ export function createRunner(opts: RunnerOptions): Runner {
       blockedCidrs: opts.config.sandbox.mode === "podman" ? opts.config.sandbox.blockedCidrs.length : 0,
     });
     assertInvitersConfigured(opts.config, opts.bindHost);
+    assertPublicRunner(opts.config, opts.publicDeployment === true, opts.trustedProxies);
+    // public-hardening Requirement 3.3: with accounts, every SEANCE_INVITERS entry is an account,
+    // otherwise nobody listed could ever invite (a misconfiguration, not a quiet lockout).
+    if (host.accountsEnabled === true) {
+      const missing = (opts.config.inviters ?? []).filter((n) => host.isAccount?.(n) !== true);
+      if (missing.length > 0) {
+        throw new ConfigError(
+          "SEANCE_INVITERS",
+          `SEANCE_INVITERS names nicks without an account in IRCD_ACCOUNTS_FILE: ${missing.join(", ")}`,
+        );
+      }
+    }
     const config = await validateRunnerPaths(opts.config);
     const sandboxConfig = config.sandbox;
     const podman = sandboxConfig.mode === "podman";
@@ -180,17 +246,45 @@ export function createRunner(opts: RunnerOptions): Runner {
 
     const timers = new TimerSet(clock);
     const settleTimers = new TimerSet(clock);
-    const store = opts.store ?? new MemorySessionStore();
+    // public-hardening Requirement 5.1: credits survive a restart (the file is read synchronously
+    // and a corrupt one stops the start, so no credits are silently lost).
+    const creditsFile =
+      opts.store === undefined
+        ? new CreditsFile(config.workspaces, (what, reason) => {
+            logger.warn("credits file entry skipped", { entry: what, reason });
+          })
+        : undefined;
+    const store: SessionStore = opts.store ?? creditsFile ?? new MemorySessionStore();
+    const daily = new DailyBudget(() => clock.now(), config.dailyCreditCap, creditsFile?.daily());
+    // Requirement 5.3: the kill switch is a file, so an operator can pause without a restart.
+    const killSwitchFile = config.killSwitchFile ?? join(config.workspaces, ".seance-paused");
+    const paused = (): boolean => existsSync(killSwitchFile);
     const snapshot = new WhoisSnapshot();
     const channelLog = new ChannelLog();
-    const inviters = parseInviters(config.inviters);
+    // Requirement 3: with ircd accounts an inviter must be logged in as its own account.
+    const inviters = parseInviters(config.inviters, {
+      required: host.accountsEnabled === true,
+      accountOf: (nick) => host.accountOf?.(nick),
+    });
     const gate = new InviteGate(config.inviteRate);
     const worktrees = new WorktreeManager({
       repo: config.targetRepo,
       root: config.workspaces,
-      git: createGitRunner(config.targetRepo, { hardened: podman }),
+      git: createGitRunner(config.targetRepo, {
+        hardened: podman,
+        timeoutMs: config.gitTimeoutMs ?? DEFAULT_GIT_TIMEOUT_MS,
+      }),
       hardened: podman,
+      maxBytes: config.worktreeMaxBytes ?? HARDENING_DEFAULTS.worktreeMaxBytes,
     });
+
+    // Requirement 6.2: every token value in the mounted Kiro login is redacted from agent text.
+    const authSecrets = podman
+      ? await readAuthSecrets(sandboxConfig.authDir, (path, reason) => {
+          logger.warn("auth file skipped for redaction", { path, reason });
+        })
+      : [];
+    const redactor = new SecretRedactor([config.kiroApiKey, ...authSecrets]);
 
     const humanOpNicks = (channel: string): readonly string[] => {
       const members = host.channel(channel)?.members;
@@ -226,6 +320,18 @@ export function createRunner(opts: RunnerOptions): Runner {
       sessionsOf: (channel) => sessions.sessionsOf(channel),
       opNotice: notifyOps,
       acpSessionIdOf: (agent, channel) => sessions.channelSession(agent, channel)?.acpSessionId,
+      // public-hardening Requirement 5.2: one budget for all agents per UTC day.
+      daily,
+      ...(creditsFile !== undefined ? { persistDaily: (state) => creditsFile.putDaily(state) } : {}),
+      // Requirement 12.2: private turns are cancelled too when the daily cap is crossed.
+      allSessions: () => sessions.allSessions(),
+      onDailyCapReached: () => {
+        const channels = new Set<string>();
+        for (const s of sessions.allChannelSessions()) {
+          if (s.state !== "closed") channels.add(s.channel);
+        }
+        for (const channel of channels) services.chanServ(channel, "daily credit budget reached");
+      },
     });
     await ledger.restore();
 
@@ -252,10 +358,47 @@ export function createRunner(opts: RunnerOptions): Runner {
       opNotice: notifyOps,
       ...(commitTurn !== undefined ? { commitTurn } : {}),
     };
-    const isBlocked = (channel: string): boolean => ledger.isBlocked(channel);
+    // Requirements 5.2, 5.3: the daily cap and the kill switch refuse new turns everywhere.
+    const globallyBlocked = (): boolean => ledger.dailyCapReached() || paused();
+    const isBlocked = (channel: string): boolean => ledger.isBlocked(channel) || globallyBlocked();
+    // Requirement 5.5: at most N channels with agents, and at most M sandbox containers.
+    const maxAgentChannels = config.maxAgentChannels ?? HARDENING_DEFAULTS.maxAgentChannels;
+    const maxContainers = config.maxContainers ?? HARDENING_DEFAULTS.maxContainers;
+    const capacity = (channel: string, pendingChannels: readonly string[]): string | undefined => {
+      if (globallyBlocked()) {
+        return paused() ? "agents are paused by the operator" : "daily credit budget reached";
+      }
+      const live = sessions.allChannelSessions().filter((s) => s.state !== "closed");
+      const active = new Set([...live.map((s) => irc_lower(s.channel)), ...pendingChannels.map((c) => irc_lower(c))]);
+      if (!active.has(irc_lower(channel)) && active.size >= maxAgentChannels) {
+        return `at most ${maxAgentChannels} channels may have agents at once`;
+      }
+      return containersFull(pendingChannels.length);
+    };
+    // Revivals in flight hold a container slot before their Session is registered.
+    let reviving = 0;
+    /** Requirement 5.5 / 12.3: open channel Sessions + starts + revivals + Private_Sessions. */
+    const containersFull = (pendingStarts: number): string | undefined => {
+      const live = sessions.allChannelSessions().filter((s) => s.state !== "closed").length;
+      return live + pendingStarts + reviving + sessions.privateCount() >= maxContainers
+        ? `at most ${maxContainers} agent sessions may run at once`
+        : undefined;
+    };
 
     // Same session-creation logic as the InviteController (shared helpers).
     const reviveSession = async (reg: AgentRegistration, channel: string): Promise<Session> => {
+      // public-hardening Requirement 12.3: a revival starts a container too, so it obeys the cap.
+      const full = containersFull(invites.pendingStarts());
+      // The SessionManager logs the reason and posts "could not be started" in the channel.
+      if (full !== undefined) throw new Error(`revival refused: ${full}`);
+      reviving += 1;
+      try {
+        return await openRevived(reg, channel);
+      } finally {
+        reviving -= 1;
+      }
+    };
+    const openRevived = async (reg: AgentRegistration, channel: string): Promise<Session> => {
       const info = await worktrees.ensure(channel);
       let harnessSession: HarnessSession;
       try {
@@ -308,6 +451,8 @@ export function createRunner(opts: RunnerOptions): Runner {
       logger,
       reviveSession,
       inviters,
+      globallyBlocked,
+      privateCapacity: () => containersFull(invites.pendingStarts()),
     });
     const sessionManager = sessions;
 
@@ -358,6 +503,9 @@ export function createRunner(opts: RunnerOptions): Runner {
           sessionManager.addChannelSession(s);
         },
         channelSession: (agent, channel) => sessionManager.channelSession(agent, channel),
+        setInviter: (agent, channel, inviter) => {
+          sessionManager.setInviter(agent, channel, inviter);
+        },
         registerAgent: (reg) => {
           outputs.set(irc_lower(reg.profile.nick), reg.output);
           const offManager = sessionManager.registerAgent(reg);
@@ -384,6 +532,9 @@ export function createRunner(opts: RunnerOptions): Runner {
       isBlocked,
       services: { chanServ: services.chanServ, workspaces: config.workspaces },
       secrets: [config.kiroApiKey],
+      redactor,
+      capacity,
+      budgetLine: () => daily.line(paused()),
       ...(commitTurn !== undefined ? { commitTurn } : {}),
       onHarnessSession: (session, harnessSession) => {
         harnessSessions.set(session, harnessSession);
@@ -494,11 +645,14 @@ export function createRunner(opts: RunnerOptions): Runner {
       },
       timerSets: [timers, settleTimers],
       unsubscribers: [...unsubscribers, () => [...agentWatchers].forEach((off) => off())],
-      flushLedger: () => ledger.flush(),
+      flushLedger: async () => {
+        await ledger.flush();
+        await creditsFile?.flush();
+      },
       liveProcessCount: () => registry.all().filter((p) => harness.hasProcess(p)).length,
     });
 
-    return { resolver, shutdown };
+    return { resolver, shutdown, agentNicks: registry.all().map((p) => p.nick) };
   }
 
   return {
@@ -507,6 +661,7 @@ export function createRunner(opts: RunnerOptions): Runner {
       bans.add(channel, nick);
     },
     unban: (channel, nick) => bans.remove(channel, nick),
+    agentNicks: () => parts?.agentNicks ?? [],
     start() {
       if (shuttingDown) return Promise.reject(new Error("runner is shutting down"));
       starting ??= setup().then(

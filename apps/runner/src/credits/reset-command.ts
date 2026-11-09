@@ -27,6 +27,11 @@ export interface ResetCommandDeps {
   readonly noticeTo: (nick: string, text: string) => boolean;
   /** True for registered Agent nicks, which are never Human_Ops (optional). */
   readonly isAgentNick?: (nick: string) => boolean;
+  /**
+   * public-hardening Requirement 3.3: only an Inviter (an authenticated account allowed by
+   * SEANCE_INVITERS) may clear a block. Absent means every op may, as before.
+   */
+  readonly isInviter?: (nick: string) => boolean;
   readonly logger?: RunnerLogger;
 }
 
@@ -49,14 +54,18 @@ export function createResetCreditsHandler(
       text = `no channel of ${agent} is credit-blocked`;
     } else {
       const senderIsAgent = deps.isAgentNick?.(sender) ?? false;
+      const senderIsInviter = deps.isInviter?.(sender) ?? true;
       const cleared: string[] = [];
       const kept: string[] = [];
       for (const channel of blocked) {
-        const isOp = !senderIsAgent && deps.modeOf(channel, sender)?.op === true;
+        const isOp = !senderIsAgent && senderIsInviter && deps.modeOf(channel, sender)?.op === true;
         if (isOp && deps.ledger.clearBlocked(channel)) cleared.push(channel);
         else kept.push(channel);
       }
-      if (cleared.length === 0) {
+      if (cleared.length === 0 && !senderIsInviter) {
+        outcome = { kind: "not-operator", blocked };
+        text = `only an authenticated inviter with operator rights (+o) may reset credits of ${agent}`;
+      } else if (cleared.length === 0) {
         outcome = { kind: "not-operator", blocked };
         text = `operator rights (+o) are required to reset credits of ${agent}`;
       } else {

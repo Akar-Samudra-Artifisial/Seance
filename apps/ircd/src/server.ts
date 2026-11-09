@@ -6,7 +6,7 @@ import { ConnectionManager } from "./connection-manager.js";
 import { EventBus } from "./event-bus.js";
 import { createServices } from "./services.js";
 import type { Services } from "./services.js";
-import { ConnectionGate } from "./limits.js";
+import { ConnectionGate, PassFailures, PerIpGate } from "./limits.js";
 import type { SessionLimits } from "./limits.js";
 import { registerAwayHandler } from "./handlers/away.js";
 import { registerInviteHandler } from "./handlers/invite.js";
@@ -34,6 +34,8 @@ export interface ServerOptions {
   readonly now?: () => number;
   /** Claims unregistered `INVITE` targets. */
   readonly inviteResolver?: InviteResolver;
+  /** Agent registry nicks, reserved in Auth_Mode (public-hardening Requirement 2.4); read lazily. */
+  readonly reservedNicks?: () => Iterable<string>;
 }
 
 export interface IrcServer {
@@ -83,6 +85,9 @@ export function createServer(
     pingTimeoutMs: config.pingTimeoutMs,
   });
   const events = new EventBus();
+  // public-hardening Requirement 7: per-address limits shared by both transports.
+  const passFailures = new PassFailures(config.maxPassFailuresPerIp, options.now ?? Date.now);
+  const perIp = new PerIpGate(config.maxConnectionsPerIp);
   const ctx: RouterContext = {
     connections,
     channels,
@@ -92,6 +97,9 @@ export function createServer(
     events,
     ...(options.now !== undefined ? { now: options.now } : {}),
     ...(options.inviteResolver !== undefined ? { inviteResolver: options.inviteResolver } : {}),
+    ...(config.accounts !== undefined ? { accounts: config.accounts } : {}),
+    ...(options.reservedNicks !== undefined ? { reservedNicks: options.reservedNicks } : {}),
+    passFailures,
   };
   const router = createRouter();
   const hostOption = config.host !== undefined ? { host: config.host } : {};
@@ -107,12 +115,17 @@ export function createServer(
   const tcp = new TcpTransport(ctx, router, {
     port: config.tcpPort,
     gate,
+    perIp,
+    passFailures,
     limits,
     ...hostOption,
   });
   const ws = new WsTransport(ctx, router, {
     port: config.wsPort,
     gate,
+    perIp,
+    passFailures,
+    trustedProxies: config.trustedProxies,
     limits,
     allowedOrigins: config.wsAllowedOrigins,
     ...hostOption,

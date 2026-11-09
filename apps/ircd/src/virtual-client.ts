@@ -35,6 +35,8 @@ export interface VirtualClientOptions {
   readonly host?: string;
   /** Called exactly once per WHOIS of this client; its lines become 320 replies. */
   readonly whoisExtra?: () => readonly string[];
+  /** An agent client of the runner: no PASS needed, may use an agent nick (public-hardening Req 1.5). */
+  readonly trusted?: boolean;
 }
 
 class VirtualClientImpl implements VirtualClient {
@@ -44,6 +46,8 @@ class VirtualClientImpl implements VirtualClient {
   registered = false;
   away?: string;
   readonly virtual = true;
+  trusted?: boolean;
+  account?: string;
   whoisExtra?: () => readonly string[];
   private closed = false;
   private readonly listeners = new Set<(msg: IrcMessage) => void>();
@@ -138,6 +142,7 @@ export function createVirtualClient(
   options: VirtualClientOptions,
 ): VirtualClient {
   const client = new VirtualClientImpl(options.id, options.host, ctx, router, options.whoisExtra);
+  if (options.trusted === true) client.trusted = true;
   ctx.connections.add(client);
   return client;
 }

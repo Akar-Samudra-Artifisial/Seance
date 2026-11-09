@@ -53,5 +53,13 @@ export function createIrcHost(server: IrcServer): IrcHost {
     serviceNotice(service, target, text) {
       return server.services.notice(service, target, text);
     },
+    // public-hardening Requirement 3: the runner checks inviters against accounts.
+    accountsEnabled: ctx.accounts !== undefined,
+    accountOf(nick) {
+      return registeredOnly(ctx.connections.getByNick(nick))?.account;
+    },
+    isAccount(nick) {
+      return ctx.accounts?.has(nick) === true;
+    },
   };
 }

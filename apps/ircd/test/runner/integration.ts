@@ -47,6 +47,8 @@ export interface IntegrationOptions {
   readonly floodBurst?: number;
   /** Skip `runner.start()` (startup-failure tests call it themselves). */
   readonly autoStart?: boolean;
+  /** Extra `IRCD_*` variables for the ircd (e.g. `IRCD_ACCOUNTS_FILE`, public-hardening). */
+  readonly ircdEnv?: Readonly<Record<string, string>>;
 }
 
 /** One log record captured from the runner. */
@@ -87,8 +89,11 @@ export interface IntegrationFixture {
   readonly workspaces: string;
   readonly agentsDir: string;
   readonly logs: readonly LogRecord[];
-  /** Registered client with `+o` on whatever channel it creates first. */
-  connectClient(nick: string): Promise<IrcTestClient>;
+  /**
+   * Registered client with `+o` on whatever channel it creates first. `pass` is sent as `PASS`
+   * first (a guest password or `<nick>:<secret>`, public-hardening).
+   */
+  connectClient(nick: string, pass?: string): Promise<IrcTestClient>;
   /** Idempotent; closes clients, runner, server, env and temp directories. */
   close(): Promise<void>;
 }
@@ -299,9 +304,13 @@ export async function startIntegration(options: IntegrationOptions = {}): Promis
         IRCD_HOST: "127.0.0.1",
         ...(options.floodBurst !== undefined ? { IRCD_FLOOD_BURST: String(options.floodBurst) } : {}),
         ...(options.serverName !== undefined ? { IRCD_SERVER_NAME: options.serverName } : {}),
+        ...options.ircdEnv,
       }),
       { error: () => undefined, debug: () => undefined },
-      { inviteResolver: (t, c, i) => runner?.inviteResolver(t, c, i) ?? false },
+      {
+        inviteResolver: (t, c, i) => runner?.inviteResolver(t, c, i) ?? false,
+        reservedNicks: () => runner?.agentNicks() ?? [],
+      },
     );
     const created = createRunner({
       host: createIrcHost(server),
@@ -334,7 +343,7 @@ export async function startIntegration(options: IntegrationOptions = {}): Promis
       workspaces,
       agentsDir,
       logs,
-      async connectClient(nick) {
+      async connectClient(nick, pass) {
         const socket = await new Promise<Socket>((res, rej) => {
           const s = connect(ports.tcpPort, "127.0.0.1");
           s.once("connect", () => res(s));
@@ -342,6 +351,7 @@ export async function startIntegration(options: IntegrationOptions = {}): Promis
         });
         const client = new TcpClient(nick, socket);
         clients.add(client);
+        if (pass !== undefined) client.send(`PASS ${pass}`);
         await client.register();
         return client;
       },

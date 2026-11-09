@@ -20,7 +20,8 @@ import type { WorktreeManager } from "../worktree/worktree-manager.js";
  */
 export type ChannelSessionDeps = {
   readonly host: Pick<IrcHost, "modeOf">;
-  readonly worktrees: Pick<WorktreeManager, "guardBeforePrompt">;
+  /** `exceedsCap` and `reset` enable the size check during a turn (public-hardening 14.1). */
+  readonly worktrees: Pick<WorktreeManager, "guardBeforePrompt"> & Partial<Pick<WorktreeManager, "exceedsCap" | "reset">>;
   readonly snapshot: WhoisSnapshot;
   readonly ledger: Pick<CreditLedger, "recordMetering">;
   readonly clock: Clock;
@@ -89,5 +90,44 @@ export function buildChannelSession(
   session.sessionEvents((ev) => {
     if (ev.kind === "metadata") d.ledger.recordMetering(acc, profile.nick, channel, ev.metering);
   });
+  watchWorktreeSize(d, profile.nick, channel, session);
   return session;
+}
+
+/**
+ * public-hardening Requirement 14.1: after each finished tool call the worktree size is checked
+ * (one check at a time). Over the cap, the turn is cancelled and, once it ended, the worktree is
+ * reset including ignored files, so a disk-filling turn stops early instead of at the commit.
+ */
+function watchWorktreeSize(d: ChannelSessionDeps, agent: string, channel: string, session: Session): void {
+  const exceedsCap = d.worktrees.exceedsCap?.bind(d.worktrees);
+  const reset = d.worktrees.reset?.bind(d.worktrees);
+  if (exceedsCap === undefined || reset === undefined) return;
+  let checking = false;
+  let oversize = false;
+  session.sessionEvents((ev) => {
+    if (ev.kind !== "tool-done" || checking || oversize) return;
+    checking = true;
+    exceedsCap(channel)
+      .then((over) => {
+        if (!over || session.state !== "prompting") return;
+        oversize = true;
+        d.logger.warn("turn cancelled: worktree over the size cap", { agent, channel });
+        d.opNotice(channel, `${agent}: turn cancelled in ${channel}, the worktree is over its size cap; it will be reset`);
+        session.cancel();
+      })
+      .catch((err: unknown) => {
+        d.logger.error("worktree size check failed", { agent, channel, reason: err instanceof Error ? err.message : String(err) });
+      })
+      .finally(() => {
+        checking = false;
+      });
+  });
+  session.turnEnding(() => {
+    if (!oversize) return;
+    oversize = false;
+    reset(channel, { ignored: true }).catch((err: unknown) => {
+      d.logger.error("reset after oversize turn failed", { agent, channel, reason: err instanceof Error ? err.message : String(err) });
+    });
+  });
 }
