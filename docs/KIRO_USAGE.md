@@ -451,6 +451,16 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: leftover staged files removed after the lock, `sync` before the rename, live database opened read-only (`mode=ro`), `chown -hR` on the auth dir in `bootstrap.sh`, tests in `sandbox-files.test.ts`
 - Notes: `pnpm typecheck` regenerated `apps/web/next-env.d.ts`; it was left alone and flagged for `git checkout`
 
+### 2026-11-10 — Repeatable wss smoke test (deploy-aws task 8)
+- Kiro features: spec deploy-aws (requirement 7.5 and task 8 first), steering (security: no secrets in output), hook guard-shell
+- Produced: `tools/smoke-wss.mjs` (login, fresh channel, invite, wait for `worktree ready` and the agent's JOIN, `+v`, one word, KICK, credits line), DEPLOY.md step 6, tests in `sandbox-files.test.ts`
+- Notes: the ad hoc script failed once by prompting before the agent joined; the new one gates on both events, and a scripted fake server checked both arrival orders and the kick on failure
+
+### 2026-11-10 — Smoke test review fixes (deploy-aws task 8.3)
+- Kiro features: spec deploy-aws task 8.3, steering (security: no secrets in output), hook guard-shell
+- Produced: `tools/smoke-wss.mjs` fixes (reply only after the prompt was delivered, SIGINT/SIGTERM and socket errors kick the agent, output cleaned and redacted, secret input checks, JOIN/INVITE error numerics), DEPLOY.md note, tests in `sandbox-files.test.ts`
+- Notes: a scripted fake IRC server showed that agent chatter during the 1.5 s delay no longer counts as the reply
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

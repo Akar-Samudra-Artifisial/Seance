@@ -38,6 +38,7 @@ One EC2 instance, everything on it: Caddy, the Next production server, the ircd 
 | `Caddyfile` | template of `/etc/caddy/Caddyfile` |
 | `systemd/seance-ircd.service`, `seance-web.service` | the two services |
 | `systemd/seance-sandbox-nft.service`, `seance-egress-refresh.{service,timer}` | the agents' egress rule and its allow-list refresh |
+| `../tools/smoke-wss.mjs` | repeatable wss smoke test (requirement 7.5): login, fresh channel, invite, wait for `worktree ready` and the agent's JOIN, `+v`, one word, KICK, credits line; `SMOKE_SECRET` only |
 | `seance-kiro-refresh.sh`, `systemd/seance-kiro-refresh.{service,timer}` | forced Kiro token refresh on a copy, 20 minutes after each run (requirement 5.5); installed to `/usr/local/sbin/seance-kiro-refresh` (root-owned, 0755) and run as `seance` |
 
 ## Decisions

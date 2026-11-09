@@ -61,6 +61,15 @@ File-writing tasks first (Terraform, host files, CI, runbook), then the operator
   - [x] 7.5 Small fixes: delete leftover `.data.sqlite3.*` staged files after taking the lock; `sync` the staged file before the rename; open the live database read-only (`mode=ro`) where it is only read; `bootstrap.sh` fixes the auth dir ownership with `chown -hR`; task 7.2 text says 0755; tests in `sandbox-files.test.ts`
     - _Requirements: 5.5_
 
+- [x] 8. Repeatable smoke test (`tools/smoke-wss.mjs`)
+  - [x] 8.1 `tools/smoke-wss.mjs`: wss login with `SMOKE_SECRET`, fresh channel, invite, wait for BOTH `worktree ready` and the agent's JOIN before the prompt, `+v`, one word, KICK on the first reply, finish on the credits line; kicks the agent on any failure after the invite; exit 0/1/2
+    - _Requirements: 7.2, 7.5_
+  - [x] 8.2 `docs/DEPLOY.md` step 6 (command, what success looks like, about 0.02 credits), tests in `apps/runner/test/sandbox-files.test.ts`, `docs/KIRO_USAGE.md`
+    - _Requirements: 7.2, 7.5_
+
+  - [x] 8.3 Review fixes: the reply counts only after the prompt was delivered (no kick-then-prompt race); SIGINT/SIGTERM and socket errors go through the same fail path, which kicks whenever the invite was sent and waits up to 500 ms for the flush; server text is stripped of colour and control characters, cut to 200 characters and has the secret redacted; `SMOKE_SECRET` with CR, LF, NUL or a space exits 2; fail fast on JOIN (403, 405, 471, 473, 474, 475, 477) and INVITE (401, 443, 482) errors; example host in the header; DEPLOY.md notes the `ws` fallback needs `pnpm install`; tests in `sandbox-files.test.ts`
+    - _Requirements: 7.2, 7.5_
+
 ## Notes
 
 - `infra/.terraform.lock.hcl` is committed so CI and the Operator use the same provider build.
@@ -82,7 +91,9 @@ File-writing tasks first (Terraform, host files, CI, runbook), then the operator
     { "id": 8, "tasks": ["6"] },
     { "id": 9, "tasks": ["7.1", "7.2", "7.3"] },
     { "id": 10, "tasks": ["7.4"] },
-    { "id": 11, "tasks": ["7.5"] }
+    { "id": 11, "tasks": ["7.5"] },
+    { "id": 12, "tasks": ["8.1", "8.2"] },
+    { "id": 13, "tasks": ["8.3"] }
   ]
 }
 ```

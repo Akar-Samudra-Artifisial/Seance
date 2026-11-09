@@ -332,6 +332,159 @@ for name, rows in (("login.db", [("kirocli:social:token", json.dumps({"access_to
   }, 30_000);
 });
 
+// deploy-aws task 8: the repeatable smoke test of a deployed host.
+describe("tools/smoke-wss.mjs (deploy-aws)", () => {
+  const SMOKE = "tools/smoke-wss.mjs";
+
+  it("exists and reads the secret from SMOKE_SECRET only", () => {
+    const text = read(SMOKE);
+    expect(text.startsWith("#!/usr/bin/env node\n")).toBe(true);
+    expect(text).toContain('process.env["SMOKE_SECRET"]');
+    // Exit 2 with a usage message when the secret or an argument is missing.
+    expect(text).toMatch(/SMOKE_SECRET is not set/);
+    expect(text).toMatch(/process\.exit\(2\)/);
+    expect(text).not.toMatch(/process\.argv[^\n]*secret/i);
+  });
+
+  it("waits for the agent's JOIN and the worktree notice before it sends the prompt", () => {
+    const text = read(SMOKE);
+    const gate = text.indexOf("if (seen.promptScheduled || !seen.worktreeReady || !seen.agentJoined) return;");
+    expect(gate).toBeGreaterThan(-1);
+    // The prompt is sent only from maybeStartPrompt, after the gate, and the gate is fed by both events.
+    expect(text.indexOf("PRIVMSG ${channel} :${agent} ${PROMPT}")).toBeGreaterThan(gate);
+    expect(text.match(/PRIVMSG \$\{channel\} :\$\{agent\}/g)).toHaveLength(1);
+    expect(text).toMatch(/seen\.worktreeReady = true;\s+step\("worktree ready"\);\s+maybeStartPrompt\(\);/);
+    expect(text).toMatch(/seen\.agentJoined = true;[\s\S]*?maybeStartPrompt\(\);/);
+    expect(text).toContain("MODE ${channel} +v ${agent}");
+    expect(text).toContain("const PROMPT_DELAY_MS = 1500;");
+  });
+
+  it("kicks the agent on a failure after the invite, and fails on the documented conditions", () => {
+    const text = read(SMOKE);
+    expect(text).toMatch(/if \(invited\) kick\(\);/);
+    expect(text).toContain("could not start");
+    expect(text).toContain("credits used");
+    expect(text).toMatch(/\^ERROR/);
+    expect(text).toContain("SMOKE_TIMEOUT_S");
+    expect(text).toContain("const DEFAULT_TIMEOUT_S = 120;");
+    expect(text).toContain("smoke done");
+  });
+
+  it("never prints the PASS line or the secret", () => {
+    const lines = read(SMOKE).split("\n");
+    for (const line of lines) {
+      if (/console\.(log|error|warn|info|debug)/.test(line) || /\bstep\(/.test(line)) {
+        expect(line, line).not.toContain("PASS ");
+        expect(line, line).not.toMatch(/\bsecret\b/i);
+      }
+    }
+    // The PASS line goes to the socket through send(), nowhere else.
+    const passUses = lines.filter((l) => l.includes("PASS ") && !l.trimStart().startsWith("//"));
+    expect(passUses.map((l) => l.trim())).toEqual(["send(`PASS ${nick}:${secret}`);"]);
+  });
+
+  it("accepts the agent's line as the reply only after the prompt was delivered", () => {
+    const text = read(SMOKE);
+    // promptDelivered is set after the PRIVMSG inside the delay, never before; a failed or kicked run sends nothing.
+    const timeoutAt = text.indexOf("setTimeout(() => {", text.indexOf("const maybeStartPrompt"));
+    const sendAt = text.indexOf("send(`PRIVMSG ${channel} :${agent} ${PROMPT}`);", timeoutAt);
+    const deliveredAt = text.indexOf("seen.promptDelivered = true;", timeoutAt);
+    expect(timeoutAt).toBeGreaterThan(-1);
+    expect(sendAt).toBeGreaterThan(timeoutAt);
+    expect(deliveredAt).toBeGreaterThan(sendAt);
+    expect(text.slice(timeoutAt, sendAt)).toContain("if (finished || kicked) return;");
+    expect(text.match(/seen\.promptDelivered = true;/g)).toHaveLength(1);
+    expect(text).toMatch(/command === "PRIVMSG" && fromAgent && [^\n]*seen\.promptDelivered && !kicked/);
+    expect(text).not.toMatch(/command === "PRIVMSG"[^\n]*seen\.promptScheduled/);
+  });
+
+  it("handles SIGINT and SIGTERM through the failure path, which kicks and waits for the flush", () => {
+    const text = read(SMOKE);
+    expect(text).toContain('process.on("SIGINT", () => fail("interrupted"));');
+    expect(text).toContain('process.on("SIGTERM", () => fail("interrupted"));');
+    // fail() kicks whenever the invite was sent (not only after the agent joined), then end() drains the socket.
+    expect(text).toMatch(/if \(invited\) kick\(\);\s+end\(1\);/);
+    expect(text).toContain("const FLUSH_WAIT_MS = 500;");
+    expect(text).toContain("socket.buffered()");
+    // A socket error goes through fail() (so the agent is kicked while the socket may still be open).
+    expect(text).toMatch(/socket\.onError\(\(reason\) => \{\s+fail\(/);
+  });
+
+  it("strips control characters, cuts to 200 characters and redacts the secret before printing server text", () => {
+    const text = read(SMOKE);
+    expect(text).toContain("const MAX_PRINTED = 200;");
+    expect(text).toContain(String.raw`.replace(/[\x00-\x1f\x7f]/g, "")`);
+    expect(text).toContain(String.raw`.replace(/\x03(\d{1,2}(,\d{1,2})?)?/g, "")`);
+    expect(text).toContain('.split(secret)');
+    expect(text).toContain('.join("<redacted>")');
+    expect(text).toContain(".slice(0, MAX_PRINTED)");
+    // Every printing path goes through clean(): step() and the FAIL line.
+    expect(text).toMatch(/console\.log\(`\$\{stamp\(\)\} \$\{clean\(text\)\}`\)/);
+    expect(text).toMatch(/console\.error\(`\$\{stamp\(\)\} FAIL: \$\{clean\(reason\)\}`\)/);
+  });
+
+  it("refuses a SMOKE_SECRET with CR, LF, NUL or a space (exit 2) without echoing it", async () => {
+    const text = read(SMOKE);
+    expect(text).toContain(String.raw`if (/[\r\n\0 ]/.test(secret)) usage(`);
+    const run = (secret: string): Promise<{ code: number; stdout: string; stderr: string }> =>
+      new Promise((done) => {
+        execFile(
+          process.execPath,
+          [resolve(ROOT, SMOKE), "example.test", "judge1"],
+          { env: { PATH: process.env["PATH"] ?? "", SMOKE_SECRET: secret } },
+          (error, stdout, stderr) => {
+            done({ code: error === null ? 0 : typeof error.code === "number" ? error.code : 1, stdout, stderr });
+          },
+        );
+      });
+    for (const bad of ["has space-1234", "line\nbreak-1234", "carriage\rreturn-1234"]) {
+      const result = await run(bad);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain("must not contain CR, LF, NUL or a space");
+      expect(result.stderr + result.stdout).not.toContain("space-1234");
+      expect(result.stderr + result.stdout).not.toContain("break-1234");
+    }
+  });
+
+  it("fails fast on JOIN and INVITE errors", () => {
+    const text = read(SMOKE);
+    expect(text).toMatch(/JOIN_ERRORS = new Set\(\["403", "405", "471", "473", "474", "475", "477"\]\)/);
+    expect(text).toMatch(/INVITE_ERRORS = new Set\(\["401", "443", "482"\]\)/);
+    expect(text).toContain("cannot join ${channel}");
+    expect(text).toContain("invite of ${agent} refused");
+  });
+
+  it("uses a placeholder host in its header, never a real one", () => {
+    const header = read(SMOKE).split("\n").slice(0, 12).join("\n");
+    expect(header).toContain("seance.example.com");
+    expect(header).not.toMatch(/sslip\.io/);
+  });
+
+  it("is syntactically valid Node", async () => {
+    const result = await exec(process.execPath, ["--check", resolve(ROOT, SMOKE)]).then(
+      () => 0,
+      (e: { code?: number }) => e.code ?? 1,
+    );
+    expect(result).toBe(0);
+  });
+
+  it("exits 2 with a usage message when SMOKE_SECRET or an argument is missing", async () => {
+    const run = (args: string[], env: Record<string, string>): Promise<{ code: number; stderr: string }> =>
+      new Promise((done) => {
+        execFile(process.execPath, [resolve(ROOT, SMOKE), ...args], { env: { PATH: process.env["PATH"] ?? "", ...env } }, (error, _out, stderr) => {
+          done({ code: error === null ? 0 : typeof error.code === "number" ? error.code : 1, stderr });
+        });
+      });
+    const noSecret = await run(["example.test", "judge1"], {});
+    expect(noSecret.code).toBe(2);
+    expect(noSecret.stderr).toContain("SMOKE_SECRET is not set");
+    const noNick = await run(["example.test"], { SMOKE_SECRET: "dummy-value-123456" });
+    expect(noNick.code).toBe(2);
+    expect(noNick.stderr).toContain("usage:");
+    expect(noNick.stderr).not.toContain("dummy-value-123456");
+  });
+});
+
 describe("nftables template (7.3, D19)", () => {
   const text = read("sandbox/seance-sandbox.nft");
   const rules = text

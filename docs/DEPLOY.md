@@ -94,6 +94,15 @@ sudo systemctl start seance-kiro-refresh.timer
 
 ## 6. Smoke test from a browser
 
+First the scripted check, from your laptop (Node 26, no install needed). It logs in over wss, joins a fresh `#smoke<digits>` channel, invites the agent, waits for both `worktree ready` and the agent's JOIN, gives it `+v`, asks for one word, kicks it on the first reply and waits for the ChanServ credits line:
+
+```sh
+SMOKE_SECRET="$(secret get <your-password-manager-entry>)" node tools/smoke-wss.mjs <hostname> judge1
+#   [  1.2s] registered as judge1 ... [ 18.4s] reply: PONG (PONG) ... kick ok ... credits line: ... credits used
+```
+
+The script needs no install: Node 26's global `WebSocket` is used and sends the `Origin` header. Only if that is missing does it fall back to the `ws` package of `apps/ircd`, which needs the repository installed (`pnpm install`). Success is exit code 0 with a `reply: ... (PONG)` line, `kick ok` and the `credits used` line. A failure exits 1 with the reason (`could not start`, an `ERROR`, a closed socket, or the 120 s timeout, `SMOKE_TIMEOUT_S` changes it) and kicks the agent first, so no session is left running. `secret get` only stands for any way of filling `SMOKE_SECRET` from a password manager; the secret is read from that variable alone and never printed. A run costs about 0.02 Kiro credits. Then, in a browser:
+
 1. Open `https://<hostname>/` (from `terraform output url`). The certificate is from Let's Encrypt.
 2. Connect with an account (`judge1` / its secret). The status window shows the welcome and the MOTD; the browser's network tab shows `wss://<hostname>/ws` open.
 3. `/join #smoke`, then `/invite coder`. ChanServ reports `worktree ready`, and `coder` joins.
