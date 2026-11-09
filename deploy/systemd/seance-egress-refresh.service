@@ -1,0 +1,9 @@
+# Re-resolves sandbox/egress-allow.txt into the nftables set (addresses of CDNs change).
+[Unit]
+Description=Séance agent sandbox allow-list refresh
+After=seance-sandbox-nft.service
+Requisite=seance-sandbox-nft.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/seance/sandbox/seance-egress-refresh /opt/seance/sandbox/egress-allow.txt

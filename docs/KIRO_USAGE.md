@@ -411,11 +411,21 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: the four screenshot comparisons in `apps/web/e2e/pixel.spec.ts` tagged `@pixel`; scripts `test:e2e:functional` / `test:e2e:pixel`; Ubuntu CI runs e2e with `--grep-invert @pixel`, a new `pixel` job on macos-15 runs `--grep @pixel`
 - Notes: the 12 Ubuntu failures were 1-2 % font-rendering diffs against macOS baselines; thresholds and baselines unchanged, and `test:e2e` still runs everything locally
 
+### 2026-11-08 — Spec deploy-aws and its files
+- Kiro features: spec (`deploy-aws` requirements/design/tasks, tasks 0.1 to 0.5), steering (security, tech, structure), hook (guard-shell)
+- Produced: `infra/` (Terraform: t3.medium on Debian 13 by AMI lookup, SSM only, IMDSv2, encrypted gp3 + XFS quota volume, EIP and sslip.io hostname, Project tag budget), `deploy/` (idempotent `bootstrap.sh`, `update.sh` with rollback, `spike-s12.sh`, hardened systemd units, Caddyfile that overwrites `X-Forwarded-For`, env template with credit caps), CI `infra` job, `docs/DEPLOY.md` runbook
+- Notes: nothing touched AWS; Terraform was checked only with `fmt`, `init -backend=false` and `validate` and no credentials. `NoNewPrivileges` stays off for the ircd because rootless Podman needs the setuid `newuidmap`
+
+### 2026-11-09 — deploy-aws review fixes
+- Kiro features: spec (`deploy-aws` task 0.6, design D3, D4, D13 to D16), steering (security), hook (guard-shell)
+- Produced: build as `seance` with `web.env` loaded (wss URL baked in), Kiro installer pinned by sha256 in `deploy/pins.env` (fail closed), spike builds the fixture image before the egress rule, SSM agent installed first in `user_data`, ircd unit exceptions plus a `user@<uid>` drop-in, AMI release filter, zone offerings, safe detach, apt lock timeout, `unattended-upgrades`, `kiro-cli whoami` gate, strict variable validation, quoted `deploy.conf`, HSTS/nosniff/no-referrer in Caddy
+- Notes: still no AWS call; shellcheck, `terraform fmt -check` and `terraform validate` stay clean without credentials. The installer hash was taken from `https://cli.kiro.dev/install` on 2026-11-09 (downloaded, read, not run)
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.
 
-- **deploy-aws** spec: the public judge server (instance, Caddy TLS with `X-Forwarded-For` overwritten, Podman, a hard disk quota for `SEANCE_WORKSPACES`, a dedicated demo Kiro account). Notes in [DEPLOY.md](./DEPLOY.md).
-- **Spike S12 on EC2**: run `s12` and `s12-auth` against a real rootless Podman 5 (agent-sandbox task 0.4) and the real-Podman integration suite; record the results in `spikes/acp/FINDINGS.md`.
+- **deploy-aws operator steps** (spec written, files in `infra/` and `deploy/`): `terraform apply`, the full deploy, the Kiro login, the browser smoke test, the budget alert check and, after judging, the teardown. Runbook: [DEPLOY.md](./DEPLOY.md).
+- **Spike S12 on EC2**: `sudo /opt/seance/deploy/spike-s12.sh` (deploy-aws task 1, agent-sandbox task 0.4); record the results in `spikes/acp/FINDINGS.md`.
 - **Demo video** under 3 minutes on YouTube.
 - **Write-up** of how Séance was built with Kiro, from this log.

@@ -1,0 +1,17 @@
+# Loads the agents' egress rule (sandbox/seance-sandbox.nft rendered by bootstrap.sh) and fills the
+# allow-list set. Spec agent-sandbox D19, deploy-aws.
+[Unit]
+Description=Séance agent sandbox egress rule (nftables)
+After=network-online.target
+Wants=network-online.target
+Before=seance-ircd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/nftables.d/seance-sandbox.nft
+ExecStart=/opt/seance/sandbox/seance-egress-refresh /opt/seance/sandbox/egress-allow.txt
+ExecStop=/usr/sbin/nft delete table inet seance_sandbox
+
+[Install]
+WantedBy=multi-user.target

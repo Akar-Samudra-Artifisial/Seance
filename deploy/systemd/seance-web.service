@@ -1,0 +1,41 @@
+# Séance web client: Next.js production server on 127.0.0.1:3000 behind Caddy. Spec deploy-aws.
+[Unit]
+Description=Séance web client (Next.js)
+Documentation=https://github.com/Akar-Samudra-Artifisial/Seance/blob/main/docs/DEPLOY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seance
+Group=seance
+WorkingDirectory=/opt/seance/apps/web
+Environment=NODE_ENV=production
+# Only NEXT_PUBLIC_IRCD_WS_URL and telemetry; never the ircd secrets.
+EnvironmentFile=/etc/seance/web.env
+ExecStart=/usr/local/bin/node /opt/seance/apps/web/node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3000
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+# Next writes its image and fetch cache here (created by bootstrap.sh, owned by seance).
+ReadWritePaths=/opt/seance/apps/web/.next/cache
+PrivateTmp=yes
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

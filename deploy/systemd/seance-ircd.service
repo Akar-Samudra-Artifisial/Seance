@@ -1,0 +1,52 @@
+# Séance ircd with the agent runner (SEANCE_RUNNER=1, podman sandbox). Spec deploy-aws.
+# TCP 6667 and WebSocket 6680 listen on 127.0.0.1 only (IRCD_HOST); Caddy proxies /ws to 6680.
+[Unit]
+Description=Séance ircd and agent runner
+Documentation=https://github.com/Akar-Samudra-Artifisial/Seance/blob/main/docs/DEPLOY.md
+After=network-online.target seance-sandbox-nft.service
+Wants=network-online.target
+# The agents' egress rule must be loaded before any container can start.
+Requires=seance-sandbox-nft.service
+# The workspaces volume (XFS, project quota) must be mounted, or worktrees would land on the root disk.
+RequiresMountsFor=/srv/seance/workspaces
+# No agent without a Kiro login. bootstrap.sh enables this unit only after `kiro-cli whoami`
+# succeeds as seance; this condition is a second, cheap check at every start.
+ConditionDirectoryNotEmpty=/home/seance/.local/share/kiro-cli
+
+[Service]
+Type=simple
+User=seance
+Group=seance
+WorkingDirectory=/opt/seance
+EnvironmentFile=/etc/seance/seance.env
+ExecStart=/usr/local/bin/node /opt/seance/apps/ircd/dist/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillMode=mixed
+
+# Hardening, with three deliberate exceptions for rootless Podman (spec deploy-aws, design D4):
+#  - NoNewPrivileges=no: Podman calls the setuid helpers newuidmap/newgidmap to build each
+#    container's user namespace; NoNewPrivileges=yes makes them fail ("write to uid_map failed:
+#    Operation not permitted").
+#  - no ProtectKernelTunables: the container runtime writes /proc/sys entries for the container
+#    (and mounts /proc and /sys inside it); read-only kernel tunables break container start.
+#  - no ProtectControlGroups: rootless containers get their cgroups through the user manager
+#    (delegated controllers, --memory/--cpus/--pids-limit); a read-only /sys/fs/cgroup breaks that.
+# The agents themselves run with no-new-privileges and all capabilities dropped inside the
+# container (sandbox/, docs/SANDBOX.md). bootstrap.sh also renders the drop-in
+# seance-ircd.service.d/user-manager.conf with After= and Wants=user@<uid>.service.
+NoNewPrivileges=no
+ProtectSystem=strict
+ReadWritePaths=/srv/seance /home/seance /run/user/%U
+PrivateTmp=yes
+ProtectHome=no
+ProtectKernelModules=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictRealtime=yes
+LockPersonality=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+# Terraform working files and state: local only, never committed (state can hold resource ids and
+# the alert e-mail address).
+.terraform/
+.terraform.lock.hcl.bak
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+terraform.tfvars
+*.auto.tfvars
+crash.log
+crash.*.log
+*.tfplan

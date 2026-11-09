@@ -1,0 +1,40 @@
+# Séance on the public judge server (spec deploy-aws). bootstrap.sh replaces @SEANCE_PUBLIC_HOSTNAME@
+# (the <eip-with-dashes>.sslip.io name) and installs this file as /etc/caddy/Caddyfile.
+# Automatic HTTPS: Caddy gets a Let's Encrypt certificate for the host and redirects HTTP to HTTPS.
+# Nothing in front of Caddy is trusted, so no trusted_proxies here.
+
+@SEANCE_PUBLIC_HOSTNAME@ {
+	encode zstd gzip
+
+	# Security headers for every response. The Content-Security-Policy stays the app's own (a
+	# nonce per request from apps/web/proxy.ts), so Caddy does not set one.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# IRC over WebSocket (the web client's NEXT_PUBLIC_IRCD_WS_URL is wss://<host>/ws).
+	handle /ws* {
+		reverse_proxy 127.0.0.1:6680 {
+			# Overwrite, never append: a client-sent X-Forwarded-For is discarded, so the ircd's
+			# per-IP limits see the real address (IRCD_TRUSTED_PROXIES=127.0.0.1,::1).
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# Web client.
+	handle {
+		reverse_proxy 127.0.0.1:3000 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	log {
+		output file /var/log/caddy/seance-access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+	}
+}

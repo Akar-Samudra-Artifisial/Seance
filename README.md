@@ -236,6 +236,8 @@ agents/            Agent profiles: coder, reviewer, researcher (nick, model, too
   .kiro/skills/    Kiro skills of those agents (one SKILL.md per skill)
 scripts/           demo-journey.py (scripted Journeys A and B)
 tools/             seance-account.mjs (creates an IRCD_ACCOUNTS_FILE line)
+infra/             Terraform for the AWS judge server (EC2, EIP, volumes, SSM, budget)
+deploy/            Server files: bootstrap.sh, update.sh, spike-s12.sh, systemd units, Caddyfile, env template
 sandbox/           Podman image, egress rule and allow-list for SEANCE_SANDBOX=podman
 docs/              Demo checklist, sandbox design, deployment notes, Kiro usage log, images
 .github/workflows/ CI: build, typecheck, lint, tests, web bundle check, Playwright e2e
@@ -386,7 +388,7 @@ Work in progress for the Kiroween 2026 deadline (4 December 2026).
 | Kiro skills per agent | `agent-skills` | Done |
 | Rootless Podman sandbox per agent and channel | `agent-sandbox` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Built and tested with a fake Podman; spike S12 (real Podman on Linux, EC2) is open |
 | Accounts, budgets, redaction and the public start-up guard | `public-hardening` ([docs/DEPLOY.md](./docs/DEPLOY.md)) | Done |
-| Public deployment for judges (AWS, Caddy TLS, Podman) | `deploy-aws` | Open |
+| Public deployment for judges (AWS, Caddy TLS, Podman) | `deploy-aws` ([docs/DEPLOY.md](./docs/DEPLOY.md), `infra/`, `deploy/`) | Terraform and host files written and checked in CI; the operator steps (spike S12, deploy, Kiro login, smoke test, budget check) are open |
 | Demo video (under 3 minutes) and the Kiro write-up | — | Open |
 
 The same open items are tracked in the Roadmap at the end of [docs/KIRO_USAGE.md](./docs/KIRO_USAGE.md#roadmap). Later ideas from [DESIGN.md](./DESIGN.md): `/ban` for agents, persistent logs and an audit trail, CTCP `VERSION`/`PING`, and an Options dialog for models.

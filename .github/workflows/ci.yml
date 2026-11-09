@@ -93,6 +93,43 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # Static checks of the deployment files (spec deploy-aws). No AWS credentials exist in this job:
+  # terraform runs fmt, init without a backend and validate only, never plan or apply.
+  infra:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+      AWS_SESSION_TOKEN: ""
+      AWS_EC2_METADATA_DISABLED: "true"
+      TF_IN_AUTOMATION: "1"
+      CHECKPOINT_DISABLE: "1"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: shellcheck deploy/*.sh
+        run: shellcheck --severity=style deploy/*.sh
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.17.1"
+          terraform_wrapper: false
+
+      - name: terraform fmt -check
+        working-directory: infra
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform init -backend=false
+        working-directory: infra
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        working-directory: infra
+        run: terraform validate
+
   # Screenshot comparisons against the macOS Chromium baselines and the Figma exports (tests tagged
   # @pixel in apps/web/e2e/pixel.spec.ts). Same thresholds and baselines as a local run.
   pixel:

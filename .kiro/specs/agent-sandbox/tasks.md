@@ -16,7 +16,7 @@ Spike scripts and pinned flag spellings first, then pure code (config, guard, ar
   - [x] 0.3 Add `apps/runner/src/sandbox/flags.ts` holding every pinned Podman spelling as exported constants (mount option names, relabel values, network value, userns value, tmpfs options), with the initial values from `design.md` "The generated command"
     - A later change of spelling after the spike results is a one-file edit
     - _Requirements: 4.1, 4.3, 5.2, 5.7, 7.1_
-  - [ ] 0.4 **Run on EC2 (operator step, blocks nothing):** run `pnpm --filter @seance/spike-acp s12` and `s12-auth` on an EC2 instance with Podman 5 (SELinux enforcing if the AMI allows it), record the results in `spikes/acp/FINDINGS.md` section S12, adjust `flags.ts` if a spelling differs
+  - [ ] 0.4 **Waiting on the deploy-aws spike** (`deploy/spike-s12.sh`, spec `deploy-aws` task 1). **Run on EC2 (operator step, blocks nothing):** run `pnpm --filter @seance/spike-acp s12` and `s12-auth` on an EC2 instance with Podman 5 (SELinux enforcing if the AMI allows it), record the results in `spikes/acp/FINDINGS.md` section S12, adjust `flags.ts` if a spelling differs
     - _Requirements: 4.1, 5.7, 7.1_
 
 - [x] 1. Configuration and production guard

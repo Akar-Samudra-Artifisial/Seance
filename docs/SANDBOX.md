@@ -251,7 +251,7 @@ Then start the runner with `SEANCE_SANDBOX=podman` (and `IRCD_PUBLIC=1` on the p
 - `/home/agent` and `/tmp` are `noexec`. That `kiro-cli` starts with it (it runs from `/usr/local/bin` of the image and only reads its login from `$HOME`) is expected, not yet observed on Linux: spike S12 (`pnpm --filter @seance/spike-acp s12-auth`, task 0.4) runs it in the production flag set; `S12_HOME_EXEC=1` drops `noexec` for a comparison if it fails. Tools that execute from `$HOME` (`npx`, `uvx` caches) do not work.
 - A second `openSession` for an agent and session directory whose open is still in flight is rejected (`a session for <agent> in this session directory is already being opened`); it never receives the first caller's session.
 - DNS tunnelling is not prevented (see the table at the top).
-- The worktree size is checked after each tool call (`SEANCE_WORKTREE_MAX_BYTES`), but there is no hard disk quota; see [DEPLOY.md](./DEPLOY.md#disk-use-seance_workspaces-needs-a-hard-quota).
+- The worktree size is checked after each tool call (`SEANCE_WORKTREE_MAX_BYTES`), but the runner sets no hard disk quota itself; the AWS deployment puts `SEANCE_WORKSPACES` on an XFS volume with a hard project quota, see [DEPLOY.md](./DEPLOY.md#disk-quota).
 - Podman-in-Podman (running the runner itself in a container) is not supported.
 - The Kiro credential is readable by the agent (see "The Kiro login can be stolen by a +o agent").
 - Several agents in one channel share one worktree; a host-side commit after one agent's turn includes whatever the others changed meanwhile.

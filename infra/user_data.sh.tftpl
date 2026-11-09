@@ -1,0 +1,48 @@
+#!/bin/bash
+# cloud-init user data (rendered by Terraform, spec deploy-aws). First makes sure the SSM agent runs
+# (the only way in: no SSH), then clones the public repository at the pinned commit into
+# /opt/seance and runs deploy/bootstrap.sh from that commit. No secrets here: user data is readable
+# by anyone with ec2:DescribeInstanceAttribute.
+set -euo pipefail
+exec > >(tee -a /var/log/seance-bootstrap.log) 2>&1
+
+REPO_URL='${repo_url}'
+GIT_REF='${git_ref}'
+REGION='${region}'
+
+export DEBIAN_FRONTEND=noninteractive
+APT="apt-get -o DPkg::Lock::Timeout=120"
+for attempt in 1 2 3 4 5; do
+  $APT update && $APT install -y --no-install-recommends git ca-certificates curl && break
+  echo "apt-get failed (attempt $attempt), retrying in 15 s"
+  sleep 15
+done
+
+# 1. SSM agent, before anything that can fail: Session Manager must work even if bootstrap.sh
+#    stops halfway. The Debian image does not ship it; the official package comes from the
+#    regional AWS bucket over HTTPS.
+if ! dpkg-query -W -f='$${Status}' amazon-ssm-agent 2>/dev/null | grep -q 'install ok installed'; then
+  curl -fsSLo /root/amazon-ssm-agent.deb \
+    "https://s3.$REGION.amazonaws.com/amazon-ssm-$REGION/latest/debian_amd64/amazon-ssm-agent.deb"
+  dpkg -i /root/amazon-ssm-agent.deb
+  rm -f /root/amazon-ssm-agent.deb
+fi
+systemctl enable amazon-ssm-agent.service
+systemctl restart amazon-ssm-agent.service
+systemctl is-active --quiet amazon-ssm-agent.service
+
+# 2. The repository at the pinned commit.
+if [ ! -d /opt/seance/.git ]; then
+  git clone --no-checkout "$REPO_URL" /opt/seance
+fi
+git -c safe.directory=/opt/seance -C /opt/seance fetch --quiet origin "$GIT_REF"
+git -c safe.directory=/opt/seance -C /opt/seance -c advice.detachedHead=false checkout --quiet --detach "$GIT_REF"
+test "$(git -c safe.directory=/opt/seance -C /opt/seance rev-parse HEAD)" = "$GIT_REF"
+
+# 3. Provisioning.
+SEANCE_REPO_URL="$REPO_URL" \
+SEANCE_GIT_REF="$GIT_REF" \
+SEANCE_PUBLIC_HOSTNAME='${public_hostname}' \
+SEANCE_WORKSPACES_VOLUME_ID='${workspaces_volume_id}' \
+SEANCE_VPC_CIDR='${vpc_cidr}' \
+  /opt/seance/deploy/bootstrap.sh

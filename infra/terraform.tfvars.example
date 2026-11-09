@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars (git-ignored) and fill in. No secrets belong here.
+
+# Full commit sha of the public repository to deploy (git rev-parse HEAD after pushing).
+git_ref = "0000000000000000000000000000000000000000"
+
+# Where AWS Budgets sends the 20 / 40 USD actual and 40 USD forecast alerts.
+budget_email = "you@example.com"
+
+# Defaults, change only on purpose:
+# account_id                   = "255530395889"
+# aws_profile                  = "default"
+# region                       = "us-east-1"
+# instance_type                = "t3.medium"
+# root_volume_gb               = 40
+# workspaces_volume_gb         = 20
+# repo_url                     = "https://github.com/Akar-Samudra-Artifisial/Seance.git"
+# budget_limit_usd             = 40
+# budget_actual_thresholds_usd = [20, 40]
+# budget_forecast_threshold_usd = 40
