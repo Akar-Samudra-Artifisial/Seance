@@ -83,7 +83,20 @@ async function scene(steps: readonly Readonly<Record<string, unknown>>[], env: R
   await op.join("#sbx");
   op.send("INVITE coder #sbx");
   await op.waitFor(/^:coder!\S+ JOIN :?#sbx$/i, 60_000);
+  // The runner JOINs before the worktree and `session/new` (the container start); a message sent
+  // before "agent joined channel" finds no Session and is ignored, and no container exists yet.
+  const deadline = Date.now() + 60_000;
+  while (!fx.logs.some((l) => l.msg === "agent joined channel" && l.fields?.["agent"] === "coder")) {
+    if (Date.now() > deadline) throw new Error("coder never got a Session");
+    await new Promise<void>((r) => setTimeout(r, 50));
+  }
   return { fx, op };
+}
+
+/** An agent without a mode only listens (Req 5.8): give it the mode that lets it take a turn. */
+async function grant(op: IrcTestClient, mode: "+v" | "+o"): Promise<void> {
+  op.send(`MODE #sbx ${mode} coder`);
+  await op.waitFor(new RegExp(`MODE #sbx \\${mode} coder$`));
 }
 
 const reply = (op: IrcTestClient, probe: string): Promise<string> =>
@@ -97,6 +110,7 @@ describe("agent sandbox with real rootless Podman", () => {
     title("runs the handshake and a reply through podman run -i, isolated (CapEff 0, NoNewPrivs, not root)"),
     async () => {
       const { op } = await scene([{ probe: "status" }]);
+      await grant(op, "+v");
       op.send("PRIVMSG #sbx :coder: status");
       const line = await reply(op, "status");
       expect(line).toContain("CapEff=0000000000000000");
@@ -113,6 +127,7 @@ describe("agent sandbox with real rootless Podman", () => {
       process.env["KIRO_API_KEY"] = "kiro-canary";
       try {
         const { op } = await scene([{ probe: "env:SEANCE_SECRET_CANARY,KIRO_API_KEY" }, { probe: "git" }, { probe: "connect:169.254.169.254:80" }]);
+        await grant(op, "+v");
         op.send("PRIVMSG #sbx :coder: env");
         expect(await reply(op, "env:SEANCE_SECRET_CANARY,KIRO_API_KEY")).toContain("SEANCE_SECRET_CANARY=<unset> KIRO_API_KEY=<unset>");
         expect(await reply(op, "git")).toContain("=> failed");
@@ -131,8 +146,7 @@ describe("agent sandbox with real rootless Podman", () => {
       // `@cwd` is the session directory as the agent sees it: the same path as on the host.
       const { fx, op } = await scene([{ probe: "write:@cwd/probe.txt" }, { probe: "write:/etc/probe" }, { probe: "write:/probe" }]);
       const worktree = await realpath(join(fx.workspaces, "sbx"));
-      op.send("MODE #sbx +o coder");
-      await op.waitFor(/MODE #sbx \+o coder$/);
+      await grant(op, "+o");
       op.send("PRIVMSG #sbx :coder: write");
       expect(await reply(op, `write:${worktree}/probe.txt`)).toContain("=> written");
       expect(await reply(op, "write:/etc/probe")).toContain("=> error");

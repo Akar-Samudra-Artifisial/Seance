@@ -41,7 +41,7 @@ export type Step =
   /**
    * Sandbox suite only (agent-sandbox task 8.3): `status`, `env:NAME,NAME`, `write:/path`,
    * `connect:host:port` or `git`. The core stays pure: the stdio wrapper runs the probe and the
-   * result is sent as a message chunk `probe <spec> => <result>`.
+   * result is sent as a message chunk `probe <spec> => <result>` (with `@cwd` expanded).
    */
   | { readonly probe: string };
 
@@ -638,7 +638,7 @@ export class FakeAgentCore {
         const cwd = this.sessions.get(turn.sessionId)?.cwd ?? "/";
         const spec = step.probe.replace(/^write:@cwd\//, `write:${cwd}/`);
         const result = this.probe === undefined ? "probe unavailable" : this.probe(spec);
-        out.push(this.update(turn.sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `probe ${step.probe} => ${result}\n` } }));
+        out.push(this.update(turn.sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `probe ${spec} => ${result}\n` } }));
       } else {
         out.push(...this.finish(turn, step.stop));
         return;
