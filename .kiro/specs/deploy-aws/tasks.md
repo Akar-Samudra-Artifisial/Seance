@@ -21,22 +21,23 @@ File-writing tasks first (Terraform, host files, CI, runbook), then the operator
   - [x] 0.6 Review fixes: web.env before the build; install and build as `seance`; pinned Kiro installer (`deploy/pins.env`); fixture image built before the egress rule in the spike; SSM agent first in `user_data`; ircd unit exceptions and the `user@<uid>` drop-in; AMI release filter, zone offerings, `stop_instance_before_detaching`, IMDS comment; caddy log dir, apt lock timeout, Podman recommends, `unattended-upgrades`, `kiro-cli whoami` gate; strict `repo_url`/`git_ref`/`region` validation and quoted `deploy.conf`; HSTS, `nosniff`, `no-referrer`
     - _Requirements: 2.3, 2.6, 4.1 to 4.6, 5.1, 6.1_
 
-- [ ] 1. **Operator:** Spike S12 on the instance
+- [x] 1. **Operator:** Spike S12 on the instance
   - `terraform apply` (DEPLOY.md step 1), SSM session (step 2), wait for the bootstrap, then `sudo /opt/seance/deploy/spike-s12.sh`
   - All rows PASS; copy `/var/lib/seance/s12/summary.txt` and `s12.log` into `spikes/acp/FINDINGS.md` section S12; tick agent-sandbox task 0.4
   - _Requirements: 6.1, 7.3_
 
-- [ ] 2. **Operator:** Full deploy
+- [x] 2. **Operator:** Full deploy
   - Accounts and `SEANCE_INVITERS` (DEPLOY.md step 4); `https://<hostname>/` serves the web client with a valid certificate; `systemctl status seance-web caddy` active; `/etc/seance/seance.env` reviewed (caps, CIDRs, image digest)
   - _Requirements: 2.5, 2.6, 4.2 to 4.7_
 
-- [ ] 3. **Operator:** Kiro login
+- [x] 3. **Operator:** Kiro login
   - DEPLOY.md step 5: `kiro-cli login --use-device-flow` as `seance` with the personal Kiro account, mode 0700, `bootstrap.sh` again; `seance-ircd` and `seance-sandbox-nft` active; optional `spike-s12.sh --with-auth`
   - _Requirements: 5.1, 5.2_
 
 - [ ] 4. **Operator:** Smoke test from a browser
   - DEPLOY.md step 6: wss connect with an account, `/invite coder`, a reply after `+v`, `/whois` budget line, `/kick` exorcises and leaves no container; a forged `X-Forwarded-For` is ignored
   - _Requirements: 2.6, 5.4_
+  - Done 2026-11-09 by script over wss (commit 471e2a4): login, invite, `PONG` reply after `+v`, kick exorcises (`0.01 credits used`, `podman ps -a` empty), forged `X-Forwarded-For: 6.6.6.6` ignored (WHOIS shows the real client address), web client 200 with a valid certificate. Open: the same flow in a browser and the `/whois` budget line (not seen in WHOIS of an idle agent)
 
 - [ ] 5. **Operator:** Budget alert check
   - In the AWS Budgets console: `seance-monthly` exists with the three notifications for `budget_email`; Cost Explorer shows the `Project` tag as active (re-apply after a day if `aws_ce_cost_allocation_tag` failed); after a few days the actual cost matches the estimate in DEPLOY.md step 8

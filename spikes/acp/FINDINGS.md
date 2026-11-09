@@ -164,9 +164,9 @@ For every scenario: `session/new` succeeded with `currentModeId` equal to the pr
 - **Haiku's first tool call for an edit was a `find … -not -path "*/node_modules/*"`.** The old glob rule of Req 8.15 rejected it as `protected-path`; Req 8.15 now matches literal `AGENTS.md` / `.kiro` names only.
 - Not tested: absolute `rawInput.path`, `create` of a new file in 3.1, rename/move, a session cwd that is not a git repository.
 
-## S12: Podman sandbox on Linux (pending, run on EC2)
+## S12: Podman sandbox on Linux (EC2)
 
-**Status:** not run. The development machine is a Mac without Podman; agent-sandbox task 0.4 runs this on an EC2 instance with rootless Podman 5 and blocks no other task.
+**Status:** all PASS on 2026-11-09 (EC2 t3.medium, Debian 13, Podman 5.4.2 rootless, SELinux not available), via `deploy/spike-s12.sh --with-auth` at commit `1cc39b0`. Agent-sandbox task 0.4 is done; `flags.ts` changed only for the `/home/agent` tmpfs (first finding below).
 
 **Commands** (image built from `sandbox/Dockerfile`, pinned by digest):
 
@@ -179,4 +179,44 @@ S12_IMAGE=localhost/seance-agent@sha256:<digest> S12_AUTH_DIR=$HOME/.local/share
 
 Record the result lines here; change `flags.ts` only if a spelling differs.
 
-**First finding (EC2, Debian 13, Podman 5.4.2 rootless, via `deploy/spike-s12.sh`):** the `/home/agent` tmpfs was created as `0:0`, mode 755, so the agent (uid 10001, `--userns=keep-id:uid=10001,gid=10001`) failed with `mkdir: cannot create directory '/home/agent/.local': Permission denied`. Adding Podman's tmpfs option `U` makes it `10001:10001` and `mkdir` works; `uid=` is rejected by Podman. `flags.ts` `TMPFS_HOME` is now `/home/agent:rw,nosuid,nodev,noexec,size=256m,U`; `/tmp` (1777) is unchanged. The full result table follows once the spike passes.
+**First finding (EC2, Debian 13, Podman 5.4.2 rootless, via `deploy/spike-s12.sh`):** the `/home/agent` tmpfs was created as `0:0`, mode 755, so the agent (uid 10001, `--userns=keep-id:uid=10001,gid=10001`) failed with `mkdir: cannot create directory '/home/agent/.local': Permission denied`. Adding Podman's tmpfs option `U` makes it `10001:10001` and `mkdir` works; `uid=` is rejected by Podman. `flags.ts` `TMPFS_HOME` is now `/home/agent:rw,nosuid,nodev,noexec,size=256m,U`; `/tmp` (1777) is unchanged.
+
+**Summary** (`/var/lib/seance/s12/summary.txt`):
+
+```text
+S12 on ip-172-31-7-213 2026-11-09T10:21:57Z, commit 1cc39b0623d2819fa9b68fa9c9bd0854a58791e5
+PASS rootless Podman 5: 5.4.2, rootless, controllers [cpuset cpu io memory pids]
+PASS pinned base images: present by digest
+PASS sandbox.integration.test.ts: passed 5, failed 0, skipped 0
+PASS XFS project quota: 20 MiB write into a 10 MiB project failed at 10485760 bytes; main project 4201 has a hard limit
+PASS s12 flag spellings: see /var/lib/seance/s12/s12.log
+PASS s12-auth (one prompt): see /var/lib/seance/s12/s12-auth.log
+```
+
+**Flag spellings** (`s12.log`):
+
+```text
+[S12] podman version 5.4.2; SELinux: not available
+PASS  network --no-map-gw: probe exit 0 (want 0; 11 means the metadata rule is missing)
+PASS  network --map-gw (control): probe exit 10 (want 10)
+PASS  mount rw + keep-id: exit 0, owner 1001 (runner 1001)
+PASS  mount ro: exit 1 (want a failing touch, not 125) touch: cannot touch '/tmp/seance-s12-mnt-bgQc35/y': Read-only file system
+PASS  mount relabel=private: exit 0
+PASS  relabel=shared by two containers: 2 of 2 files written (sh exit 0)
+PASS  tmpfs + read-only root: exit 0
+PASS  --timeout=5: ended after 4959 ms, exit 255
+PASS  --http-proxy=false: HTTP_PROXY inside: unset
+PASS  --no-hosts: /etc/hosts lines: 0
+PASS  -i with --log-driver=none: echoed "ping"
+PASS  stop -t 2 + rm -f --ignore: stop 2166 ms, rm 86 ms, second rm exit 0
+```
+
+**Kiro auth** (`s12-auth.log`, personal Kiro account, Google login, no `KIRO_API_KEY`):
+
+```text
+[S12-auth] podman run -i ... localhost/seance-agent@sha256:4b196f49f6c1eba05bc6878922dda7dcc131e5ed0fa2bb943e3e2b01228b9d76 acp --agent s12-probe (no KIRO_API_KEY, auth staged from /run/seance/auth)
+  currentModeId=s12-probe (want s12-probe)
+  prompt answered: stopReason=end_turn, reply="OK" (1 prompt)
+```
+
+**Found by the first production deploy, not by the spike** (fixed in `471e2a4`): `%U` in the system unit `seance-ircd.service` is the manager's uid (0), so `/run/user/<uid>` now comes from the drop-in `bootstrap.sh` renders; `ProtectHostname=yes` makes crun fail `sethostname` (probe exit 126); kiro-cli 3.1.0 fetches `desktop-release.q.us-east-1.amazonaws.com` during `session/new` and hangs while nft drops it (now on the egress allow-list). SELinux enforcing was not tested (Debian has none).

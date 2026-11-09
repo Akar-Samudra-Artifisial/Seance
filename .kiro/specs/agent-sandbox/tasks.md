@@ -6,7 +6,7 @@ Spike scripts and pinned flag spellings first, then pure code (config, guard, ar
 
 ## Tasks
 
-- [ ] 0. Spike S12 scripts and pinned flag spellings (0.1 to 0.3 done; 0.4 runs on EC2)
+- [x] 0. Spike S12 scripts and pinned flag spellings
   - [x] 0.1 Write `spikes/acp/src/s12-podman.ts` and a `s12` script in `spikes/acp/package.json`
     - Using a throwaway image with `nc`, the script prints one result line per check: `--network=pasta:--no-map-gw,--ipv4-only` (a host loopback listener opened by the script is unreachable through the gateway; reachable with `--map-gw`), `--userns=keep-id:uid=10001,gid=10001` file ownership, the exact `--mount` option spelling for `ro`, `nosuid`, `nodev`, `bind-propagation` and `relabel`, `--timeout` ends a container, `--http-proxy=false` hides `HTTP_PROXY`, `--no-hosts`, `--log-driver=none` with `-i`, SELinux mode (`getenforce`) and whether a `relabel=shared` worktree is writable from two containers at once, and the timing of `podman stop -t 2` then `rm -f --ignore`
     - _Requirements: 4.1, 5.7, 7.1, 10.1, 10.5_
@@ -16,7 +16,7 @@ Spike scripts and pinned flag spellings first, then pure code (config, guard, ar
   - [x] 0.3 Add `apps/runner/src/sandbox/flags.ts` holding every pinned Podman spelling as exported constants (mount option names, relabel values, network value, userns value, tmpfs options), with the initial values from `design.md` "The generated command"
     - A later change of spelling after the spike results is a one-file edit
     - _Requirements: 4.1, 4.3, 5.2, 5.7, 7.1_
-  - [ ] 0.4 **Waiting on the deploy-aws spike** (`deploy/spike-s12.sh`, spec `deploy-aws` task 1). **Run on EC2 (operator step, blocks nothing):** run `pnpm --filter @seance/spike-acp s12` and `s12-auth` on an EC2 instance with Podman 5 (SELinux enforcing if the AMI allows it), record the results in `spikes/acp/FINDINGS.md` section S12, adjust `flags.ts` if a spelling differs
+  - [x] 0.4 **Done 2026-11-09 on EC2, all PASS (FINDINGS S12).** Was waiting on the deploy-aws spike (`deploy/spike-s12.sh`, spec `deploy-aws` task 1). **Run on EC2 (operator step, blocks nothing):** run `pnpm --filter @seance/spike-acp s12` and `s12-auth` on an EC2 instance with Podman 5 (SELinux enforcing if the AMI allows it), record the results in `spikes/acp/FINDINGS.md` section S12, adjust `flags.ts` if a spelling differs
     - _Requirements: 4.1, 5.7, 7.1_
 
 - [x] 1. Configuration and production guard
