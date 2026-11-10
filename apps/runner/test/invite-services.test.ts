@@ -102,6 +102,11 @@ async function makeController(
     readonly opNotices?: string[];
     readonly sandboxMode?: "none" | "podman";
     readonly profile?: AgentProfile;
+    /** Task 27.4: replaces `worktrees.ensure` (e.g. one that never settles). */
+    readonly ensure?: (channel: string) => Promise<WorktreeInfo>;
+    /** Task 27.4: what the fake startup queue reports at readiness and on failure. */
+    readonly queue?: { readonly ready: { delivered: number; dropped: number }; readonly failed: number };
+    readonly worktreeTimeoutMs?: number;
   } = {},
 ) {
   const mini = new MiniHost();
@@ -115,6 +120,10 @@ async function makeController(
   const store = new MemorySessionStore();
   const ledger = new CreditLedger({ store, snapshot, clock, sessionsOf: () => [], opNotice: () => undefined });
   const chanServ: string[] = [];
+  const ready: string[] = [];
+  const starts: string[] = [];
+  const dropNotices: string[] = [];
+  let failedOnce = false;
   const sessions: Session[] = [];
   const shortHeadCalls: string[] = [];
   const profile = extra.profile ?? PROFILE;
@@ -130,9 +139,24 @@ async function makeController(
       addChannelSession: (s) => void sessions.push(s),
       channelSession: () => undefined,
       registerAgent: () => () => undefined,
+      ...(extra.queue !== undefined
+        ? {
+            beginStart: (agent: string, channel: string) => void starts.push(`begin ${agent} ${channel}`),
+            startReady: () => extra.queue?.ready ?? { delivered: 0, dropped: 0 },
+            // The real queue reports its size once, then 0 (it is gone).
+            startFailed: (agent: string, channel: string) => {
+              starts.push(`failed ${agent} ${channel}`);
+              const first = !failedOnce;
+              failedOnce = true;
+              return first ? (extra.queue?.failed ?? 0) : 0;
+            },
+          }
+        : {}),
     },
+    ...(extra.worktreeTimeoutMs !== undefined ? { worktreeTimeoutMs: extra.worktreeTimeoutMs } : {}),
     worktrees: {
       ensure: async (channel): Promise<WorktreeInfo> => {
+        if (extra.ensure !== undefined) return extra.ensure(channel);
         if (fake.ensureFails) throw new Error("git worktree add failed");
         return { path: `/ws/${channel}`, realPath: `/tmp/seance-fake-${channel}`, branch: "seance/x", created: fake.created };
       },
@@ -153,7 +177,11 @@ async function makeController(
     opNotice: (_channel, text) => void extra.opNotices?.push(text),
     services: {
       chanServ: (channel, text) => {
-        chanServ.push(`${channel}: ${text}`);
+        // agent-runner Requirement 3.24 added "<agent> is ready"; kept apart so the worktree-ready
+        // assertions below still see only their own notice.
+        (text.endsWith(" is ready") ? ready : text.includes(" queued message") ? dropNotices : chanServ).push(
+          `${channel}: ${text}`,
+        );
         return true;
       },
       workspaces: "/srv/secret/home/workspaces",
@@ -163,7 +191,7 @@ async function makeController(
     const e: HostEvents["irc.invite"] = { channel, inviter: "op", target: "coder", targetKey: "coder", targetOnline: false, ts };
     return controller.handleInvite(e);
   };
-  return { controller, chanServ, sessions, shortHeadCalls, invite, mini, snapshot };
+  return { controller, chanServ, ready, starts, dropNotices, sessions, shortHeadCalls, invite, mini, snapshot, clock };
 }
 
 describe("worktree ready (Req 5)", () => {
@@ -172,6 +200,8 @@ describe("worktree ready (Req 5)", () => {
     await t.invite("#Fix-Bug-123", 1);
     expect(t.chanServ).toEqual(["#Fix-Bug-123: worktree ready: workspaces/fix-bug-123 @ a1b2c3d"]);
     expect(t.chanServ.join("")).not.toContain("/srv");
+    // Requirement 3.24: one "ready" notice once the Session exists, also when no worktree was created.
+    expect(t.ready).toEqual(["#Fix-Bug-123: coder is ready"]);
     expect(t.sessions).toHaveLength(1);
   });
 
@@ -265,5 +295,64 @@ describe("WHOIS tools label follows the required sandboxMode (review finding 6)"
     await t.invite("#dev", 1);
     expect(t.snapshot.get("coder")?.tools).toBe(tools);
     expect(t.snapshot.get("coder")?.skills).toEqual(["seance-fix-and-commit"]);
+  });
+});
+
+// agent-runner task 27.4 (Requirements 3.28, 3.29): drop notices and the worktree timeout.
+describe("startup queue drop notice and worktree timeout", () => {
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 60; i++) await Promise.resolve();
+  };
+
+  it("sends one drop notice when queued messages are dropped at readiness, with the nick and count only", async () => {
+    const t = await makeController(
+      { created: false, sha: "a1b2c3d", ensureFails: false },
+      { queue: { ready: { delivered: 1, dropped: 2 }, failed: 0 } },
+    );
+    await t.invite("#dev", 1);
+    expect(t.dropNotices).toEqual(["#dev: coder dropped 2 queued messages"]);
+    expect(t.ready).toEqual(["#dev: coder is ready"]);
+  });
+
+  it("sends no drop notice when nothing was dropped", async () => {
+    const t = await makeController(
+      { created: false, sha: "a1b2c3d", ensureFails: false },
+      { queue: { ready: { delivered: 3, dropped: 0 }, failed: 0 } },
+    );
+    await t.invite("#dev", 1);
+    expect(t.dropNotices).toEqual([]);
+  });
+
+  it("sends one drop notice when the start fails", async () => {
+    const t = await makeController(
+      { created: false, sha: "a1b2c3d", ensureFails: false },
+      { openSession: () => Promise.reject(new Error("boom")), queue: { ready: { delivered: 0, dropped: 0 }, failed: 1 } },
+    );
+    await t.invite("#dev", 1);
+    expect(t.dropNotices).toEqual(["#dev: coder dropped 1 queued message"]);
+  });
+
+  it("times out a hung worktree ensure, fails the start and clears the queue", async () => {
+    const t = await makeController(
+      { created: false, sha: "a1b2c3d", ensureFails: false },
+      {
+        ensure: () => new Promise<WorktreeInfo>(() => undefined), // git never returns
+        worktreeTimeoutMs: 1_000,
+        queue: { ready: { delivered: 0, dropped: 0 }, failed: 2 },
+      },
+    );
+    const done = t.invite("#dev", 1);
+    await settle();
+    expect(t.starts).toEqual(["begin coder #dev"]);
+    t.clock.advance(999);
+    await settle();
+    expect(t.starts).toEqual(["begin coder #dev"]);
+    t.clock.advance(1);
+    await done;
+    expect(t.starts).toEqual(["begin coder #dev", "failed coder #dev"]);
+    expect(t.dropNotices).toEqual(["#dev: coder dropped 2 queued messages"]);
+    expect(t.sessions).toEqual([]);
+    expect(t.mini.members.get("#dev")?.has("coder")).toBe(false); // parted
+    expect(t.mini.notices).toEqual([]);
   });
 });

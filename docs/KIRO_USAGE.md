@@ -501,6 +501,16 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: iterative `globMatch` replacing the ban RegExp, `478` and the invalid-mask notice, Tab/Shift+Tab that no longer trap focus, a focus ring that shows on dark surfaces, nick menu placement, singular counts, self-message handling, `»` list clamp
 - Notes: the invisible focus ring was a CSS layering bug (an unlayered `:focus-visible` rule beat every Tailwind `focus-visible:outline-*` utility)
 
+### 2026-11-10 — Startup queue for a message sent while the agent's session starts (agent-runner task 27, criteria 3.21 to 3.24)
+- Kiro features: spec agent-runner (requirements 3.21 to 3.24, task 27 before code), steering (runner-acp, security: queued text keeps the untrusted wrapper), hook guard-shell
+- Produced: `SessionManager` startup queue (5 per agent and channel, mode read at delivery), "still waking up" and "ready" notices, queue dropped on a failed start or a kick, Fake_Agent `sessionNewDelayMs`, unit and integration tests, smoke script lines
+- Notes: found in production (`no Session in the channel` right after JOIN); the integration test shows the production order (message queued before `worktree ready`, then `ready` and both replies in order)
+
+### 2026-11-10 — Startup queue review follow-up (agent-runner task 27.4, criteria 3.25 to 3.29)
+- Kiro features: spec agent-runner (criteria 3.25 to 3.29 and task 27.4 first), steering (runner-acp, security: rights and untrusted wrapping decided at delivery), hook guard-shell
+- Produced: queued messages keep sender and raw text and are re-checked and built at delivery, a `try again` notice once per startup and only for addressed lines, one `<agent> dropped N queued message(s)` notice, a 60 s timeout on `worktrees.ensure`, an optional `IrcHost.isBanned` backed by the ircd's ban matcher, tests
+- Notes: the ban check is applied at delivery only; the direct path still relies on the ircd, which lets a banned member that is already in the channel keep speaking
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

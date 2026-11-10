@@ -217,6 +217,14 @@ const onLine = (line) => {
       seen.worktreeReady = true;
       step("worktree ready");
       maybeStartPrompt();
+    } else if (lower(text).includes("still waking up")) {
+      // agent-runner Requirement 3.21: the prompt arrived before the Session was ready and is queued
+      // (or, when the queue is full, refused); the reply follows once session/new completes.
+      step(`agent: ${text}`);
+    } else if (lower(text).includes("queued message") && lower(text).includes("dropped")) {
+      fail(`queued prompt dropped: ${text}`);
+    } else if (lower(clean(text).trim()) === `${lower(agent)} is ready`) {
+      step(`${agent} is ready`);
     } else if (kicked && lower(text).includes("credits used")) {
       step(`credits line: ${text}`);
       succeed();

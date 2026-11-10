@@ -87,6 +87,11 @@ export interface IrcHost {
   /** Server-prefixed NOTICE to one client (D8); false when the nick is not connected. */
   noticeTo(nick: string, text: string): boolean;
   /**
+   * True when a ban mask of `channel` matches the connected client `nick` (its real `nick!user@host`).
+   * Read now, never cached. Optional: a host without bans never bans (agent-runner Req 3.25).
+   */
+  isBanned?(channel: string, nick: string): boolean;
+  /**
    * `NOTICE` from `<service>!<service>@services.<server>` to a channel (every member, modes
    * bypassed) or a registered nick (runner-services Req 2). False when the target does not exist.
    * Never published as `irc.message`; never throws.

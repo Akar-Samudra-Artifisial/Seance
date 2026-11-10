@@ -359,6 +359,19 @@ describe("tools/smoke-wss.mjs (deploy-aws)", () => {
     expect(text).toContain("const PROMPT_DELAY_MS = 1500;");
   });
 
+  // agent-runner Requirement 3.21: the prompt normally arrives before the Session is ready (the JOIN
+  // comes first), so the agent answers with NOTICEs and the reply follows later.
+  it("tolerates a prompt that arrives before the Session is ready", () => {
+    const text = read(SMOKE);
+    // The 'waking up' and 'ready' lines are NOTICEs, handled in the NOTICE branch, never taken for the reply.
+    const noticeBranch = text.slice(text.indexOf("const notice ="), text.indexOf("const prefixed ="));
+    expect(noticeBranch).toContain('includes("still waking up")');
+    expect(noticeBranch).toContain("is ready");
+    expect(noticeBranch).toMatch(/queued message[\s\S]*dropped[\s\S]*fail\(/);
+    // Only a PRIVMSG after the prompt went out counts as the reply.
+    expect(text).toMatch(/command === "PRIVMSG" && fromAgent[^\n]*seen\.promptDelivered/);
+  });
+
   it("kicks the agent on a failure after the invite, and fails on the documented conditions", () => {
     const text = read(SMOKE);
     expect(text).toMatch(/if \(invited\) kick\(\);/);

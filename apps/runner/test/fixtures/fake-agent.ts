@@ -64,6 +64,11 @@ export interface FakeScript {
    * `legacy` sends the old shape: kind and rawInput directly in the request, no earlier update.
    */
   readonly permissionShape?: "kiro" | "legacy";
+  /**
+   * Stdio wrapper only, real time: the `session/new` request is answered this many milliseconds
+   * after it arrives, like a cold `kiro-cli` start (agent-runner Requirement 3.21).
+   */
+  readonly sessionNewDelayMs?: number;
 }
 
 export const MAX_DELAY_MS = 600_000;
@@ -183,7 +188,15 @@ export const parseScript = (raw: unknown): FakeScript => {
     metadataAfterCancel?: boolean;
     modeId?: string;
     permissionShape?: "kiro" | "legacy";
+    sessionNewDelayMs?: number;
   } = { turns };
+  const sessionNewDelayMs = raw["sessionNewDelayMs"];
+  if (sessionNewDelayMs !== undefined) {
+    if (typeof sessionNewDelayMs !== "number" || !Number.isInteger(sessionNewDelayMs) || sessionNewDelayMs < 0 || sessionNewDelayMs > MAX_DELAY_MS) {
+      return fail("$.sessionNewDelayMs", `expected an integer from 0 to ${MAX_DELAY_MS}`);
+    }
+    out.sessionNewDelayMs = sessionNewDelayMs;
+  }
   const shape = raw["permissionShape"];
   if (shape !== undefined) {
     if (shape !== "kiro" && shape !== "legacy") return fail("$.permissionShape", 'expected "kiro" or "legacy"');
@@ -801,14 +814,32 @@ const runStdio = (): void => {
     if (data !== "") process.stdout.write(data);
   };
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
-  rl.on("line", (line) => {
+  const handle = (line: string): void => {
     const out = core.handleLine(line);
     // Optional recording for black-box tests: the latest dump is rewritten after every line.
     if (dumpFile !== undefined) writeFileSync(dumpFile, JSON.stringify(core.dump()));
     // fake/advance is handled inside handleLine; nothing else needs the wrapper.
     emit(out);
+  };
+  const delayMs = script.sessionNewDelayMs;
+  let pendingDelays = 0;
+  let closing = false;
+  rl.on("line", (line) => {
+    if (delayMs !== undefined && delayMs > 0 && /"method"\s*:\s*"session\/new"/.test(line)) {
+      pendingDelays += 1;
+      setTimeout(() => {
+        pendingDelays -= 1;
+        handle(line);
+        if (closing && pendingDelays === 0) process.exit(0);
+      }, delayMs);
+      return;
+    }
+    handle(line);
   });
-  rl.on("close", () => process.exit(0));
+  rl.on("close", () => {
+    closing = true;
+    if (pendingDelays === 0) process.exit(0);
+  });
 };
 
 const isMain = (): boolean => {

@@ -47,7 +47,7 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 const OPEN_GATE: PromptGate = { check: () => Promise.resolve({ ok: true }) };
 
 export type SessionManagerDeps = {
-  readonly host: Pick<IrcHost, "modeOf" | "channel" | "noticeTo">;
+  readonly host: Pick<IrcHost, "modeOf" | "channel" | "noticeTo" | "isBanned">;
   readonly registry: AgentRegistry;
   readonly harness: AgentHarness;
   readonly worktrees: Pick<WorktreeManager, "privateDir">;
@@ -83,6 +83,32 @@ export type SessionManagerDeps = {
    * and its human notified. Absent means no idle timeout.
    */
   readonly idleTimeoutS?: number;
+};
+
+/** agent-runner Requirement 3.21: messages kept per agent and channel while its Session is starting. */
+export const STARTUP_QUEUE_MAX = 5;
+
+/**
+ * A channel message that arrived while the agent's Session was still starting. Only the raw text and
+ * the sender are kept: the sender's rights are checked again and the prompt is built at delivery, with
+ * the modes of that moment (agent-runner Requirement 3.25, 3.26).
+ */
+type QueuedMessage = { readonly from: string; readonly text: string; readonly fromAgent: boolean };
+
+/** What {@link SessionManager.startReady} did with the queue. */
+export type StartDelivery = { readonly delivered: number; readonly dropped: number };
+
+/** A channel start in flight: the agent has joined but its Session does not exist yet. */
+type PendingStart = {
+  readonly agent: string;
+  readonly channel: string;
+  /** The nick that invited the agent; like a mode, it lets that nick prompt the agent. */
+  readonly inviter: string;
+  readonly queue: QueuedMessage[];
+  /** The "still waking up, your message is queued" notice goes out once per startup. */
+  noticed: boolean;
+  /** The "try again in a moment" notice goes out once per startup (Requirement 3.27). */
+  fullNoticed: boolean;
 };
 
 /** At most this many Private_Sessions per human nick (across agents). */
@@ -124,6 +150,8 @@ export class SessionManager {
   #nextPromptId = 1;
   /** Invite_Key -> nick that invited the agent into the channel (public-hardening Requirement 4.1). */
   readonly #inviters = new Map<string, string>();
+  /** Invite_Key -> channel start in flight, with the messages queued for it (agent-runner Requirement 3.21). */
+  readonly #starting = new Map<string, PendingStart>();
 
   constructor(deps: SessionManagerDeps) {
     this.#d = deps;
@@ -232,6 +260,150 @@ export class SessionManager {
       );
     }
     this.#channelSessions.set(key, session);
+  }
+
+  // ---- startup queue (agent-runner Requirement 3.21 to 3.24) ------------------------------
+
+  /**
+   * The agent joined `channel` and its Session is being created: messages for it are queued (up to
+   * {@link STARTUP_QUEUE_MAX}) instead of being ignored. Idempotent while a start is in flight.
+   */
+  beginStart(agent: string, channel: string, inviter: string): void {
+    const key = inviteKey(agent, channel);
+    if (this.#starting.has(key)) return;
+    this.#starting.set(key, { agent, channel, inviter, queue: [], noticed: false, fullNoticed: false });
+  }
+
+  /** True while a start for the pair is in flight. */
+  isStarting(agent: string, channel: string): boolean {
+    return this.#starting.has(inviteKey(agent, channel));
+  }
+
+  /**
+   * The Session exists: deliver the queued messages in order. Everything a direct prompt depends on
+   * is read now (Req 3.25, 3.26): the agent's own `+v`/`+o` (Req 5.7, 5.8), and the sender's
+   * membership, ban, `+v`/`+o` or inviter right and `+m`. The prompt is built now, so the op claim
+   * and the untrusted wrapping match the direct path. A message that fails a check is dropped; the
+   * caller reports the dropped count once (Req 3.28).
+   */
+  startReady(agent: string, channel: string, session: Session): StartDelivery {
+    const key = inviteKey(agent, channel);
+    const start = this.#starting.get(key);
+    if (start === undefined) return { delivered: 0, dropped: 0 };
+    this.#starting.delete(key);
+    const mode = this.#d.host.modeOf(channel, agent);
+    const agentCanSpeak = mode !== undefined && (mode.op || mode.voice);
+    let delivered = 0;
+    let dropped = 0;
+    for (const item of start.queue) {
+      const why =
+        session.state === "closed"
+          ? "session closed"
+          : !agentCanSpeak
+            ? "agent has no mode"
+            : this.#senderRefusal(start, item.from);
+      if (why !== undefined) {
+        if (item.fromAgent) this.#loopGuard.release(channel, agent);
+        dropped += 1;
+        this.#d.logger.info("queued prompt dropped at delivery", { agent, channel, from: item.from, why });
+        continue;
+      }
+      session.enqueue(this.#prompt(this.#channelPromptText(channel, item.from, item.fromAgent, item.text)));
+      delivered += 1;
+    }
+    return { delivered, dropped };
+  }
+
+  /**
+   * Why `from` may no longer prompt the starting agent, or undefined when it still may. The same
+   * rights as the direct path (public-hardening Requirement 4.1): a member with `+v`/`+o`, or the
+   * inviter; under `+m` the ircd lets only `+v`/`+o` speak, so the inviter needs a mode too. A banned
+   * sender (`+b` set during the startup) is refused as well.
+   */
+  #senderRefusal(start: PendingStart, from: string): string | undefined {
+    const { channel } = start;
+    const sender = this.#d.host.modeOf(channel, from);
+    if (sender === undefined) return "sender left the channel";
+    if (this.#d.host.isBanned?.(channel, from) === true) return "sender is banned";
+    const hasMode = sender.op || sender.voice;
+    if (this.#d.host.channel(channel)?.modes.moderated === true && !hasMode) return "sender has no voice under +m";
+    if (!hasMode && irc_lower(start.inviter) !== irc_lower(from)) return "sender has no mode and is not the inviter";
+    return undefined;
+  }
+
+  /** The direct path's channel prompt for `from`, with the sender's modes read now. */
+  #channelPromptText(channel: string, from: string, fromAgent: boolean, text: string): string {
+    const sender = this.#d.host.modeOf(channel, from);
+    return buildChannelPrompt({
+      channel,
+      nick: from,
+      senderIsOp: sender?.op === true,
+      senderIsHumanOp: !fromAgent && sender?.op === true,
+      text,
+    }).text;
+  }
+
+  /**
+   * The start failed or the agent was kicked first: forget the queue. Returns how many queued
+   * messages were dropped, so the caller can say so (Req 3.28).
+   */
+  startFailed(agent: string, channel: string): number {
+    const key = inviteKey(agent, channel);
+    const start = this.#starting.get(key);
+    if (start === undefined) return 0;
+    this.#starting.delete(key);
+    for (const item of start.queue) if (item.fromAgent) this.#loopGuard.release(channel, agent);
+    return start.queue.length;
+  }
+
+  /** Queues `built` for a start in flight, or refuses it when the queue is full. */
+  #queueDuringStart(
+    start: PendingStart,
+    ctx: { readonly from: string; readonly text: string; readonly fromAgent: boolean; readonly senderHasMode: boolean },
+  ): void {
+    const { channel, agent } = start;
+    if (irc_lower(agent) === irc_lower(ctx.from)) return; // never prompt the sender
+    // An agent that left (kicked) or never was a member cannot take a message.
+    if (this.#d.host.modeOf(channel, agent) === undefined) {
+      this.#d.logger.debug("no queue: agent is not in the channel", { agent, channel });
+      return;
+    }
+    if (!ctx.senderHasMode && irc_lower(start.inviter) !== irc_lower(ctx.from)) {
+      this.#d.logger.debug("no queue: sender has no mode and is not the inviter", { agent, channel, from: ctx.from });
+      return;
+    }
+    // Req 3.27: decided before the full check, so a line that does not address this agent never
+    // triggers the "try again" notice. A refused agent line was never counted.
+    if (ctx.fromAgent && !this.#agentLineAllowed(channel, ctx.from, agent, ctx.text)) return;
+    if (start.queue.length >= STARTUP_QUEUE_MAX) {
+      if (ctx.fromAgent) this.#loopGuard.release(channel, agent);
+      if (!start.fullNoticed) {
+        start.fullNoticed = true;
+        this.#startupNotice(start, `${agent} is still waking up, try again in a moment`);
+      }
+      this.#d.logger.info("startup queue full", { agent, channel, limit: STARTUP_QUEUE_MAX });
+      return;
+    }
+    // Only the raw text and the sender: the prompt is built at delivery (Req 3.26).
+    start.queue.push({ from: ctx.from, text: ctx.text, fromAgent: ctx.fromAgent });
+    this.#d.logger.info("prompt queued while the session starts", {
+      agent,
+      channel,
+      from: ctx.from,
+      queued: start.queue.length,
+    });
+    if (!start.noticed) {
+      start.noticed = true;
+      this.#startupNotice(start, `${agent} is still waking up, your message is queued`);
+    }
+  }
+
+  #startupNotice(start: PendingStart, text: string): void {
+    try {
+      this.#agents.get(irc_lower(start.agent))?.output.channelNotice(start.channel, text);
+    } catch (err) {
+      this.#d.logger.error("startup notice failed", { agent: start.agent, channel: start.channel, reason: messageOf(err) });
+    }
   }
 
   /** Remembers who invited `agent` into `channel`; that nick may prompt it without a mode. */
@@ -380,10 +552,18 @@ export class SessionManager {
     const resets = !senderIsAgent && sender !== undefined && (sender.op || sender.voice);
     if (resets) this.#loopGuard.humanSpoke(channel);
 
-    const sessions = this.sessionsOf(channel);
-    if (sessions.length === 0) {
+    // An agent whose Session is still being created takes the message through its startup queue.
+    const c = irc_lower(channel);
+    const starting = [...this.#starting.values()].filter((s) => irc_lower(s.channel) === c);
+    const startingKeys = new Set(starting.map((s) => inviteKey(s.agent, s.channel)));
+    const sessions = this.sessionsOf(channel).filter((s) => !startingKeys.has(inviteKey(s.agent, s.channel)));
+    if (sessions.length === 0 && starting.length === 0) {
       this.#ignored("channel message", "no Session in the channel", { channel, from });
       return;
+    }
+    const sendersMode = sender !== undefined && (sender.op || sender.voice);
+    for (const start of starting) {
+      this.#queueDuringStart(start, { from, text, fromAgent: senderIsAgent, senderHasMode: sendersMode });
     }
 
     const built = buildChannelPrompt({

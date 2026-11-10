@@ -497,6 +497,25 @@ Build `apps/runner` (`@seance/runner`) bottom-up. Task 0 holds two spikes: S8 re
 - [x] 25. Final checkpoint
   - Run `pnpm typecheck && pnpm test` and `pnpm lint` at the repository root; ensure all tests pass, ask the user if questions arise.
 
+- [x] 27. Startup queue for messages sent while a Session is being created (criteria 3.21 to 3.24; production bug 2026-11-10)
+  - [x] 27.1 Queue in `SessionManager`
+    - `src/session/session-manager.ts`: `beginStart`, `startReady`, `startFailed`, `isStarting`; `onChannelMessage` queues up to `STARTUP_QUEUE_MAX` (5) prompts per Agent and channel for an Agent whose start is in flight (sender rule, loop guard, same `buildChannelPrompt`), sends the once-per-startup "still waking up, your message is queued" NOTICE and the "try again in a moment" NOTICE when full, and reads the Agent's mode at delivery
+    - _Requirements: 3.21, 3.23_
+
+  - [x] 27.2 Wire the start pipeline
+    - `src/invite/invite-controller.ts`, `src/runner.ts`: `beginStart` after the JOIN, `startReady` after the resume prompt, the ChanServ "ready" NOTICE, the queue dropped with a NOTICE on a failed start and in `abort` (kick before ready)
+    - _Requirements: 3.21, 3.22, 3.24_
+
+  - [x] 27.3 Tests
+    - Unit tests in `test/session-manager.test.ts` ("startup queue": order, limit, once-only notice, mode at delivery, sender rules, failure or kick before ready, loop-guard give-back); Fake_Agent option `sessionNewDelayMs` (real-time delay of `session/new`, stdio wrapper only); `apps/ircd/test/runner/startup-queue.integration.test.ts` (answered after a slow `session/new`, queue dropped on KICK); `tools/smoke-wss.mjs` prints the queue and ready lines and fails on a dropped queue, with a static test in `test/sandbox-files.test.ts`
+    - _Requirements: 3.21, 3.22, 3.23, 3.24_
+
+  - [x] 27.4 Re-check at delivery, notices once, worktree timeout (review follow-up)
+    - `src/session/session-manager.ts`: the queue keeps `{from, text, fromAgent}`; `startReady` re-checks the sender (member, not banned through the new optional `IrcHost.isBanned`, `+v`/`+o` or inviter, `+v`/`+o` under `+m`), builds the prompt with the current modes and returns `{delivered, dropped}`; the full check runs after the loop guard and its notice is sent once (`fullNoticed`)
+    - `src/invite/invite-controller.ts`: one `<agent> dropped N queued message(s)` notice (ChanServ, else ops) at readiness, on failure or on abort; `worktrees.ensure` bounded by `WORKTREE_TIMEOUT_MS` (60 s, `worktreeTimeoutMs`); `apps/ircd/src/runner-wiring.ts` implements `isBanned` with the ircd's ban matcher
+    - Tests: `test/session-manager.test.ts` (de-voiced, left, banned, +m, inviter under +m, de-opped with voice kept, opped meanwhile, full notice once and never for unaddressed lines), `test/invite-services.test.ts` (drop notice at readiness and on failure, worktree timeout clears the start), the startup-queue integration test's new drop text
+    - _Requirements: 3.25, 3.26, 3.27, 3.28, 3.29_
+
 - [x] 26. Idle timeout for agent sessions (criterion 9.18)
   - [x] 26.1 Parse `SEANCE_IDLE_TIMEOUT_S`
     - `src/config.ts`: `idleTimeoutS` through `boundedInteger`, default 900, range 60 to 86400, both sandbox modes; `test/idle-config.test.ts` covers default, bounds and rejection

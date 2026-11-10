@@ -1,4 +1,5 @@
 import type { HostClient, IrcHost } from "@seance/runner";
+import { isBanned } from "./ban-mask.js";
 import type { Client } from "./client.js";
 import type { IrcServer } from "./server.js";
 
@@ -39,6 +40,12 @@ export function createIrcHost(server: IrcServer): IrcHost {
       return membership === undefined
         ? undefined
         : { op: membership.op, voice: membership.voice };
+    },
+    isBanned(channel, nick) {
+      const client = registeredOnly(ctx.connections.getByNick(nick));
+      const bans = ctx.channels.get(channel)?.bans;
+      if (client === undefined || bans === undefined || bans.size === 0) return false;
+      return isBanned(bans, client.nick ?? nick, client.user ?? client.nick ?? nick, client.host ?? ctx.serverName);
     },
     noticeTo(nick, text) {
       const client = registeredOnly(ctx.connections.getByNick(nick));

@@ -554,6 +554,11 @@ export function createRunner(opts: RunnerOptions): Runner {
         setInviter: (agent, channel, inviter) => {
           sessionManager.setInviter(agent, channel, inviter);
         },
+        beginStart: (agent, channel, inviter) => {
+          sessionManager.beginStart(agent, channel, inviter);
+        },
+        startReady: (agent, channel, session) => sessionManager.startReady(agent, channel, session),
+        startFailed: (agent, channel) => sessionManager.startFailed(agent, channel),
         registerAgent: (reg) => {
           outputs.set(irc_lower(reg.profile.nick), reg.output);
           const offManager = sessionManager.registerAgent(reg);

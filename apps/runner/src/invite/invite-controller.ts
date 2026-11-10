@@ -35,6 +35,8 @@ import type { InviteGate } from "./invite-gate.js";
 export const REGISTER_TIMEOUT_MS = 5_000;
 /** Req 3.4: `session/new` must complete within 30 s of the join. */
 export const SESSION_OPEN_TIMEOUT_MS = 30_000;
+/** Req 3.29: `ensure` (git worktree add, sparse checkout, scan) must complete within 60 s. */
+export const WORKTREE_TIMEOUT_MS = 60_000;
 
 export type InviteControllerDeps = {
   readonly host: IrcHost;
@@ -43,7 +45,7 @@ export type InviteControllerDeps = {
   readonly inviters: AllowList;
   readonly gate: Pick<InviteGate, "decide" | "release">;
   readonly sessions: Pick<SessionManager, "addChannelSession" | "channelSession" | "registerAgent"> &
-    Partial<Pick<SessionManager, "setInviter">>;
+    Partial<Pick<SessionManager, "setInviter" | "beginStart" | "startReady" | "startFailed">>;
   /**
    * public-hardening Requirement 5.5: a refusal text when one more agent channel or session would
    * pass `SEANCE_MAX_AGENT_CHANNELS` / `SEANCE_MAX_CONTAINERS`; undefined allows the invite.
@@ -79,6 +81,8 @@ export type InviteControllerDeps = {
   readonly redactor?: SecretRedactor;
   readonly registerTimeoutMs?: number;
   readonly sessionOpenTimeoutMs?: number;
+  /** Req 3.29: timeout of `worktrees.ensure`; defaults to {@link WORKTREE_TIMEOUT_MS}. */
+  readonly worktreeTimeoutMs?: number;
   /** agent-sandbox Requirement 14 (podman mode only): host-side commit after an `end_turn`. */
   readonly commitTurn?: (agent: string, channel: string) => Promise<void>;
   /** agent-runner Requirement 9.18: idle timeout of the channel Sessions this controller creates. */
@@ -176,7 +180,36 @@ export class InviteController {
     const pending = this.#pending.get(inviteKey(agent, channel));
     if (pending === undefined) return;
     pending.aborted = true;
+    // Kicked before it was ready: the queue goes now, not when the slow step finally returns.
+    this.#dropQueued(agent, channel, "the agent was removed");
     await pending.done;
+  }
+
+  /** Forgets the messages queued for a start that will not finish, and says how many were lost. */
+  #dropQueued(agent: string, channel: string, why: string): void {
+    const n = this.#d.sessions.startFailed?.(agent, channel) ?? 0;
+    if (n > 0) this.#d.logger.info("startup queue dropped", { agent, channel, dropped: n, why });
+    this.#dropNotice(agent, channel, n);
+  }
+
+  /**
+   * Req 3.28: one notice with the agent nick and the count only (no user text). The start ends once
+   * (ready, failed or aborted) and the queue is gone after it, so this runs at most once per startup.
+   */
+  #dropNotice(agent: string, channel: string, n: number): void {
+    const d = this.#d;
+    if (n === 0) return;
+    const text = `${agent} dropped ${String(n)} queued message${n === 1 ? "" : "s"}`;
+    const chanServ = d.services?.chanServ;
+    if (chanServ !== undefined) {
+      this.#safe(() => {
+        chanServ(channel, text);
+      }, "queue drop notice");
+    } else {
+      this.#safe(() => {
+        d.opNotice(channel, text);
+      }, "opNotice");
+    }
   }
 
   /** Resolves when the start pipeline for the invite, if any, has settled. Never rejects. */
@@ -266,6 +299,8 @@ export class InviteController {
           throw new Error("agent is not a member of the channel after JOIN");
         }
         joined = true; // no MODE is requested: the Agent keeps no mode (Req 3.5)
+        // From here until the Session exists, messages for the agent are queued (Req 3.21).
+        d.sessions.beginStart?.(profile.nick, channel, e.inviter);
       } catch (err) {
         throw new StepError("join", err);
       }
@@ -273,7 +308,13 @@ export class InviteController {
 
       let info: WorktreeInfo;
       try {
-        info = await d.worktrees.ensure(channel);
+        // Req 3.29: a hung git must not keep the start (and its queue) open forever. A late result is
+        // ignored: the worktree stays on disk and the next invite reuses it.
+        info = await this.#withTimeout(
+          d.worktrees.ensure(channel),
+          d.worktreeTimeoutMs ?? WORKTREE_TIMEOUT_MS,
+          "worktree ensure timed out",
+        );
       } catch (err) {
         throw new StepError("worktree", err);
       }
@@ -322,7 +363,23 @@ export class InviteController {
         });
         session.enqueue({ id: RESUME_ID_BASE - this.#resumeSeq++, text: built.text });
       }
-      d.logger.info("agent joined channel", { agent: profile.nick, channel, resumed: resume });
+      // The messages queued while the Session started follow the resume prompt, in arrival order.
+      const queued = d.sessions.startReady?.(profile.nick, channel, session) ?? { delivered: 0, dropped: 0 };
+      d.logger.info("agent joined channel", {
+        agent: profile.nick,
+        channel,
+        resumed: resume,
+        queued: queued.delivered,
+        dropped: queued.dropped,
+      });
+      this.#dropNotice(profile.nick, channel, queued.dropped);
+      // Req 3.24: one ChanServ line once the Session exists.
+      const chanServ = d.services?.chanServ;
+      if (chanServ !== undefined) {
+        this.#safe(() => {
+          chanServ(channel, `${profile.nick} is ready`);
+        }, "ready notice");
+      }
     } catch (err) {
       await this.#fail(profile, e, key, entry, joined, harnessSession, err);
     }
@@ -343,6 +400,7 @@ export class InviteController {
     const step = err instanceof StepError ? err.step : "session/new";
     const cause = err instanceof StepError ? messageOf(err.cause) : messageOf(err);
     d.logger.error("invite pipeline failed", { agent: profile.nick, channel, step, cause });
+    this.#dropQueued(profile.nick, channel, aborted ? "the agent was removed" : "the session could not start");
 
     if (harnessSession !== undefined) {
       try {
