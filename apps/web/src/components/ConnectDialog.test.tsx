@@ -113,14 +113,71 @@ describe("ConnectDialog", () => {
     expect(document.activeElement).toBe(document.getElementById("input-line"));
   });
 
-  it("cycles Tab inside the dialog", () => {
+  // Changed with the shared window chrome: the caption `Close` button is now the first stop of the
+  // cycle, as in every other dialog, so Tab from the last button lands there, not on Nick.
+  it("cycles Tab inside the dialog, through the caption Close button", () => {
     setup();
     const connectButton = screen.getByRole("button", { name: "Connect" });
+    const closeButton = screen.getByRole("button", { name: "Close" });
     connectButton.focus();
     fireEvent.keyDown(connectButton, { key: "Tab" });
-    expect(document.activeElement).toBe(screen.getByLabelText("Nick"));
-    fireEvent.keyDown(screen.getByLabelText("Nick"), { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(closeButton);
+    fireEvent.keyDown(closeButton, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(connectButton);
+  });
+
+  it("uses the shared window chrome: a full-width caption bar with a Close button", () => {
+    setup();
+    const dialog = screen.getByRole("dialog", { name: "Connect to Séance" });
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(dialog.getAttribute("aria-labelledby")).toBe("connect-title");
+    const title = document.getElementById("connect-title");
+    expect(title?.tagName).toBe("H2");
+    expect(title?.textContent).toBe("Connect to Séance");
+    // The caption bar is a direct child of the window frame, not inside the padded form.
+    const caption = title?.parentElement;
+    expect(caption?.parentElement).toBe(dialog);
+    expect(caption?.className).toContain("from-title-from");
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(close.parentElement).toBe(caption);
+    expect(close.getAttribute("title")).toBe("Close (Esc)");
+    expect(dialog.className).toContain("bevel-frame");
+    expect(dialog.className).toContain("w-96");
+    expect(dialog.className).toContain("max-w-full");
+    // The form sits in a padded body under the caption; the overlay keeps its stacking.
+    expect(dialog.querySelector("form")?.className).toContain("p-2");
+    expect(dialog.parentElement?.className).toContain("z-10");
+  });
+
+  it("the caption Close button does what Cancel does", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(document.getElementById("input-line"));
+    cleanup();
+
+    const cancelled = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(document.getElementById("input-line"));
+    // A request from the toolbar or menu reopens it, after Close as after Cancel.
+    act(() => {
+      cancelled.store.getState().requestConnectDialog();
+    });
+    expect(screen.getByRole("dialog", { name: "Connect to Séance" })).toBeTruthy();
+  });
+
+  it("Esc closes the dialog once and it can be reopened", () => {
+    const { store } = setup();
+    fireEvent.keyDown(screen.getByLabelText("Nick"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(document.getElementById("input-line"));
+    act(() => {
+      store.getState().requestConnectDialog();
+    });
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("shows Reconnect and a connection closed line after a registered socket closes", () => {

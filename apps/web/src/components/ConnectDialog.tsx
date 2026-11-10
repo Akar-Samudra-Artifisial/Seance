@@ -1,16 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent, ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useClientStore } from "../store/react.js";
+import { Dialog } from "./Dialog.js";
 
 const fieldClass =
   "bevel-sunken w-full bg-ghost-bg px-1 py-0.5 font-chat text-[15px] text-ghost-text focus-visible:outline-2 focus-visible:outline-ghost-orange";
 const errorClass = "font-chrome text-sm font-bold text-irc-5";
 const buttonClass =
   "bevel-raised bg-chrome-face px-3 py-0.5 text-sm focus-visible:outline-2 focus-visible:outline-chrome-outline disabled:text-chrome-shadow";
-
-const FOCUSABLE = "input:not([disabled]), button:not([disabled])";
 
 function focusInputLine(): void {
   document.getElementById("input-line")?.focus();
@@ -32,10 +31,6 @@ export function ConnectDialog(): ReactNode {
   const [dismissed, setDismissed] = useState(false);
   const [seenRequests, setSeenRequests] = useState(connectRequests);
   const [hadRegistered, setHadRegistered] = useState(false);
-  const formRef = useRef<HTMLFormElement>(null);
-  const nickRef = useRef<HTMLInputElement>(null);
-  const urlRef = useRef<HTMLInputElement>(null);
-  const passwordRef = useRef<HTMLInputElement>(null);
   const wasVisible = useRef(false);
 
   const visible = phase !== "registered" && !dismissed;
@@ -51,17 +46,13 @@ export function ConnectDialog(): ReactNode {
     setDismissed(false);
   }
 
-  // Focus the first empty field on open; return focus to the Input_Line on close.
+  // The Dialog focuses the field marked `data-autofocus` (the first empty one) when it opens; this
+  // returns focus to the Input_Line when it closes (the Dialog alone would restore the previous
+  // element, which is the page body on first load).
   useEffect(() => {
-    if (visible && !wasVisible.current) {
-      const target =
-        nick === "" ? nickRef.current : serverUrl === "" ? urlRef.current : passwordRef.current;
-      target?.focus();
-    } else if (!visible && wasVisible.current) {
-      focusInputLine();
-    }
+    if (!visible && wasVisible.current) focusInputLine();
     wasVisible.current = visible;
-  }, [visible, nick, serverUrl]);
+  }, [visible]);
 
   if (!visible) return null;
   const busy = phase === "connecting" || phase === "registering";
@@ -80,52 +71,23 @@ export function ConnectDialog(): ReactNode {
   const close = (): void => {
     setDismissed(true);
   };
-  const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      close();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const items = Array.from(formRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
-    const first = items[0];
-    const lastItem = items[items.length - 1];
-    if (first === undefined || lastItem === undefined) return;
-    const current = document.activeElement;
-    if (event.shiftKey && current === first) {
-      event.preventDefault();
-      lastItem.focus();
-    } else if (!event.shiftKey && current === lastItem) {
-      event.preventDefault();
-      first.focus();
-    } else if (current instanceof HTMLElement && !items.includes(current)) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-
+  // Window chrome, Esc, the Tab trap and initial focus come from the shared Dialog; the caption X and
+  // Esc call `close`, exactly like the Cancel button (the dialog can always be dismissed).
+  const firstEmpty = nick === "" ? "nick" : serverUrl === "" ? "url" : "password";
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-ghost-bg/70">
-      <form
-        ref={formRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="connect-title"
-        onSubmit={onSubmit}
-        onKeyDown={onKeyDown}
-        className="bevel-raised flex w-96 max-w-full flex-col gap-2 bg-chrome-face p-2 font-chrome text-chrome-outline"
-      >
-        <h2
-          id="connect-title"
-          className="bg-linear-to-r from-title-from to-title-to px-1 font-chrome text-xs font-bold text-chrome-highlight"
-        >
-          Connect to Séance
-        </h2>
+    <Dialog
+      title="Connect to Séance"
+      titleId="connect-title"
+      onClose={close}
+      className="w-96"
+      overlayClassName="z-10 bg-ghost-bg/70"
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-2 p-2">
         <div className="flex flex-col gap-0.5 text-sm">
           <label htmlFor="connect-nick">Nick</label>
           <input
             id="connect-nick"
-            ref={nickRef}
+            data-autofocus={firstEmpty === "nick" ? "true" : undefined}
             type="text"
             value={nick}
             onChange={(e) => {
@@ -147,7 +109,7 @@ export function ConnectDialog(): ReactNode {
           <label htmlFor="connect-url">Server URL</label>
           <input
             id="connect-url"
-            ref={urlRef}
+            data-autofocus={firstEmpty === "url" ? "true" : undefined}
             type="text"
             value={serverUrl}
             onChange={(e) => {
@@ -169,7 +131,7 @@ export function ConnectDialog(): ReactNode {
           <label htmlFor="connect-password">Password (optional)</label>
           <input
             id="connect-password"
-            ref={passwordRef}
+            data-autofocus={firstEmpty === "password" ? "true" : undefined}
             type="password"
             value={password}
             onChange={(e) => {
@@ -205,6 +167,6 @@ export function ConnectDialog(): ReactNode {
           </button>
         </div>
       </form>
-    </div>
+    </Dialog>
   );
 }

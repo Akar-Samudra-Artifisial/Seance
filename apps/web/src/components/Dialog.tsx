@@ -6,7 +6,7 @@ import { CLOSE_KEY } from "../shortcuts/shortcuts.js";
 
 const FOCUSABLE = "input:not([disabled]), button:not([disabled]), [tabindex='0']";
 
-const captionClass =
+export const captionClass =
   "hit-target bevel-button active:bevel-button-pressed flex h-[14px] w-4 shrink-0 items-center justify-center bg-chrome-face font-chrome text-[11px] font-bold leading-none text-chrome-outline focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-chrome-outline";
 
 export interface DialogProps {
@@ -20,6 +20,8 @@ export interface DialogProps {
   readonly helpControls?: string | undefined;
   /** Size classes of the dialog box. */
   readonly className?: string | undefined;
+  /** Replaces the overlay's stacking and backdrop classes (default `z-20 ... bg-chrome-outline/50 p-2`). */
+  readonly overlayClassName?: string | undefined;
   readonly children: ReactNode;
 }
 
@@ -72,7 +74,7 @@ export function Dialog(props: DialogProps): ReactNode {
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-chrome-outline/50 p-2">
+    <div className={`fixed inset-0 flex items-center justify-center ${props.overlayClassName ?? "z-20 bg-chrome-outline/50 p-2"}`}>
       <div
         ref={boxRef}
         role="dialog"

@@ -476,6 +476,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: `handleAuthPass` records a failed `verify` in `passFailures` also after the client disconnected, once per attempt; six tests in `public-hardening.test.ts`, one over real TCP
 - Notes: from a second security review of task 17; connect, `PASS alice:<wrong>`, disconnect used to cost a scrypt and count nothing
 
+### 2026-11-10 — Connect dialog gets the shared window chrome (web-client-pixel-match task 13)
+- Kiro features: spec web-client-pixel-match (task 13 and a design note), steering web-ui (Win95 chrome, keyboard-first), Playwright e2e run
+- Produced: `ConnectDialog.tsx` renders through `Dialog.tsx` (full-width caption bar, `X` Close equal to Cancel), `Dialog` gains `overlayClassName` and exports `captionClass`, four new component tests
+- Notes: reusing `Dialog` removed the dialog's own Tab trap and Esc handler (one of each remains); the caption `X` is now the first Tab stop, so the old Tab-cycle test changed on purpose
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

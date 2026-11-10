@@ -147,6 +147,10 @@ Order: spikes and assets first, then the pure rules (colours, event lines, empty
 - [x] 12. Final checkpoint
   - Run `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test --force`, then `pnpm test:e2e` (apps/web)
 
+- [x] 13. Connect dialog with the shared window chrome (follow-up 2026-11-10)
+  - [x] 13.1 `ConnectDialog.tsx` renders through `Dialog.tsx` (full-width caption bar, `X` Close button equal to Cancel, `connect-title`, `w-96 max-w-full`, overlay `z-10`); `Dialog.tsx` gets `overlayClassName` and exports `captionClass`; tests in `ConnectDialog.test.tsx` (Close button, same as Cancel, Esc once, role/aria unchanged, chrome structure, Tab cycle through Close); no pixel baseline covers this dialog
+    - _Requirements: none of its own (UI follow-up; see the design note on `ConnectDialog.tsx`)_
+
 ## Notes
 
 - Decisions of 2026-11-08: WHOIS separators stay (Requirement 9); `+nt` default stays; human nick `#e08a2e`; the contrast lifts for timestamp, away grey and inactive caption stay; Open Points 4 to 9 of `design.md` accepted.
