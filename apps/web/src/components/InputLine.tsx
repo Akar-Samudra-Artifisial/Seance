@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
-import { completeNick } from "../irc/index.js";
+import { completeNick, cycleActive } from "../irc/index.js";
 import type { CompletionCycle } from "../irc/index.js";
 import { INPUT_KEYS } from "../shortcuts/shortcuts.js";
 import { useClientStore } from "../store/react.js";
@@ -51,10 +51,21 @@ export function InputLine(): ReactNode {
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key === INPUT_KEYS.complete) {
-      event.preventDefault();
       const input = event.currentTarget;
+      const caret = input.selectionStart ?? input.value.length;
+      // Audit 10.15: Tab must not trap keyboard users. Shift+Tab moves focus back unless it is stepping
+      // through an active completion; Tab moves focus on when there is nothing to complete.
+      if (event.shiftKey && !cycleActive(input.value, caret, cycle.current)) {
+        cycle.current = null;
+        return;
+      }
       const nicks = Object.values(members ?? {}).map((m) => m.nick);
-      const done = completeNick(input.value, input.selectionStart ?? input.value.length, nicks, cycle.current);
+      const done = completeNick(input.value, caret, nicks, cycle.current, event.shiftKey ? -1 : 1);
+      if (done.cycle === null) {
+        cycle.current = null;
+        return;
+      }
+      event.preventDefault();
       cycle.current = done.cycle;
       pendingCaret.current = done.caret;
       setText(done.input);

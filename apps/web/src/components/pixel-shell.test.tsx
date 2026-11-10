@@ -271,7 +271,11 @@ describe("Status bar (5.8, 6.3)", () => {
     mount(store, <StatusBar />);
     const bar = screen.getAllByRole("status")[0] as HTMLElement;
     const panels = Array.from(bar.children) as HTMLElement[];
-    expect(panels.map((p) => /grow-\[(\d+)\]/.exec(p.className)?.[1])).toEqual(["562", "140", "258", "461"]);
+    // Audit 10.18: Compact splits the connection and counts panels 3:2; from `md` up the Frame_01 ratio holds.
+    const base = (p: HTMLElement): string | undefined => /(?:^|\s)grow-\[(\d+)\]/.exec(p.className)?.[1];
+    const fromMd = (p: HTMLElement): string | undefined => /md:grow-\[(\d+)\]/.exec(p.className)?.[1] ?? base(p);
+    expect(panels.map(fromMd)).toEqual(["562", "140", "258", "461"]);
+    expect(panels.map(base)).toEqual(["3", "140", "2", "461"]);
     expect(panels.map((p) => p.className.includes("hidden"))).toEqual([false, true, false, true]);
     expect(bar.className).toContain("gap-[3px]");
     expect(panels[0]?.className).toContain("truncate");

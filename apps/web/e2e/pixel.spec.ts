@@ -241,6 +241,34 @@ test.describe("Frame_01 fixture", () => {
     await expect(overlay).toBeHidden();
     await expect(agents).toBeFocused();
   });
+
+  test("Compact: » lists the hidden menus and each opens its own menu (audit 10.7)", async ({ page }, testInfo) => {
+    test.skip(!testInfo.project.name.startsWith("compact"), "Compact only");
+    const menubar = page.getByRole("menubar");
+    const more = menubar.getByRole("menuitem", { name: "More menus" });
+    await expect(more).toBeVisible();
+    const all = ["File", "View", "Tools", "Commands", "Window", "Help"];
+    const shown = (await menubar.getByRole("menuitem").allTextContents()).filter((t) => all.includes(t));
+    const hidden = all.filter((n) => !shown.includes(n));
+    expect(hidden.length).toBeGreaterThan(0);
+    for (const name of hidden) {
+      await more.click();
+      const list = page.getByRole("menu", { name: "More menus" });
+      await expect(list.getByRole("menuitem")).toHaveText(hidden);
+      await list.getByRole("menuitem", { name }).click();
+      await expect(page.getByRole("menu")).toHaveCount(1);
+      await expect(page.getByRole("menu", { name })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("menu")).toHaveCount(0);
+    }
+  });
+
+  test("Desktop: the agents button focuses the nick list and says how many agents are there (audit 10.10)", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith("compact"), "Desktop and Medium only");
+    await page.getByRole("button", { name: "Agents" }).click();
+    await expect(page.locator("#nick-list")).toBeFocused();
+    await expect(page.getByRole("log").getByText(/^\d+ agents? in #fix-bug-123$/).last()).toBeVisible();
+  });
 });
 
 /** Colours lifted on purpose in Classic (design.md, "Classic colours"); masked in the Figma comparison. */
@@ -289,4 +317,67 @@ test.describe("Frame_06 Classic fixture (web-client-extras R3.5)", () => {
       maxDiffPixelRatio: FIGMA_MAX_DIFF_RATIO_06,
     });
   });
+});
+
+/**
+ * Audit 10.16: every focusable element shows a focus ring that is visible against what is behind it.
+ * Focus is moved with the keyboard first so `:focus-visible` applies.
+ */
+async function focusRingProblems(page: Page): Promise<string[]> {
+  await page.keyboard.press("Tab");
+  return page.evaluate(() => {
+    const parse = (css: string): [number, number, number, number] => {
+      const m = /rgba?\(([^)]+)\)/.exec(css);
+      if (m === null) return [0, 0, 0, 0];
+      const p = (m[1] ?? "").split(/[ ,/]+/).filter((s) => s !== "").map(Number);
+      return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 0, p[3] ?? 1];
+    };
+    const luminance = ([r, g, b]: [number, number, number, number]): number => {
+      const f = (v: number): number => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    const backdrop = (el: Element): [number, number, number, number] => {
+      for (let n: Element | null = el; n !== null; n = n.parentElement) {
+        const c = parse(getComputedStyle(n).backgroundColor);
+        if (c[3] > 0) return c;
+      }
+      return [255, 255, 255, 1];
+    };
+    const problems: string[] = [];
+    const sel = "button, input, select, textarea, a[href], [tabindex], [role=menuitem], [role=option], summary";
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
+      if (el.tabIndex < -1 || el.hasAttribute("disabled")) continue;
+      const box = el.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0 || getComputedStyle(el).visibility === "hidden") continue;
+      el.focus();
+      if (!el.matches(":focus-visible")) continue;
+      const cs = getComputedStyle(el);
+      const ring = parse(cs.outlineColor);
+      const back = backdrop(el);
+      const name = `${el.tagName.toLowerCase()}${el.id === "" ? "" : `#${el.id}`}[${el.getAttribute("aria-label") ?? el.textContent?.slice(0, 20) ?? ""}]`;
+      if (cs.outlineStyle === "none" || parseFloat(cs.outlineWidth) === 0 || ring[3] === 0) {
+        problems.push(`${name}: no outline`);
+        continue;
+      }
+      const a = luminance(ring) + 0.05;
+      const b = luminance(back) + 0.05;
+      const contrast = Math.max(a, b) / Math.min(a, b);
+      if (contrast < 3) problems.push(`${name}: ring ${cs.outlineColor} on ${cs.backgroundColor || "?"} contrast ${contrast.toFixed(2)}`);
+    }
+    return problems;
+  });
+}
+
+test.describe("Focus ring (audit 10.16)", () => {
+  for (const theme of [undefined, "classic"] as const) {
+    test(`every focusable element has a visible ring (${theme ?? "ghost"})`, async ({ page }) => {
+      await openFixture(page, theme);
+      expect(await focusRingProblems(page)).toEqual([]);
+      await page.getByRole("menubar").getByRole("menuitem", { name: "File" }).click();
+      expect(await focusRingProblems(page)).toEqual([]);
+    });
+  }
 });

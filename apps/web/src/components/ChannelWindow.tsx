@@ -8,6 +8,7 @@ import { useCompact } from "./layout-hooks.js";
 import { MdiChild } from "./MdiChild.js";
 import { NickList } from "./NickList.js";
 import { NickOverlay } from "./NickOverlay.js";
+import { useNickActions } from "./nick-actions.js";
 import { TopicBar } from "./TopicBar.js";
 
 /**
@@ -20,6 +21,7 @@ export function ChannelWindow(props: { readonly window: Window }): ReactNode {
   const overlayOpen = useClientStore((s) => s.ui.nickOverlayOpen);
   const compact = useCompact();
   const { window: win } = props;
+  const nickActions = useNickActions(win.name, win.members);
   return (
     <MdiChild window={win} label={`${win.name} window`}>
       <TopicBar channel={win.name} modes={win.modes} topic={win.topic} />
@@ -27,10 +29,24 @@ export function ChannelWindow(props: { readonly window: Window }): ReactNode {
         <ChatBuffer label={`${win.name} messages`} lines={win.lines} members={win.members} ownNick={ownNick} />
         {compact ? (
           overlayOpen ? (
-            <NickOverlay channel={win.name} members={win.members} away={away} exorcised={win.exorcised} />
+            <NickOverlay
+              channel={win.name}
+              members={win.members}
+              away={away}
+              exorcised={win.exorcised}
+              onAction={nickActions.onAction}
+              canModerate={nickActions.canModerate}
+            />
           ) : null
         ) : (
-          <NickList channel={win.name} members={win.members} away={away} exorcised={win.exorcised} />
+          <NickList
+            channel={win.name}
+            members={win.members}
+            away={away}
+            exorcised={win.exorcised}
+            onAction={nickActions.onAction}
+            canModerate={nickActions.canModerate}
+          />
         )}
       </div>
     </MdiChild>

@@ -1,7 +1,7 @@
 import type { IrcMessage } from "@seance/irc-protocol";
 import { channelKey } from "./casemap.js";
 import { getOwn } from "./record.js";
-import { isChannelName, isOwnNick, updateWindow } from "./reducer.route.js";
+import { appendTo, isChannelName, isOwnNick, updateWindow } from "./reducer.route.js";
 import type { ClientState } from "./types.js";
 
 /** Channel modes that take a parameter or name a member; they never enter `modes`. */
@@ -59,13 +59,42 @@ const NO_EXCLUDE: ReadonlySet<string> = new Set();
  * 324 RPL_CHANNELMODEIS `<me> <channel> <modes> [args]`. Returns `undefined` when the
  * reply is malformed or names a channel that is not open, so the caller can fall back.
  */
-export function onChannelModeReply(state: ClientState, msg: IrcMessage): ClientState | undefined {
+export function onChannelModeReply(state: ClientState, msg: IrcMessage, nowMs = 0): ClientState | undefined {
   const channel = msg.params[1];
   const flags = flagsFromReport(msg.params[2]);
   if (channel === undefined || flags === undefined || !isChannelName(channel)) return undefined;
   const key = channelKey(channel);
   if (getOwn(state.windows, key)?.kind !== "channel") return state;
-  return updateWindow(state, key, (w) => ({ ...w, modes: flags }));
+  const updated = updateWindow(state, key, (w) => ({ ...w, modes: flags }));
+  // Only a user-issued `/mode #chan` shows the reply; the automatic query on join stays silent (audit 10.8).
+  if (!state.expectingModes.includes(key)) return updated;
+  const shown = msg.params.slice(2).join(" ");
+  const marker = `${CREATED_PREFIX}${key}`;
+  return appendTo(
+    {
+      ...updated,
+      expectingModes: [...state.expectingModes.filter((k) => k !== key && k !== marker), marker],
+    },
+    key,
+    { kind: "mode", text: `Channel modes of ${channel}: ${shown === "+" ? "none" : shown}` },
+    nowMs,
+  );
+}
+
+const CREATED_PREFIX = "created|";
+
+/** `329 <me> <channel> <time>`: shown only right after a user-issued `/mode #chan` (audit 10.8). */
+export function onChannelCreated(state: ClientState, msg: IrcMessage, nowMs: number): ClientState {
+  const channel = msg.params[1];
+  const seconds = Number(msg.params[2]);
+  if (channel === undefined || !isChannelName(channel)) return state;
+  const key = channelKey(channel);
+  const marker = `${CREATED_PREFIX}${key}`;
+  if (!state.expectingModes.includes(marker)) return state;
+  const cleared = { ...state, expectingModes: state.expectingModes.filter((k) => k !== marker) };
+  if (!Number.isFinite(seconds) || getOwn(cleared.windows, key)?.kind !== "channel") return cleared;
+  const when = new Date(seconds * 1000).toISOString().replace("T", " ").slice(0, 19);
+  return appendTo(cleared, key, { kind: "mode", text: `Channel ${channel} was created ${when} UTC` }, nowMs);
 }
 
 /** 221 RPL_UMODEIS `<me> <modes>`. Returns `undefined` when malformed. */

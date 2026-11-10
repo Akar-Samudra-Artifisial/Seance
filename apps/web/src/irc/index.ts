@@ -48,6 +48,7 @@ export {
   modeSuffix,
   parseCreditsLine,
   plain,
+  pluralise,
   statusCounts,
   titleOf,
 } from "./selectors.js";
@@ -58,6 +59,6 @@ export type { RowFilter, SortColumn, SortDirection, SortState } from "./channel-
 export { NO_FILTER, batchNames, filterRows, nextSort, parseListRow, sortRows, summarise } from "./channel-list.js";
 export { failList, startList } from "./reducer.list.js";
 export type { Completion, CompletionCycle } from "./complete.js";
-export { completeNick } from "./complete.js";
+export { completeNick, cycleActive } from "./complete.js";
 export type { EchoLine, InputContext, InputResult, LocalAction } from "./command-parser.js";
 export { parseInput } from "./command-parser.js";

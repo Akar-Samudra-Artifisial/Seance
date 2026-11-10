@@ -92,7 +92,9 @@ function Rows(props: {
               onJoin(row.name);
             }}
             className={`h-[22px] cursor-default font-chat text-[13px] focus-visible:outline-1 focus-visible:-outline-offset-2 focus-visible:outline-dotted ${
-              isSelected ? "bg-title-from text-chrome-highlight" : "text-ghost-text"
+              isSelected
+                ? "bg-title-from text-chrome-highlight focus-visible:outline-chrome-highlight"
+                : "text-ghost-text focus-visible:outline-ghost-orange"
             }`}
           >
             <td className="w-[170px] truncate px-1">{plain(row.name)}</td>

@@ -491,6 +491,16 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: "six menus" wording, unused `ToolOptions` icon and its Figma SVG removed through `scripts/gen-icons.mjs`, toolbar separator ids renumbered, a test that `MENU_SLOTS`, `SLOT_CLASS` and `MENU_DEFS` stay the same length
 - Notes: guard-shell blocked a `cd ../` command that left the repo path check; pixel baselines needed no change
 
+### 2026-11-10 — Audit fixes (web-client-extras task 10, ircd-core criteria 9.11 to 9.15)
+- Kiro features: specs web-client-extras (task 10, requirement 8, design note) and ircd-core (bans), steering (irc-protocol, security, web-ui, testing, product), hook guard-shell, Playwright e2e and pixel runs
+- Produced: `/notice` and `/privmsg` with whole text, `/help` and `/clear`, reconnect with rejoin and last nick, next-window focus on close, nick list query and context menu, `/list` dialog and `/mode #chan` output, labels without ellipsis, favicon and Agents feedback, ircd `MODE +b/-b` with `367`/`368`/`474` mirrored into the runner's ban list, `/ban` and `/unban`, docs
+- Notes: the stray "12" before agent replies came from the runner (`stripControls` left the digits of `\x03NN`), not from the web formatter; a shell `$1` inside double quotes once emptied label strings in two test files, repaired by hand
+
+### 2026-11-10 — Audit follow-up: ban matcher, focus, input line (web-client-extras tasks 10.13 to 10.18, ircd-core criteria 9.16 to 9.18)
+- Kiro features: specs web-client-extras (task 10.13 to 10.18, requirement 8.13 to 8.17) and ircd-core (bans), steering (irc-protocol, security, web-ui accessibility), PBT (glob matcher against a reference), hook guard-shell, Playwright focus-ring test
+- Produced: iterative `globMatch` replacing the ban RegExp, `478` and the invalid-mask notice, Tab/Shift+Tab that no longer trap focus, a focus ring that shows on dark surfaces, nick menu placement, singular counts, self-message handling, `»` list clamp
+- Notes: the invisible focus ring was a CSS layering bug (an unlayered `:focus-visible` rule beat every Tailwind `focus-visible:outline-*` utility)
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

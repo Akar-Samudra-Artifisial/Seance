@@ -349,6 +349,7 @@ The ircd implements a documented subset of RFC 2812. Commands are case-insensiti
 - `AWAY [:text]` sets or clears an away message. The server advertises `AWAYLEN=200` in `005 RPL_ISUPPORT`; longer text is cut to 200 UTF-8 bytes. A `PRIVMSG` to an away nick is delivered and answered with `301`. `NOTICE` and channel messages never produce `301`.
 - `WHOIS [server] <nick>` replies with user, channels, server, extra lines, away and idle information. Only the first nick of a comma-separated list is processed.
 - `INVITE <nick> <#channel>` requires channel operator status. Invitations are recorded, but `+i` is not implemented, so they do not restrict joining.
+- Bans: `MODE #chan +b <nick|nick!user@host|user@host>` and `-b` (channel operators), `MODE #chan b` lists them (`367`/`368`). Masks accept `*` and `?`, are matched without a regular expression, and at most 50 are kept (`478` when full). A banned nick gets `474` on `JOIN` and `INVITE`; banning an agent nick also stops the runner from summoning it. The `user` part of a mask is supplied by the client, so `*!user@*` bans are weak, and a nick ban is dodged by a nick change: prefer host bans (`*!*@host`).
 - Channel modes: a new channel is `+nt`. `+n`: only members may send to the channel. `+t`: only operators set the topic. `+m` (off by default): only `+v`/`+o` members may speak.
 
 **Numerics:**
@@ -357,9 +358,9 @@ The ircd implements a documented subset of RFC 2812. Commands are case-insensiti
 | --- | --- |
 | Registration | `001`, `002`, `003`, `004`, `005` |
 | Away and WHOIS | `301`, `305`, `306`, `311`, `312`, `317` (idle time and sign-on time), `318`, `319`, `320` |
-| Channels | `321`, `322`, `323`, `324`, `331`, `332`, `341`, `353`, `366` |
+| Channels | `321`, `322`, `323`, `324`, `331`, `332`, `341`, `353`, `366`, `367`, `368` |
 | MOTD and modes | `221`, `372`, `375`, `376` |
-| Errors | `401`, `403`, `404`, `411`, `412`, `417`, `421`, `431`, `432`, `433`, `441`, `442`, `443`, `451`, `461`, `462`, `464`, `472`, `482` |
+| Errors | `401`, `403`, `404`, `411`, `412`, `417`, `421`, `431`, `432`, `433`, `441`, `442`, `443`, `451`, `461`, `462`, `464`, `472`, `474`, `478`, `482` |
 
 `320` (`RPL_WHOISSPECIAL`) is not defined in RFC 2812. It is the de facto numeric used by ircu, UnrealIRCd and Ergo for free-text `WHOIS` lines, and Séance uses it to show agent details such as model, tools and credits. Every other numeric above is from RFC 2812.
 
@@ -392,7 +393,7 @@ Work in progress for the Kiroween 2026 deadline (4 December 2026).
 | Public deployment for judges (AWS, Caddy TLS, Podman) | `deploy-aws` ([docs/DEPLOY.md](./docs/DEPLOY.md), `infra/`, `deploy/`) | Terraform and host files written and checked in CI; the operator steps (spike S12, deploy, Kiro login, smoke test, budget check) are open |
 | Demo video (under 3 minutes) and the Kiro write-up | — | Open |
 
-The same open items are tracked in the Roadmap at the end of [docs/KIRO_USAGE.md](./docs/KIRO_USAGE.md#roadmap). Later ideas from [DESIGN.md](./DESIGN.md): `/ban` for agents, persistent logs and an audit trail, CTCP `VERSION`/`PING`, and an Options dialog for models.
+The same open items are tracked in the Roadmap at the end of [docs/KIRO_USAGE.md](./docs/KIRO_USAGE.md#roadmap). Later ideas from [DESIGN.md](./DESIGN.md): persistent logs and an audit trail, CTCP `VERSION`/`PING`, and an Options dialog for models.
 
 ## Testing
 

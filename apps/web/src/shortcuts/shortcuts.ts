@@ -4,7 +4,7 @@ import { PASTE_INTERVAL_MS, PASTE_MAX_LINES } from "../irc/types.js";
 // import their key names and matchers from here, and the Keyboard shortcuts dialog is generated
 // from `SHORTCUTS`, so the help text cannot drift from what the code does.
 
-export type ShortcutGroup = "Windows" | "Menus" | "Input line" | "Dialogs" | "Toolbar";
+export type ShortcutGroup = "Windows" | "Menus" | "Input line" | "Dialogs" | "Toolbar" | "Nick list";
 
 export interface Shortcut {
   readonly id: string;
@@ -79,6 +79,9 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: "menu-letter", group: "Menus", keys: "A letter", action: "Jump to the next item that starts with it" },
   { id: "menu-close", group: "Menus", keys: "Esc", action: "Close the menu and return to the menu bar" },
   { id: "toolbar-move", group: "Toolbar", keys: "← → Home End", action: "Move along the toolbar" },
+  { id: "input-leave", group: "Input line", keys: "Tab, Shift+Tab", action: "Complete a nick when one matches; otherwise move focus on or back" },
+  { id: "nicks-query", group: "Nick list", keys: "Enter or double-click", action: "Open a query with the selected nick" },
+  { id: "nicks-menu", group: "Nick list", keys: "Right-click, Shift+F10 or Menu", action: "Open the nick menu: Whois, Query, voice, Kick (channel operators)" },
   { id: "input-complete", group: "Input line", keys: INPUT_KEYS.complete, action: "Complete a nick; press again to cycle through matches" },
   { id: "input-history", group: "Input line", keys: "↑ ↓", action: "Recall earlier input" },
   { id: "input-submit", group: "Input line", keys: INPUT_KEYS.submit, action: "Send the line or run the command" },

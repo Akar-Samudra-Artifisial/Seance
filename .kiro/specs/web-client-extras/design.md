@@ -168,6 +168,14 @@ Exports `MENU_DEFS` (menu id, label, mnemonic index), `INPUT_KEYS` (`Tab`, `Arro
 
 `toolsLabel(raw, mode)` rewrites the `shell(...)` token of the profile text (or a bare `shell`) to `shell(host)` for `none` and `shell(sandbox)` for `podman`, and leaves other text alone. `InviteController` applies it where it registers the profile in the Whois_Snapshot, using `sandboxMode` from its deps; `runner.ts` passes `config.sandbox.mode`.
 
+### Audit fixes (task 10)
+
+- **Commands.** `textCommand` builds `/notice` and `/privmsg`; `COMMAND_HELP` and `helpLines()` generate `/help` from the `COMMANDS` keys; `LocalAction` gained `active-lines`, `clear` and `channel-list`. `/ban` and `/unban` are table commands producing `MODE`.
+- **Store.** `update()` re-selects the active window when it was removed (next non-minimised in Switchbar order, else Status un-minimised). The last confirmed nick is kept in `last` and `ui.storedNick`; on a first registration after a non-registered phase the store sends `JOIN` for every channel window. `ClientState.expectingModes` marks channels whose next `324` came from a user `/mode #chan`; after the `324` the entry becomes `created|<key>` so an optional `329` prints. `announceAgents()` prints the agent count.
+- **Nick list.** `NickList` stays store-free: `onAction(action, nick)` and `canModerate` props; `useNickActions` (`components/nick-actions.ts`) maps actions to commands through `submitInput`. Rows are buttons only when `onAction` is given; the menu is `MenuPopup`.
+- **Runner colour.** `stripControls` removes `\x03` with its digits and optional `,NN` before the other C0 controls.
+- **Bans.** The ircd keeps `Channel.bans` (`ban-mask.ts`); the mode event carries the mask, and the runner subscriber adds or removes agent nicks (`banNickOf`) in its `BanList`.
+
 ## Data Models
 
 ```ts

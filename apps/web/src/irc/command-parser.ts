@@ -1,4 +1,4 @@
-import { isParseError, parse, serialize } from "@seance/irc-protocol";
+import { irc_lower, isParseError, parse, serialize } from "@seance/irc-protocol";
 import type { IrcMessage } from "@seance/irc-protocol";
 import { splitPaste } from "./paste.js";
 import { LINE_MAX_BYTES, PASTE_MAX_LINES } from "./types.js";
@@ -9,12 +9,20 @@ export interface EchoLine {
   /** Channel or nick the message was sent to (display case). */
   readonly target: string;
   readonly text: string;
+  /** `/notice`: shown as an own notice instead of an own chat line. */
+  readonly notice?: boolean;
 }
 
 /** Actions the Store performs locally without sending anything. */
 export type LocalAction =
   | { readonly type: "status-line"; readonly text: string }
-  | { readonly type: "open-query"; readonly nick: string };
+  | { readonly type: "open-query"; readonly nick: string }
+  /** `/help`: lines printed into the Active_Window (audit 10.2). */
+  | { readonly type: "active-lines"; readonly lines: readonly string[] }
+  /** `/clear`: empty the Active_Window's buffer (audit 10.2). */
+  | { readonly type: "clear" }
+  /** `/list` without arguments: open the Channel_List_Dialog like the toolbar button (audit 10.8). */
+  | { readonly type: "channel-list" };
 
 export type InputResult =
   | {
@@ -135,9 +143,23 @@ const partCommand: CommandHandler = (args, ctx) => {
   return send([{ command: "PART", params }]);
 };
 
-const msgCommand: CommandHandler = (args) => {
+/** True when `target` is the user's own nick (rfc1459 case-mapping). */
+function isSelf(target: string, ctx: InputContext): boolean {
+  return ctx.ownNick !== "" && irc_lower(target) === irc_lower(ctx.ownNick);
+}
+
+/**
+ * A message to oneself would come back as a query window with oneself. Nothing is sent; the line is shown
+ * in the Active_Window instead (audit 10.18).
+ */
+function toSelf(kind: "message" | "notice", text: string): InputResult {
+  return { kind: "local", action: { type: "active-lines", lines: [`*** ${kind} to yourself, not sent: ${text}`] } };
+}
+
+const msgCommand: CommandHandler = (args, ctx) => {
   const [target, text] = splitFirst(args);
   if (target.length === 0 || text.length === 0) return usageError("msg", "/msg <target> <text>");
+  if (isSelf(target, ctx)) return toSelf("message", text);
   const isNick = !/^[#&]/.test(target);
   return send([{ command: "PRIVMSG", params: [target, text] }], [{ target, text }], isNick ? target : undefined);
 };
@@ -155,6 +177,50 @@ const inviteCommand: CommandHandler = (args, ctx) => {
   if (nick === undefined || channel === undefined) return usageError("invite", "/invite <nick>[ <channel>]");
   return send([{ command: "INVITE", params: [nick, channel] }]);
 };
+
+/**
+ * `/notice` and `/privmsg` take a target and the whole rest of the line as one trailing parameter, like
+ * `/msg`. Without a table entry the raw pass-through split the text on spaces and the Ircd read only the
+ * first word (audit 10.1).
+ */
+function textCommand(name: "notice" | "privmsg"): CommandHandler {
+  const command = name === "notice" ? "NOTICE" : "PRIVMSG";
+  return (args, ctx) => {
+    const [target, text] = splitFirst(args);
+    if (target.length === 0 || text.length === 0) return usageError(name, `/${name} <target> <text>`);
+    if (isSelf(target, ctx)) return toSelf(name === "notice" ? "notice" : "message", text);
+    if (name === "privmsg") {
+      const isNick = !/^[#&]/.test(target);
+      return send([{ command, params: [target, text] }], [{ target, text }], isNick ? target : undefined);
+    }
+    return send([{ command, params: [target, text] }], [{ target, text, notice: true }]);
+  };
+}
+
+/** `/ban [<channel>] [<nick|mask>]`: `MODE <channel> +b <mask>`, or the ban list without a mask. */
+const banCommand: CommandHandler = (args, ctx) => {
+  const [first, afterFirst] = splitFirst(args);
+  const explicit = /^[#&]/.test(first);
+  const channel = explicit ? first : activeChannel(ctx);
+  const mask = (explicit ? afterFirst : args).trim();
+  if (channel === undefined) return usageError("ban", "/ban [<channel>] [<nick|mask>] (lists the bans without a mask)");
+  if (/\s/.test(mask)) return usageError("ban", "/ban [<channel>] [<nick|mask>] (lists the bans without a mask)");
+  return send([{ command: "MODE", params: mask === "" ? [channel, "b"] : [channel, "+b", mask] }]);
+};
+
+/** `/unban [<channel>] <nick|mask>`: `MODE <channel> -b <mask>`. */
+const unbanCommand: CommandHandler = (args, ctx) => {
+  const [first, afterFirst] = splitFirst(args);
+  const explicit = /^[#&]/.test(first);
+  const channel = explicit ? first : activeChannel(ctx);
+  const mask = (explicit ? afterFirst : args).trim();
+  if (mask === "" || /\s/.test(mask) || channel === undefined) return usageError("unban", "/unban [<channel>] <nick|mask>");
+  return send([{ command: "MODE", params: [channel, "-b", mask] }]);
+};
+
+const clearCommand: CommandHandler = () => ({ kind: "local", action: { type: "clear" } });
+
+const helpCommand: CommandHandler = () => ({ kind: "local", action: { type: "active-lines", lines: helpLines() } });
 
 const kickCommand: CommandHandler = (args, ctx) => {
   // `/kick [<channel>] <nick>[ <reason>]`: a first word starting with # or & is the channel;
@@ -185,7 +251,11 @@ const namesCommand: CommandHandler = (args, ctx) => {
   return send([{ command: "NAMES", params: channel === undefined ? [] : [channel] }]);
 };
 
-const listCommand: CommandHandler = (args) => send([{ command: "LIST", params: words(args) }]);
+// `/list` opens the Channel_List_Dialog like the toolbar button; `/list <args>` still sends LIST as typed.
+const listCommand: CommandHandler = (args) =>
+  words(args).length === 0
+    ? { kind: "local", action: { type: "channel-list" } }
+    : send([{ command: "LIST", params: words(args) }]);
 
 const awayCommand: CommandHandler = (args) => {
   const text = args.trim();
@@ -216,9 +286,14 @@ const meCommand: CommandHandler = (args, ctx) => {
   return send([{ command: "PRIVMSG", params: [target, wrapped] }], [{ target, text: wrapped }]);
 };
 
-const queryCommand: CommandHandler = (args) => {
+const queryCommand: CommandHandler = (args, ctx) => {
   const [nick, text] = splitFirst(args);
   if (nick.length === 0) return usageError("query", "/query <nick>[ <text>]");
+  if (isSelf(nick, ctx)) {
+    return text.length === 0
+      ? { kind: "local", action: { type: "active-lines", lines: ["*** you cannot open a query with yourself"] } }
+      : toSelf("message", text);
+  }
   if (text.length === 0) return { kind: "local", action: { type: "open-query", nick } };
   return send([{ command: "PRIVMSG", params: [nick, text] }], [{ target: nick, text }], nick);
 };
@@ -228,9 +303,13 @@ export const COMMANDS: Readonly<Record<string, CommandHandler>> = {
   join: joinCommand,
   part: partCommand,
   msg: msgCommand,
+  privmsg: textCommand("privmsg"),
+  notice: textCommand("notice"),
   topic: topicCommand,
   invite: inviteCommand,
   kick: kickCommand,
+  ban: banCommand,
+  unban: unbanCommand,
   mode: modeCommand,
   whois: whoisCommand,
   names: namesCommand,
@@ -240,7 +319,47 @@ export const COMMANDS: Readonly<Record<string, CommandHandler>> = {
   quit: quitCommand,
   me: meCommand,
   query: queryCommand,
+  help: helpCommand,
+  clear: clearCommand,
 };
+
+/** Usage and one-line summary of every command in {@link COMMANDS}; a test keeps the two in step. */
+export const COMMAND_HELP: Readonly<Record<string, { readonly usage: string; readonly summary: string }>> = {
+  join: { usage: "/join <channel>[ <key>]", summary: "join a channel" },
+  part: { usage: "/part [<channel>][ <reason>]", summary: "leave a channel" },
+  msg: { usage: "/msg <target> <text>", summary: "send a message (opens a query window for a nick)" },
+  privmsg: { usage: "/privmsg <target> <text>", summary: "same as /msg" },
+  notice: { usage: "/notice <target> <text>", summary: "send a notice" },
+  topic: { usage: "/topic [<channel>][ <text>]", summary: "show or set the topic" },
+  invite: { usage: "/invite <nick>[ <channel>]", summary: "invite a nick (or an agent) to a channel" },
+  kick: { usage: "/kick [<channel>] <nick>[ <reason>]", summary: "remove a nick; an agent is exorcised" },
+  ban: { usage: "/ban [<channel>] [<nick|mask>]", summary: "ban a nick (an agent cannot be invited); no mask lists the bans" },
+  unban: { usage: "/unban [<channel>] <nick|mask>", summary: "lift a ban" },
+  mode: { usage: "/mode <target>[ <modes>[ <args>]]", summary: "show or change modes; /mode #chan shows the channel modes" },
+  whois: { usage: "/whois <nick>", summary: "show who a nick is (agents: model, tools, credits)" },
+  names: { usage: "/names [<channel>]", summary: "list the nicks of a channel" },
+  list: { usage: "/list", summary: "open the channel list" },
+  away: { usage: "/away [<text>]", summary: "set or clear your away message" },
+  nick: { usage: "/nick <nick>", summary: "change your nick" },
+  quit: { usage: "/quit [<reason>]", summary: "disconnect" },
+  me: { usage: "/me <text>", summary: "send an action to the active window" },
+  query: { usage: "/query <nick>[ <text>]", summary: "open a private window" },
+  help: { usage: "/help", summary: "show this list" },
+  clear: { usage: "/clear", summary: "empty the active window" },
+};
+
+/** The `/help` text, one line per command of {@link COMMANDS} in table order, so it cannot drift. */
+export function helpLines(): readonly string[] {
+  const rows = Object.keys(COMMANDS).map((name) => {
+    const entry = Object.hasOwn(COMMAND_HELP, name) ? COMMAND_HELP[name] : undefined;
+    return entry === undefined ? `/${name}` : `${entry.usage}  -  ${entry.summary}`;
+  });
+  return [
+    "Commands:",
+    ...rows.map((row) => `  ${row}`),
+    "Any other /command is sent to the server as typed. Start a line with // to send a leading /.",
+  ];
+}
 
 /** Raw pass-through for a command missing from the table: upper-case name, arguments unchanged. */
 function rawCommand(name: string, args: string): InputResult {

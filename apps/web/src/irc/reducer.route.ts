@@ -93,6 +93,7 @@ export function initialState(ownNick = ""): ClientState {
     nextLineId: 1,
     paste: { queue: [] },
     expectingNames: [],
+    expectingModes: [],
     userModes: "",
   };
 }

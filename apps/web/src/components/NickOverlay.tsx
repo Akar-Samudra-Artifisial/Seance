@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import type { Member } from "../irc/index.js";
 import { useClientStore } from "../store/react.js";
 import { NickList } from "./NickList.js";
+import type { NickAction } from "./NickList.js";
 
 /** Id of the toolbar button that toggles the overlay; focus returns to it on close. */
 export const AGENTS_BUTTON_ID = "toolbar-agents";
@@ -20,6 +21,8 @@ export function NickOverlay(props: {
   readonly members: Readonly<Record<string, Member>> | undefined;
   readonly away?: Readonly<Record<string, string>> | undefined;
   readonly exorcised?: readonly string[] | undefined;
+  readonly onAction?: ((action: NickAction, nick: string) => void) | undefined;
+  readonly canModerate?: boolean | undefined;
 }): ReactNode {
   const setNickOverlay = useClientStore((s) => s.setNickOverlay);
   const ref = useRef<HTMLElement>(null);
@@ -64,6 +67,8 @@ export function NickOverlay(props: {
         members={props.members}
         away={props.away}
         exorcised={props.exorcised}
+        onAction={props.onAction}
+        canModerate={props.canModerate}
         variant="overlay"
       />
     </aside>

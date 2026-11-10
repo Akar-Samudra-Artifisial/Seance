@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { statusCounts } from "../irc/index.js";
+import { pluralise, statusCounts } from "../irc/index.js";
 import type { ConnectionPhase } from "../irc/index.js";
 import { useClientStore } from "../store/react.js";
 import { hostOf } from "./TitleBar.js";
@@ -37,6 +37,7 @@ export function StatusBar(): ReactNode {
       ? // Frame_01: `Connected to seance.local:6697 (TLS) as bayu` (TLS mark after the host).
         `Connected to ${hostOf(serverUrl)}${serverUrl.startsWith("wss:") ? " (TLS)" : ""} as ${nick}`
       : PHASE_TEXT[phase];
+  const countsText = `${pluralise(counts.agents, "agent")} · ${String(counts.away)} away · ${pluralise(counts.ops, "op")}`;
   const lagText = lag === null ? "lag –" : `lag ${lag.toFixed(2)}s`;
 
   // R1.6: at 1434 px the panels are 562, 140, 258 and the rest (461), 3 px apart. Grow factors in the
@@ -47,12 +48,16 @@ export function StatusBar(): ReactNode {
       role="status"
       className="mt-px flex h-(--layout-status) shrink-0 gap-[3px] bg-chrome-face px-0.5 font-chrome text-xs leading-(--layout-status) text-chrome-outline"
     >
-      <span className={`${panelClass} grow-[562]`}>{connection}</span>
-      <span aria-live="off" className={`${panelClass} hidden grow-[140] md:block`}>
+      {/* Compact gives the counts more room (3:2); a panel that still does not fit ends in an ellipsis and
+          carries its full text as `title` (audit 10.18). */}
+      <span title={connection} className={`${panelClass} grow-[3] md:grow-[562]`}>
+        {connection}
+      </span>
+      <span aria-live="off" title={lagText} className={`${panelClass} hidden grow-[140] md:block`}>
         {lagText}
       </span>
-      <span className={`${panelClass} grow-[258]`}>
-        {`${String(counts.agents)} agents · ${String(counts.away)} away · ${String(counts.ops)} ops`}
+      <span title={countsText} className={`${panelClass} grow-[2] md:grow-[258]`}>
+        {countsText}
       </span>
       <span aria-hidden="true" className={`${panelClass} hidden grow-[461] md:block`} />
     </div>

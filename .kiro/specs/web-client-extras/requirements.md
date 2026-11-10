@@ -97,3 +97,25 @@ Figma sources (Talk-to-Figma channel `8p9g0i9k`, or the Figma power file `GFgFsC
 1. THE changes SHALL leave the existing tests intact; a test changes only for intended behaviour, with a comment.
 2. THE word that names the trademarked client SHALL appear nowhere in the repository files this spec touches.
 3. THE Figma calls made for this spec SHALL be recorded in `docs/KIRO_USAGE.md`.
+
+### Requirement 8: Audit fixes (2026-11-10)
+
+#### Acceptance Criteria
+
+1. `/notice <target> <text>` and `/privmsg <target> <text>` SHALL send the whole text as one trailing parameter and echo it like `/msg`; CR, LF and NUL SHALL still be rejected.
+2. `/help` SHALL print one usage line per command of the command table into the active window, and `/clear` SHALL empty it; neither SHALL send anything.
+3. A Reconnect SHALL rejoin every open channel window and use the last nick the server confirmed; the Connect_Dialog after a Quit SHALL prefill that nick.
+4. WHEN the active window closes, THE client SHALL activate the next window that is not minimised, or restore and activate the Status_Window when none is left.
+5. In the nick list, double-click and Enter SHALL open a query; a context menu (right-click, Shift+F10, Menu key) SHALL offer Whois, Query, Give/Take voice and Kick, the last two inert with a reason unless the user is a channel operator; focus SHALL return to the nick on close.
+6. Agent replies SHALL show no stray colour digits: the runner SHALL remove an agent's own colour code as a whole sequence before adding its colour.
+7. In Compact, the `»` list SHALL list every menu that does not fit and each entry SHALL open its own menu.
+8. `/list` without arguments SHALL open the Channel_List_Dialog; `/mode #chan` without a mode string SHALL print the channel modes into that channel's window.
+9. Menu items that only prefill the Input_Line SHALL carry no ellipsis.
+10. THE app SHALL serve a favicon (`app/icon.svg`); on Desktop and Medium the toolbar Agents button SHALL focus the nick list and print `N agents in #chan` or `No agents in #chan`.
+11. `/ban` and `/unban` SHALL send `MODE <channel> +b|-b <mask>`; the ircd SHALL implement them (ircd-core criteria 9.11 to 9.15) and the runner SHALL mirror bans of agent nicks into its ban list.
+12. THE docs and in-app shortcut texts SHALL describe the above.
+13. THE ircd SHALL match ban masks without a regular expression and collapse runs of `*` (ircd-core criterion 9.16); MODE `+b` SHALL answer an invalid mask with a NOTICE naming it and a full list with `478` (ircd-core criteria 9.17, 9.18).
+14. Tab in the Input_Line SHALL complete only when a nick matches or a completion is active, and move focus otherwise; Shift+Tab SHALL move focus back unless it steps through an active completion.
+15. EVERY focusable element SHALL show a focus ring whose colour differs from, and has at least 3:1 contrast against, what is behind it, in Ghost and Classic.
+16. THE nick menu SHALL open at the pointer or under the row, stay inside the viewport, close with focus returned to the list when its nick leaves, and use ids that are unique per instance.
+17. THE status bar SHALL pluralise its counts and give each text panel a `title`; a message to the own nick SHALL be shown in the Active_Window and not open a query; the Compact `»` list SHALL close on an outside press and Esc and stay inside the viewport.

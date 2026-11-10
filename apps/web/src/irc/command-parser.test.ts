@@ -71,7 +71,8 @@ describe("slash commands", () => {
     expect(msgs("/mode #a +o bob", status)).toEqual([{ command: "MODE", params: ["#a", "+o", "bob"] }]);
     expect(msgs("/whois bob", status)).toEqual([{ command: "WHOIS", params: ["bob"] }]);
     expect(msgs("/names", channel)).toEqual([{ command: "NAMES", params: ["#Ghosts"] }]);
-    expect(msgs("/list", status)).toEqual([{ command: "LIST", params: [] }]);
+    expect(parseInput("/list", status)).toEqual({ kind: "local", action: { type: "channel-list" } });
+    expect(msgs("/list #a*", status)).toEqual([{ command: "LIST", params: ["#a*"] }]);
     expect(msgs("/away gone fishing", status)).toEqual([{ command: "AWAY", params: ["gone fishing"] }]);
     expect(msgs("/away", status)).toEqual([{ command: "AWAY", params: [] }]);
     expect(msgs("/nick neo", status)).toEqual([{ command: "NICK", params: ["neo"] }]);

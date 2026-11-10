@@ -143,3 +143,24 @@ node scripts/gen-icons.mjs
 ```
 
 The generated files are committed; never edit them by hand. `src/icons/icons.test.tsx` checks that each component keeps the source's paths and colours.
+
+## Commands, nick list and reconnect (audit fixes)
+
+- `/help` prints one usage line per command into the active window (the text is generated from the command table); `/clear` empties the active window. Neither sends anything.
+- `/notice <target> <text>` and `/privmsg <target> <text>` send the whole text, like `/msg`. `/list` without arguments opens the channel list dialog (same as the toolbar button); `/list <args>` still sends `LIST` as typed. `/mode #chan` without a mode string prints the channel modes (`324`, and `329` when the server sends it) into that channel's window.
+- `/ban [#chan] [nick|mask]` sends `MODE #chan +b <mask>` (the bare form lists the bans, `367`/`368`); `/unban [#chan] <nick|mask>` sends `-b`. A banned nick cannot join or be invited (`474`); banning an agent nick also stops the runner from summoning it.
+- Menu items that only prefill the input line (Join, Query, Whois, Topic, Away) have no ellipsis. Connect… and Channel list… keep theirs because they open dialogs.
+- Nick list: double-click or Enter on a nick opens a query. Right-click, Shift+F10 or the Menu key opens a menu with Whois and Query, plus Give voice / Take voice and Kick; the last two are inert with a reason unless you are a channel operator in that channel. Esc closes the menu and focus returns to the nick.
+- Toolbar Agents button (Desktop and Medium): focuses the nick list and prints `N agents in #chan` or `No agents in #chan` into the window. In Compact it still toggles the overlay.
+- Reconnect after Close or Quit rejoins every open channel window and uses the last nick the server confirmed; the Connect dialog after a Quit is prefilled with that nick.
+- Closing the active window activates the next window that is not minimised; if none is left the Status window is restored and activated.
+- The favicon is the app candle on the ghost background (`app/icon.svg`).
+
+### Follow-up audit fixes
+
+- Tab in the input line completes a nick only when one matches; otherwise it moves focus on, and Shift+Tab moves focus back (it steps to the previous candidate only while a completion is active).
+- Every focusable element has a visible focus ring: black on the chrome, the accent orange on the chat surfaces (Ghost and Classic).
+- The nick menu opens at the pointer (right-click) or under the nick (Shift+F10, Menu key) and stays inside the window; it closes if the nick leaves.
+- Status bar and nick list counts are singular for one (`1 agent`, `1 user`); long status panels end in an ellipsis and show their full text as a tooltip.
+- `/msg`, `/notice`, `/privmsg` and `/query` to your own nick send nothing and show the line in the active window.
+- Bans: `MODE +b` rejects an invalid mask with a notice, and a full list (50) answers `478`. The `user` part of a mask is supplied by the client, and a nick ban can be dodged by changing nick: prefer host bans.

@@ -53,6 +53,7 @@ export function Toolbar(): ReactNode {
   const theme = useClientStore((s) => s.ui.theme);
   const toggleTheme = useClientStore((s) => s.toggleTheme);
   const openChannelList = useClientStore((s) => s.openChannelList);
+  const announceAgents = useClientStore((s) => s.announceAgents);
   const inChannel = useClientStore((s) => s.client.windows[s.client.activeKey]?.kind === "channel");
   const compact = useCompact();
   const [focusIndex, setFocusIndex] = useState(0);
@@ -111,6 +112,7 @@ export function Toolbar(): ReactNode {
           return;
         }
         document.getElementById("nick-list")?.focus();
+        announceAgents();
       },
     },
     sep("sep-2"),

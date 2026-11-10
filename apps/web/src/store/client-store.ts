@@ -22,8 +22,9 @@ import {
 } from "../irc/index.js";
 import type { ClientState, ConnectParams, History, HistoryDirection, InputContext, LineKind } from "../irc/index.js";
 import { channelKey, chatKey } from "../irc/casemap.js";
+import { isKnownAgent } from "../irc/classify.js";
 import { getOwn, nullRecord, withEntry, withoutEntry } from "../irc/record.js";
-import { appendStatus, appendTo, openWindow, rememberClosed } from "../irc/reducer.route.js";
+import { appendStatus, appendTo, nickOf, openWindow, rememberClosed } from "../irc/reducer.route.js";
 import type { LineSpec } from "../irc/reducer.route.js";
 import type { CreateSocket, WebSocketLike } from "./socket.js";
 import type { ClientStorage, Theme } from "./storage.js";
@@ -125,6 +126,8 @@ export interface ClientStore {
   requestConnectDialog(): void;
   /** Send LIST and open the Channel_List_Dialog; no-op unless registered. */
   openChannelList(): void;
+  /** Toolbar Agents button on desktop: print "N agents in #chan" into the active channel window (audit 10.10). */
+  announceAgents(): void;
   /** Send LIST again for the open dialog. */
   refreshChannelList(): void;
   closeChannelList(): void;
@@ -175,9 +178,29 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
   const store = createStore<ClientStore>()((set, get) => {
     const update = (fn: (c: ClientState) => ClientState): void => {
       set((s) => {
-        const client = fn(s.client);
+        let client = fn(s.client);
         // Minimised keys only ever name open windows (R4.7).
-        const minimised = s.ui.minimised.filter((k) => getOwn(client.windows, k) !== undefined);
+        let minimised = s.ui.minimised.filter((k) => getOwn(client.windows, k) !== undefined);
+        // Audit 10.4: when the active window closes, the next window that is not minimised becomes active
+        // (Switchbar order, wrapping); with none left the Status_Window is restored and activated.
+        const closedKey = s.client.activeKey;
+        if (getOwn(s.client.windows, closedKey) !== undefined && getOwn(client.windows, closedKey) === undefined) {
+          const at = s.client.order.indexOf(closedKey);
+          const rotated = [...s.client.order.slice(at + 1), ...s.client.order.slice(0, Math.max(at, 0))];
+          const next =
+            rotated.find((k) => k !== closedKey && getOwn(client.windows, k) !== undefined && !minimised.includes(k)) ??
+            "status";
+          if (next === "status") minimised = minimised.filter((k) => k !== "status");
+          const win = getOwn(client.windows, next);
+          client =
+            win === undefined
+              ? client
+              : {
+                  ...client,
+                  activeKey: next,
+                  windows: withEntry(client.windows, next, { ...win, unread: false, mentioned: false }),
+                };
+        }
         return minimised.length === s.ui.minimised.length ? { client } : { client, ui: { ...s.ui, minimised } };
       });
     };
@@ -387,6 +410,17 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         }
       }
       if (phase === "registered" && before.phase !== "registered") startLag();
+      // Audit 10.3: the nick the server confirmed (001, later NICK changes) is the one a Reconnect and the
+      // next Connect dialog use, not the nick typed first.
+      if (phase === "registered" && last !== null && result.state.ownNick !== "" && result.state.ownNick !== last.nick) {
+        last = { ...last, nick: result.state.ownNick };
+        set((st) => ({ ui: { ...st.ui, storedNick: result.state.ownNick } }));
+        try {
+          deps.storage.write({ nick: result.state.ownNick, serverUrl: url });
+        } catch (err) {
+          status("error", `error: saving nick and server failed: ${errorMessage(err)}`);
+        }
+      }
       if (result.pong !== undefined && result.pong === lagToken) {
         const seconds = Math.max(0, (deps.now() - lagSentAt) / 1000);
         lagToken = null;
@@ -395,12 +429,21 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       const s = socket;
       if (s === null) return;
       for (const out of result.send) sendMessage(s, out);
-      // Ask for the channel modes once per own join (Requirement 8.2).
+      // Audit 10.3: a re-registration rejoins every channel whose window is still open.
+      if (phase === "registered" && before.phase !== "registered") {
+        for (const win of Object.values(result.state.windows)) {
+          if (win.kind === "channel") sendMessage(s, { command: "JOIN", params: [win.name] });
+        }
+      }
+      // Ask for the channel modes once per own join (Requirement 8.2); a rejoined window starts with no members.
       if (msg.command.toUpperCase() === "JOIN") {
         const channel = msg.params[0];
         if (channel !== undefined) {
           const key = channelKey(channel);
-          if (getOwn(before.windows, key) === undefined && getOwn(result.state.windows, key) !== undefined) {
+          const had = getOwn(before.windows, key);
+          const own = chatKey(nickOf(msg.prefix)) === chatKey(result.state.ownNick);
+          const fresh = had === undefined || (own && Object.keys(had.members ?? {}).length === 0);
+          if (fresh && getOwn(result.state.windows, key) !== undefined) {
             sendMessage(s, { command: "MODE", params: [channel] });
           }
         }
@@ -599,14 +642,37 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
           case "error":
             addLine({ kind: "error", text: result.text });
             return;
-          case "local":
-            if (result.action.type === "status-line") {
-              update((c) => appendStatus(c, { kind: "local", text: result.action.type === "status-line" ? result.action.text : "" }, deps.now()));
-            } else {
-              const nick = result.action.nick;
-              update((c) => openWindow(c, "query", nick, true));
+          case "local": {
+            const action = result.action;
+            switch (action.type) {
+              case "status-line":
+                update((c) => appendStatus(c, { kind: "local", text: action.text }, deps.now()));
+                return;
+              case "open-query":
+                update((c) => openWindow(c, "query", action.nick, true));
+                return;
+              case "active-lines":
+                for (const text of action.lines) addLine({ kind: "local", text });
+                return;
+              case "clear":
+                // Audit 10.2: empties the Active_Window's buffer, nothing is sent.
+                update((c) => {
+                  const win = getOwn(c.windows, c.activeKey);
+                  return win === undefined
+                    ? c
+                    : { ...c, windows: withEntry(c.windows, c.activeKey, { ...win, lines: [], unread: false, mentioned: false }) };
+                });
+                return;
+              case "channel-list":
+                if (socket === null || get().client.phase !== "registered") {
+                  addLine({ kind: "error", text: "error: not connected to a server" });
+                  return;
+                }
+                get().openChannelList();
+                return;
             }
             return;
+          }
           case "confirm-paste": {
             const { lines, target } = result;
             update((c) => ({ ...c, paste: { ...c.paste, pending: { lines, target } } }));
@@ -637,6 +703,16 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
               if (!sendMessage(s, msg)) return;
               const upper = msg.command.toUpperCase();
               if (upper === "QUIT") quitting = true;
+              // Audit 10.8: `/mode #chan` alone asks for the channel modes; show the 324 in that window.
+              if (upper === "MODE" && msg.params.length === 1) {
+                const channel = msg.params[0];
+                if (channel !== undefined && (channel.startsWith("#") || channel.startsWith("&"))) {
+                  const key = channelKey(channel);
+                  update((c) =>
+                    c.expectingModes.includes(key) ? c : { ...c, expectingModes: [...c.expectingModes, key] },
+                  );
+                }
+              }
               if (upper === "NAMES") {
                 const channel = msg.params[0] ?? (active?.kind === "channel" ? active.name : undefined);
                 if (channel !== undefined) {
@@ -649,7 +725,14 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
             }
             // The Ircd does not echo PRIVMSG to the sender, so show the own line here.
             for (const e of result.echo) {
-              update((c) => appendTo(c, chatKey(e.target), echoSpec(e.text, c.ownNick), deps.now()));
+              update((c) =>
+                appendTo(
+                  c,
+                  chatKey(e.target),
+                  e.notice === true ? { kind: "notice", text: e.text, from: c.ownNick, own: true } : echoSpec(e.text, c.ownNick),
+                  deps.now(),
+                ),
+              );
             }
             // The /quit command already sent QUIT; do not send it a second time.
             if (quitting) closeAfterQuit(false);
@@ -782,6 +865,14 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         if (s === null || get().client.phase !== "registered") return;
         set((st) => ({ ui: { ...st.ui, channelListOpen: true } }));
         requestList(s);
+      },
+
+      announceAgents() {
+        const win = getOwn(get().client.windows, get().client.activeKey);
+        if (win === undefined || win.kind !== "channel") return;
+        const n = Object.values(win.members ?? {}).filter((m) => isKnownAgent(m.nick)).length;
+        const text = n === 0 ? `No agents in ${win.name}` : `${String(n)} agent${n === 1 ? "" : "s"} in ${win.name}`;
+        update((c) => appendTo(c, c.activeKey, { kind: "local", text }, deps.now()));
       },
 
       refreshChannelList() {

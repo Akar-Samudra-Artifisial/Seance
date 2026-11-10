@@ -29,6 +29,7 @@ export function resetForReconnect(state: ClientState): ClientState {
     whoisPending: nullRecord(),
     away: nullRecord(),
     expectingNames: [],
+    expectingModes: [],
     userModes: "",
   };
 }

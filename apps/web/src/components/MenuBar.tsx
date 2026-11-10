@@ -28,7 +28,7 @@ const sep = (id: string): MenuEntry => ({ kind: "separator", id });
 
 const barButtonClass =
   // Frame_01 sets the menu text at the top of the 20 px bar (cap top at y 29, not centred).
-  "hit-target h-5 px-2 pb-[7px] text-left font-chrome text-xs leading-[13px] text-chrome-outline hover:bg-title-from hover:text-chrome-highlight focus-visible:bg-title-from focus-visible:text-chrome-highlight aria-expanded:bg-title-from aria-expanded:text-chrome-highlight aria-disabled:text-chrome-shadow aria-disabled:hover:bg-chrome-face aria-disabled:hover:text-chrome-shadow";
+  "hit-target h-5 px-2 pb-[7px] text-left font-chrome text-xs leading-[13px] text-chrome-outline hover:bg-title-from hover:text-chrome-highlight focus-visible:bg-title-from focus-visible:text-chrome-highlight focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-chrome-highlight aria-expanded:bg-title-from aria-expanded:text-chrome-highlight aria-disabled:text-chrome-shadow aria-disabled:hover:bg-chrome-face aria-disabled:hover:text-chrome-shadow";
 
 /** Slot widths of R5.2 as static classes (File..Help); the order matches MENU_SLOTS. */
 export const SLOT_CLASS = ["w-[42px]", "w-[42px]", "w-[49px]", "w-[69px]", "w-[56px]", "w-[56px]"] as const;
@@ -200,12 +200,12 @@ export function MenuBar(): ReactNode {
         active?.kind === "query" ? `/whois ${active.name}` : "/whois ",
         registered,
         "whois",
-        "Whois…",
+        "Whois",
         NOT_CONNECTED,
       ),
     ],
     commands: [
-      needsArgs("/join #", registered, "join", "Join…", NOT_CONNECTED),
+      needsArgs("/join #", registered, "join", "Join", NOT_CONNECTED),
       {
         kind: "item",
         id: "channel-list",
@@ -214,10 +214,10 @@ export function MenuBar(): ReactNode {
         run: openChannelList,
       },
       command("/part", inChannel, "part", "Part", NOT_IN_CHANNEL),
-      needsArgs("/query ", registered, "query", "Query…", NOT_CONNECTED),
+      needsArgs("/query ", registered, "query", "Query", NOT_CONNECTED),
       command("/names", inChannel, "names", "Names", NOT_IN_CHANNEL),
-      needsArgs("/topic ", inChannel, "topic", "Topic…", NOT_IN_CHANNEL),
-      needsArgs("/away ", registered, "away", "Away…", NOT_CONNECTED),
+      needsArgs("/topic ", inChannel, "topic", "Topic", NOT_IN_CHANNEL),
+      needsArgs("/away ", registered, "away", "Away", NOT_CONNECTED),
       command("/away", registered, "back", "Back", NOT_CONNECTED),
       sep("commands-sep"),
       { kind: "item", id: "cmd-quit", label: "Quit", ...why(registered, NOT_CONNECTED), run: quit },

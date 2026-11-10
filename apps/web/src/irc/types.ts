@@ -167,6 +167,11 @@ export interface ClientState {
   readonly paste: PasteState;
   /** Channels whose NAMES reply came from a user-issued /names. */
   readonly expectingNames: readonly string[];
+  /**
+   * Channels whose next `324` came from a user-issued `/mode #chan` (shown in that channel's window).
+   * After the `324` the entry becomes `created|<key>` so an optional `329` that follows is shown too.
+   */
+  readonly expectingModes: readonly string[];
   /** Own user modes, e.g. `+iw`; "" when unknown. */
   readonly userModes: string;
   /** Channel list data; absent until the first request. While `loading`, 321/322/323 land here. */

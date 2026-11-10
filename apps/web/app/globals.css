@@ -225,9 +225,20 @@ body {
 
 /* Baseline focus ring for every focusable element; components may refine the colour.
    Black on the chrome face (11.5:1); ghost surfaces override with accent orange. */
-:focus-visible {
-  outline: 2px solid var(--color-chrome-outline);
-  outline-offset: 1px;
+/* Audit 10.16: this rule used to sit outside any layer, and unlayered CSS beats Tailwind's layered
+   utilities, so every `focus-visible:outline-ghost-orange` lost and dark surfaces got a black ring on
+   #0b0b0f. In `@layer base` the utilities win again; the second rule gives any focusable element inside a
+   ghost surface the accent ring (orange on Ghost 5.6:1, on Classic white 6.6:1). */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-chrome-outline);
+    outline-offset: 1px;
+  }
+
+  .bg-ghost-bg:focus-visible,
+  .bg-ghost-bg :focus-visible {
+    outline-color: var(--color-ghost-orange);
+  }
 }
 
 /* Win95 scrollbar: 16px, arrow buttons, dithered track, raised thumb. Tokens only.

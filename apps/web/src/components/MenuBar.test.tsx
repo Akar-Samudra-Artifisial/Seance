@@ -189,12 +189,12 @@ describe("MenuBar", () => {
   });
 
   describe("disabled items", () => {
-    // Options… and Favorites had no task behind them and were removed; Tools holds Whois… only.
-    it("has no Options… item: the Tools menu holds only Whois…", () => {
+    // Options… and Favorites had no task behind them and were removed; Tools holds Whois only.
+    it("has no Options… item: the Tools menu holds only Whois", () => {
       setup();
       fireEvent.click(bar("Tools"));
       const menu = screen.getByRole("menu", { name: "Tools" });
-      expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Whois…"]);
+      expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Whois"]);
       expect(screen.queryByRole("menuitem", { name: "Options…" })).toBeNull();
       expect(screen.queryByText("Coming soon")).toBeNull();
     });
@@ -202,14 +202,14 @@ describe("MenuBar", () => {
     it("disables connection-bound items until registered", () => {
       const { store } = setup(false);
       fireEvent.click(bar("Commands"));
-      for (const name of ["Join…", "Part", "Query…", "Names", "Topic…", "Away…", "Back", "Quit"]) {
+      for (const name of ["Join", "Part", "Query", "Names", "Topic", "Away", "Back", "Quit"]) {
         expect(screen.getByRole("menuitem", { name }).getAttribute("aria-disabled")).toBe("true");
       }
-      fireEvent.click(screen.getByRole("menuitem", { name: "Join…" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Join" }));
       expect(store.getState().ui.draft).toBeNull();
     });
 
-    it("disables Part and Names in the Status_Window but not Join…", () => {
+    it("disables Part and Names in the Status_Window but not Join", () => {
       const { store } = setup();
       act(() => {
         store.getState().setActiveWindow("status");
@@ -217,7 +217,7 @@ describe("MenuBar", () => {
       fireEvent.click(bar("Commands"));
       expect(screen.getByRole("menuitem", { name: "Part" }).getAttribute("aria-disabled")).toBe("true");
       expect(screen.getByRole("menuitem", { name: "Names" }).getAttribute("aria-disabled")).toBe("true");
-      expect(screen.getByRole("menuitem", { name: "Join…" }).getAttribute("aria-disabled")).toBeNull();
+      expect(screen.getByRole("menuitem", { name: "Join" }).getAttribute("aria-disabled")).toBeNull();
     });
   });
 
@@ -307,10 +307,53 @@ describe("MenuBar", () => {
       expect(within(list).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Commands", "Window", "Help"]);
       fireEvent.click(within(list).getByRole("menuitem", { name: "Commands" }));
       const commands = screen.getByRole("menu", { name: "Commands" });
-      expect(within(commands).getByRole("menuitem", { name: "Join…" })).toBeTruthy();
+      expect(within(commands).getByRole("menuitem", { name: "Join" })).toBeTruthy();
       fireEvent.keyDown(commands, { key: "Escape" });
       expect(screen.queryByRole("menu")).toBeNull();
       expect(document.activeElement).toBe(more);
+    });
+
+    it("each entry of the » list opens its own menu, never another one (audit 10.7)", () => {
+      narrow(280);
+      setup();
+      for (const name of ["Commands", "Window", "Help"]) {
+        fireEvent.click(screen.getByRole("menuitem", { name: "More menus" }));
+        const list = screen.getByRole("menu", { name: "More menus" });
+        fireEvent.click(within(list).getByRole("menuitem", { name }));
+        const menus = screen.getAllByRole("menu");
+        expect(menus.map((m) => m.getAttribute("aria-label"))).toEqual([name]);
+        fireEvent.keyDown(menus[0] as HTMLElement, { key: "Escape" });
+        expect(screen.queryByRole("menu")).toBeNull();
+      }
+    });
+
+    it("closes the » list on an outside press and on Esc, and keeps it inside the viewport (audit 10.18)", () => {
+      narrow(280);
+      setup();
+      fireEvent.click(screen.getByRole("menuitem", { name: "More menus" }));
+      expect(screen.getByRole("menu", { name: "More menus" })).toBeTruthy();
+      fireEvent.pointerDown(document.body);
+      expect(screen.queryByRole("menu")).toBeNull();
+
+      fireEvent.click(screen.getByRole("menuitem", { name: "More menus" }));
+      fireEvent.keyDown(screen.getByRole("menu", { name: "More menus" }), { key: "Escape" });
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+
+    it("shifts a drop-down that sticks out of the viewport back inside", () => {
+      Object.defineProperty(document.documentElement, "clientWidth", { value: 300, configurable: true });
+      HTMLElement.prototype.getBoundingClientRect = function rect(this: HTMLElement): DOMRect {
+        const wide = this.getAttribute("role") === "menu";
+        const [left, right] = wide ? [-30, 146] : [0, 280];
+        return { x: left, y: 0, top: 0, left, right, bottom: 20, width: right - left, height: 20, toJSON: () => ({}) };
+      };
+      try {
+        setup();
+        fireEvent.click(screen.getByRole("menuitem", { name: "More menus" }));
+        expect(screen.getByRole("menu", { name: "More menus" }).style.transform).toBe("translateX(30px)");
+      } finally {
+        Reflect.deleteProperty(document.documentElement, "clientWidth");
+      }
     });
 
     it("keeps keyboard order: ArrowRight from the last visible menu lands on »; Alt+mnemonic still opens hidden menus", () => {
@@ -336,10 +379,10 @@ describe("MenuBar", () => {
 
   describe("Input_Line prefill", () => {
     it.each([
-      ["Commands", "Join…", "/join #"],
-      ["Commands", "Query…", "/query "],
-      ["Commands", "Topic…", "/topic "],
-      ["Tools", "Whois…", "/whois "],
+      ["Commands", "Join", "/join #"],
+      ["Commands", "Query", "/query "],
+      ["Commands", "Topic", "/topic "],
+      ["Tools", "Whois", "/whois "],
     ])("%s › %s puts %j into the draft", (menu, item, draft) => {
       const { store } = setup();
       fireEvent.click(bar(menu));

@@ -51,7 +51,8 @@ describe("NickList", () => {
     const items = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(items.map((li) => li.textContent)).toEqual(["@me", "coder"]);
     expect(items[1]?.className).toContain("line-through");
-    expect(screen.getByText("1 users · 0 agents")).toBeTruthy();
+    // Audit 10.18: singular for one.
+    expect(screen.getByText("1 user · 0 agents")).toBeTruthy();
   });
 
   it("handles an empty or missing member set", () => {

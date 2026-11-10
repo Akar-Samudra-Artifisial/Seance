@@ -72,7 +72,7 @@ test("op1 invites coder, voices it, gets a reply, then exorcises it", async ({ p
   // The exorcised agent leaves the member count and stays as a struck-through ghost row (R11.6).
   await expect(members.getByText(/^[@+]coder$/)).toHaveCount(0);
   await expect(members.locator("li.line-through", { hasText: /^coder$/ })).toHaveCount(1);
-  await expect(members).toHaveAccessibleName(/\(1 users\)/);
+  await expect(members).toHaveAccessibleName(/\(1 user\)/);
 });
 
 test("window titles, menus, minimise/restore and status bar", async ({ page }) => {
@@ -94,7 +94,7 @@ test("window titles, menus, minimise/restore and status bar", async ({ page }) =
   const menubar = page.getByRole("menubar", { name: "Main menu" });
   await expect(menubar.getByRole("menuitem")).toHaveText(["File", "View", "Tools", "Commands", "Window", "Help"]);
   await menubar.getByRole("menuitem", { name: "Tools" }).click();
-  await expect(page.getByRole("menu", { name: "Tools" }).getByRole("menuitem")).toHaveText(["Whois…"]);
+  await expect(page.getByRole("menu", { name: "Tools" }).getByRole("menuitem")).toHaveText(["Whois"]);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Options" })).toHaveCount(0);
@@ -120,6 +120,18 @@ test("window titles, menus, minimise/restore and status bar", async ({ page }) =
   await bar.getByRole("button", { name: "Restore", exact: true }).click();
   await expect(bar).toHaveCount(0);
   await expect(page.getByRole("region", { name: "#chrome window" })).toBeVisible();
+
+  // Audit 10.15: Tab and Shift+Tab leave the input line when there is nothing to complete.
+  const input = page.getByLabel("Message or command");
+  await input.focus();
+  await input.pressSequentially("zzz");
+  await page.keyboard.press("Tab");
+  await expect(input).not.toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(input).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(input).not.toBeFocused();
+  await input.fill("");
 });
 
 test("Credits_Counter follows a WHOIS of the fake agent", async ({ page }) => {
@@ -162,5 +174,5 @@ test("a kick without a reason shows the exorcism line without brackets", async (
   await expect(exorcised.getByRole("img", { name: "exorcised" })).toBeVisible();
   await expect(members.getByText(/^[@+]coder$/)).toHaveCount(0);
   await expect(members.locator("li.line-through", { hasText: /^coder$/ })).toHaveCount(1);
-  await expect(members).toHaveAccessibleName(/\(1 users\)/);
+  await expect(members).toHaveAccessibleName(/\(1 user\)/);
 });

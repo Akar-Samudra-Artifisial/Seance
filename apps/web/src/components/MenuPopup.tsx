@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { plain } from "../irc/index.js";
 
@@ -36,7 +36,7 @@ export interface MenuPopupProps {
 }
 
 const itemClass =
-  "flex w-full items-center gap-1 px-4 py-0.5 text-left font-chrome text-xs text-chrome-outline hover:bg-title-from hover:text-chrome-highlight focus:bg-title-from focus:text-chrome-highlight aria-disabled:text-chrome-shadow aria-disabled:hover:bg-chrome-face aria-disabled:hover:text-chrome-shadow aria-disabled:focus:bg-title-from aria-disabled:focus:text-chrome-face";
+  "flex w-full items-center gap-1 px-4 py-0.5 text-left font-chrome text-xs text-chrome-outline hover:bg-title-from hover:text-chrome-highlight focus:bg-title-from focus:text-chrome-highlight focus-visible:-outline-offset-2 focus-visible:outline-chrome-highlight aria-disabled:text-chrome-shadow aria-disabled:hover:bg-chrome-face aria-disabled:hover:text-chrome-shadow aria-disabled:focus:bg-title-from aria-disabled:focus:text-chrome-face";
 
 /** Win95 drop-down list: `role="menu"` with roving focus, arrow keys, Home/End and type-ahead. */
 export function MenuPopup(props: MenuPopupProps): ReactNode {
@@ -45,6 +45,18 @@ export function MenuPopup(props: MenuPopupProps): ReactNode {
 
   const buttons = (): HTMLButtonElement[] =>
     Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button[role^='menuitem']") ?? []);
+
+  // Audit 10.18: keep the drop-down inside the viewport (a `»` list in Compact is the case that matters).
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    const vw = document.documentElement.clientWidth;
+    if (el === null || vw === 0) return;
+    const r = el.getBoundingClientRect();
+    let dx = 0;
+    if (r.right > vw) dx = vw - r.right;
+    if (r.left + dx < 0) dx = -r.left;
+    if (dx !== 0) el.style.transform = `translateX(${String(Math.round(dx))}px)`;
+  }, []);
 
   useEffect(() => {
     const list = buttons();

@@ -80,4 +80,27 @@ describe("StatusBar", () => {
     });
     expect(screen.getByRole("status").textContent).toContain("Connecting…");
   });
+
+  // Audit 10.18: singular counts, and a title on every text panel for when it is cut short.
+  it("uses the singular for one agent and one op", () => {
+    const t = setup(WS, true);
+    act(() => {
+      t.connect();
+      t.recv(":alice!a@h JOIN #dev");
+      t.recv(":srv 353 alice = #dev :@alice coder");
+      t.recv(":srv 366 alice #dev :End of /NAMES list");
+    });
+    expect(screen.getByRole("status").textContent).toContain("1 agent · 0 away · 1 op");
+    expect(screen.getByRole("status").textContent).not.toContain("1 agents");
+  });
+
+  it("gives the connection and counts panels a title with their full text", () => {
+    const t = setup(WS, true);
+    act(() => {
+      t.connect();
+    });
+    const panels = Array.from(screen.getByRole("status").querySelectorAll("span[title]"));
+    expect(panels.map((p) => p.getAttribute("title"))).toEqual(panels.map((p) => p.textContent));
+    expect(panels.length).toBeGreaterThanOrEqual(3);
+  });
 });

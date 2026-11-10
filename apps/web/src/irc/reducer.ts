@@ -32,6 +32,7 @@ import { dropAway, moveAway, onAwayReply, onInboundAway, onSelfAway } from "./re
 import {
   applyChannelModeChange,
   applyUserModeChange,
+  onChannelCreated,
   onChannelModeReply,
   onUserModeReply,
 } from "./reducer.modes.js";
@@ -380,8 +381,21 @@ function route(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult
     case "MODE":
       return onMode(state, msg, nowMs);
     case "324": {
-      const next = onChannelModeReply(state, msg);
+      const next = onChannelModeReply(state, msg, nowMs);
       return next === undefined ? statusLine(state, msg, nowMs) : done(next);
+    }
+    case "329":
+      return done(onChannelCreated(state, msg, nowMs));
+    case "367": // RPL_BANLIST <me> <channel> <mask>: into the channel's window
+    case "368": {
+      const channel = msg.params[1];
+      const key = channel === undefined ? undefined : channelKey(channel);
+      if (channel === undefined || key === undefined || getOwn(state.windows, key)?.kind !== "channel") {
+        return statusLine(state, msg, nowMs);
+      }
+      const text =
+        msg.command === "367" ? `Ban on ${channel}: ${msg.params[2] ?? ""}` : `End of the ban list of ${channel}`;
+      return done(appendTo(state, key, { kind: "mode", text }, nowMs));
     }
     case "221": {
       const next = onUserModeReply(state, msg);

@@ -21,6 +21,14 @@ export interface Completion {
 
 const START_SUFFIX = ": ";
 
+/** True while `cycle` still describes the text before the caret, i.e. another Tab would step to the next nick. */
+export function cycleActive(input: string, caret: number, cycle: CompletionCycle | null): boolean {
+  if (cycle === null || cycle.matches.length === 0) return false;
+  const at = Math.max(0, Math.min(caret, input.length));
+  const end = cycle.start + cycle.inserted.length;
+  return at === end && input.slice(cycle.start, end) === cycle.inserted;
+}
+
 function insertion(nick: string, start: number): string {
   return start === 0 ? nick + START_SUFFIX : nick;
 }
@@ -35,13 +43,14 @@ export function completeNick(
   caret: number,
   nicks: readonly string[],
   cycle: CompletionCycle | null,
+  step: 1 | -1 = 1,
 ): Completion {
   const at = Math.max(0, Math.min(caret, input.length));
 
   if (cycle !== null && cycle.matches.length > 0) {
     const end = cycle.start + cycle.inserted.length;
     if (at === end && input.slice(cycle.start, end) === cycle.inserted) {
-      const index = (cycle.index + 1) % cycle.matches.length;
+      const index = (cycle.index + step + cycle.matches.length) % cycle.matches.length;
       const nick = cycle.matches[index] as string;
       const inserted = insertion(nick, cycle.start);
       return {

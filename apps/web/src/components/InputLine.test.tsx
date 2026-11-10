@@ -104,4 +104,30 @@ describe("InputLine", () => {
     // Cycle was reset: the word before the caret is now "hi coder", which matches nothing new.
     expect(input.value).toBe("hi coder");
   });
+
+  // Audit 10.15: Tab and Shift+Tab are not a keyboard trap.
+  it("lets Tab move focus when there is nothing to complete", () => {
+    const { input } = setup();
+    for (const value of ["", "hello ", "zzz"]) {
+      type(input, value);
+      expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true); // not default-prevented
+      expect(input.value).toBe(value);
+    }
+  });
+
+  it("lets Shift+Tab move focus back, unless it steps through an active completion", () => {
+    const { input } = setup();
+    type(input, "co");
+    expect(fireEvent.keyDown(input, { key: "Tab", shiftKey: true })).toBe(true);
+    expect(input.value).toBe("co");
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(input.value).toBe("coder: ");
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(input.value).toBe("cora: ");
+    expect(fireEvent.keyDown(input, { key: "Tab", shiftKey: true })).toBe(false);
+    expect(input.value).toBe("coder: ");
+    // After another key the cycle is over and Shift+Tab leaves the field again.
+    fireEvent.keyDown(input, { key: "x" });
+    expect(fireEvent.keyDown(input, { key: "Tab", shiftKey: true })).toBe(true);
+  });
 });

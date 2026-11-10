@@ -6,7 +6,7 @@ import type { ShortcutGroup } from "../shortcuts/shortcuts.js";
 import { useClientStore } from "../store/react.js";
 import { Dialog } from "./Dialog.js";
 
-const GROUPS: readonly ShortcutGroup[] = ["Windows", "Menus", "Toolbar", "Input line", "Dialogs"];
+const GROUPS: readonly ShortcutGroup[] = ["Windows", "Menus", "Toolbar", "Nick list", "Input line", "Dialogs"];
 
 /** Help → Keyboard shortcuts. Every row comes from `SHORTCUTS`, the registry the handlers use. */
 export function ShortcutsDialog(): ReactNode {

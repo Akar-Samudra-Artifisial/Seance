@@ -25,6 +25,12 @@ export function ConnectDialog(): ReactNode {
   const storedNick = useClientStore((s) => s.ui.storedNick);
   const storedUrl = useClientStore((s) => s.ui.serverUrl);
   const [nick, setNick] = useState(storedNick ?? "");
+  // Audit 10.3: the nick the server confirmed (and a later /nick) is the next prefill, also after a Quit.
+  const [seenStoredNick, setSeenStoredNick] = useState(storedNick);
+  if (storedNick !== seenStoredNick) {
+    setSeenStoredNick(storedNick);
+    setNick(storedNick ?? "");
+  }
   const [serverUrl, setServerUrl] = useState(storedUrl);
   const [password, setPassword] = useState("");
   const connectRequests = useClientStore((s) => s.ui.connectRequests);

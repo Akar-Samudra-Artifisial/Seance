@@ -8,6 +8,11 @@ import type { ClientState, ExorcismParts, Member, Window } from "./types.js";
 export { parseCreditsLine } from "./credits.js";
 export type { CreditsLine } from "./credits.js";
 
+/** `1 agent`, `2 agents`, `0 agents` (audit 10.18). */
+export function pluralise(count: number, noun: string): string {
+  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 export interface StatusCounts {
   readonly agents: number;
   readonly away: number;
