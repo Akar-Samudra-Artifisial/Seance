@@ -4,7 +4,7 @@ function banKey(channel: string, nick: string): string {
   return `${irc_lower(channel)}\0${irc_lower(nick)}`;
 }
 
-/** Runner-level per-channel agent bans (the ircd has no `+b`). Keys use `irc_lower`. */
+/** Runner-level per-channel agent bans (fed by the ircd's `MODE +b`/`-b` events, see `banNickOf` in runner.ts). Keys use `irc_lower`. */
 export class BanList {
   readonly #keys = new Set<string>();
 

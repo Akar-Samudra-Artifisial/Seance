@@ -5,10 +5,11 @@ import type { Client } from "../client.js";
 import type { CommandRouter, RouterContext } from "../command-router.js";
 import { reflectedReply } from "../replies.js";
 import type { IrcModeEvent } from "../event-bus.js";
+import { BANS_MAX, normalizeBanMask } from "../ban-mask.js";
 
 /** Channel flags without an argument: `m` moderated, `n` no external messages, `t` topic lock. */
 type FlagMode = "m" | "n" | "t";
-type ChannelModeChar = "o" | "v" | FlagMode;
+type ChannelModeChar = "o" | "v" | "b" | FlagMode;
 
 /** One validated mode change, ready to apply. */
 type ModeChange = {
@@ -16,6 +17,8 @@ type ModeChange = {
   readonly adding: boolean;
   /** Target member id and nick (as stored by the server) for `o`/`v`. */
   readonly target?: { readonly id: string; readonly nick: string };
+  /** Normalised ban mask for `b`. */
+  readonly mask?: string;
 };
 
 const FLAG_FIELD: Readonly<Record<FlagMode, "moderated" | "noExternal" | "topicLock">> = {
@@ -101,7 +104,7 @@ function validateChanges(
       changes.push({ mode: ch, adding });
       continue;
     }
-    if (ch !== "o" && ch !== "v") {
+    if (ch !== "o" && ch !== "v" && ch !== "b") {
       numeric(ctx, client, Numerics.ERR_UNKNOWNMODE, ch, "is unknown mode char to me"); // Req 9.8
       return null;
     }
@@ -110,6 +113,24 @@ function validateChanges(
     if (nick === undefined) {
       numeric(ctx, client, Numerics.ERR_NEEDMOREPARAMS, "MODE", "Not enough parameters"); // Req 9.7
       return null;
+    }
+    if (ch === "b") {
+      // public-hardening follow-up (audit 10.11): `+b <nick|mask>` keeps a nick out of the channel and
+      // away from INVITE; the runner mirrors it into its ban list.
+      const mask = normalizeBanMask(nick);
+      if (mask === undefined) {
+        // No standard numeric fits an invalid mask (461 is for a missing parameter): say so in a NOTICE.
+        // eslint-disable-next-line no-control-regex
+        const shown = nick.replace(/[\x00-\x1f\x7f]/g, "?").slice(0, 60);
+        client.send({
+          prefix: ctx.serverName,
+          command: "NOTICE",
+          params: [client.nick ?? "*", `Invalid ban mask "${shown}": use nick, nick!user@host or user@host (at most 100 characters, no spaces)`],
+        });
+        return null;
+      }
+      changes.push({ mode: "b", adding, mask });
+      continue;
     }
     const target = ctx.connections.getByNick(nick);
     if (target === undefined || !channel.members.has(target.id)) {
@@ -131,7 +152,13 @@ function groupedMessages(prefix: string, channel: string, applied: readonly Mode
     command: "MODE",
     params: [
       channel,
-      ...groupChanges(applied.map((c) => ({ mode: c.mode, adding: c.adding, ...(c.target === undefined ? {} : { nick: c.target.nick }) }))),
+      ...groupChanges(
+        applied.map((c) => ({
+          mode: c.mode,
+          adding: c.adding,
+          ...(c.target !== undefined ? { nick: c.target.nick } : c.mask !== undefined ? { nick: c.mask } : {}),
+        })),
+      ),
     ],
   };
   try {
@@ -166,6 +193,17 @@ function handleMode(ctx: RouterContext, client: Client, msg: IrcMessage): void {
     return;
   }
 
+  // `MODE <channel> b` asks for the ban list (367 per mask, then 368); any member may ask.
+  if (/^\+?b$/.test(modeString) && msg.params.length === 2) {
+    if (!channel.members.has(client.id)) {
+      reflectedReply(ctx, client, Numerics.ERR_NOTONCHANNEL, [channel.name], "You're not on that channel");
+      return;
+    }
+    for (const mask of channel.bans) numeric(ctx, client, Numerics.RPL_BANLIST, channel.name, mask);
+    numeric(ctx, client, Numerics.RPL_ENDOFBANLIST, channel.name, "End of channel ban list");
+    return;
+  }
+
   if (!ctx.channels.isOp(channel.name, client.id)) {
     reflectedReply(ctx, client, Numerics.ERR_CHANOPRIVSNEEDED, [channel.name], "You're not channel operator"); // Req 9.6
     return;
@@ -181,6 +219,18 @@ function handleMode(ctx: RouterContext, client: Client, msg: IrcMessage): void {
       const field = FLAG_FIELD[change.mode];
       if (channel.modes[field] === change.adding) continue;
       channel.modes[field] = change.adding;
+      applied.push(change);
+    } else if (change.mode === "b" && change.mask !== undefined) {
+      if (change.adding) {
+        if (channel.bans.has(change.mask)) continue; // a duplicate stays silent
+        if (channel.bans.size >= BANS_MAX) {
+          numeric(ctx, client, Numerics.ERR_BANLISTFULL, channel.name, change.mask, "Channel ban list is full");
+          continue;
+        }
+        channel.bans.add(change.mask);
+      } else if (!channel.bans.delete(change.mask)) {
+        continue;
+      }
       applied.push(change);
     } else if (change.target !== undefined) {
       const membership = channel.members.get(change.target.id);
@@ -201,13 +251,14 @@ function handleMode(ctx: RouterContext, client: Client, msg: IrcMessage): void {
 
   // Req 9.10: the runner port knows o, v and m only; n and t publish no event.
   for (const change of applied) {
-    if (change.mode !== "o" && change.mode !== "v" && change.mode !== "m") continue;
+    if (change.mode !== "o" && change.mode !== "v" && change.mode !== "m" && change.mode !== "b") continue;
+    const eventTarget = change.target?.nick ?? change.mask;
     const event: IrcModeEvent = {
       channel: channel.name,
       by: client.nick ?? "*",
       mode: change.mode,
       adding: change.adding,
-      ...(change.target === undefined ? {} : { target: change.target.nick }),
+      ...(eventTarget === undefined ? {} : { target: eventTarget }),
     };
     ctx.events?.publish("irc.mode", event);
   }

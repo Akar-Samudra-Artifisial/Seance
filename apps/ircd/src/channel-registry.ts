@@ -16,6 +16,8 @@ export type Channel = {
    * `join`; a later invite-only mode may use it.
    */
   readonly invited: Set<string>;
+  /** Ban masks (`+b`), normalised `nick!user@host`, lower-case; see `ban-mask.ts`. */
+  readonly bans: Set<string>;
 };
 
 /** Outcome of {@link ChannelRegistry.join}. */
@@ -65,6 +67,7 @@ export class ChannelRegistry {
         modes: { moderated: false, noExternal: true, topicLock: true },
         members: new Map([[clientId, { op: true, voice: false }]]),
         invited: new Set(),
+        bans: new Set(),
       };
       this.channels.set(key, channel);
       return { kind: "created", channel };

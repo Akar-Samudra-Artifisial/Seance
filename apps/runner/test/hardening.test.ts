@@ -106,9 +106,17 @@ describe("AgentOutput redaction and control stripping (2)", () => {
     out.say("#c", "a\x03" + "04red\x02bold\x1b[31m\x07bell\x7fdel\x0Fend\ttab");
     out.channelNotice("#c", "n\x03" + "09x\x1b\x01y");
     const say = sent[0]?.params[1] ?? "";
-    expect(say).toBe("\x0304a04redbold[31mbelldelendtab\x0F");
+    expect(say).toBe("\x0304aredbold[31mbelldelendtab\x0F");
     const notice = sent[1]?.params[1] ?? "";
-    expect(notice).toBe("n09xy");
+    expect(notice).toBe("nxy");
+  });
+
+  it("removes an agent's own colour code whole, so no digits are left in front of the text (audit 10.6)", () => {
+    const { out, sent } = make();
+    out.say("#c", "\x0312The veil is thin tonight.\x0F");
+    out.say("#c", "\x034,12warm\x03 words");
+    expect(sent[0]?.params[1]).toBe("\x0304The veil is thin tonight.\x0F");
+    expect(sent[1]?.params[1]).toBe("\x0304warm words\x0F");
   });
 
   it("a secret obfuscated with control characters is still redacted", () => {

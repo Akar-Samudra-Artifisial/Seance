@@ -342,6 +342,33 @@ describe("exorcism (agent-runner Req 9)", () => {
   );
 
   it(
+    "MODE +b on an agent nick reaches the runner's ban list: the ircd refuses the invite with 474 and the resolver stops claiming it (audit 10.11)",
+    async () => {
+      const w = await setup();
+      await w.op.join("#haunt");
+
+      w.op.send("MODE #haunt +b coder");
+      await w.op.waitFor(/MODE #haunt \+b coder!\*@\*$/);
+      // The runner's resolver was told through the irc.mode event.
+      await until(w, "the runner to mirror the ban", () => !w.fx.runner.inviteResolver("coder", "#haunt", "op"));
+      w.op.send("INVITE coder #haunt");
+      await w.op.waitFor(/^:\S+ 474 \S+ #haunt :coder is banned from #haunt \(\+b\)$/);
+      expect(await w.op.expectNone(/^:\S+ 341 /)).toBe(true);
+      expect(joinedCount(w, "#haunt")).toBe(0);
+      expect(w.fx.server.ctx.connections.getByNick("coder")).toBeUndefined();
+
+      // Lifting the ban lets the same invite through, in the ircd and in the runner.
+      w.op.send("MODE #haunt -b coder");
+      await w.op.waitFor(/MODE #haunt -b coder!\*@\*$/);
+      await until(w, "the runner to lift the ban", () => w.fx.runner.inviteResolver("coder", "#haunt", "op"));
+      w.op.send("INVITE coder #haunt");
+      await w.op.waitFor(/^:\S+ 341 /);
+      await until(w, "coder to join", () => joinedCount(w, "#haunt") === 1);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
     "a ban does not exorcise; an online agent is refused with a NOTICE and stays out",
     async () => {
       const w = await setup();

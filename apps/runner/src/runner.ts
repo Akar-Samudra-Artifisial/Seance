@@ -116,6 +116,18 @@ export interface Runner {
   agentNicks(): readonly string[];
 }
 
+/**
+ * The nick a ban mask names when it names exactly one nick: `coder`, `coder!*@*`. Masks with wildcards
+ * in the nick part or a specific user or host are the ircd's business and do not enter the Ban_List.
+ */
+export function banNickOf(mask: string): string | undefined {
+  const bang = mask.indexOf("!");
+  const nick = bang === -1 ? mask : mask.slice(0, bang);
+  const rest = bang === -1 ? "*@*" : mask.slice(bang + 1);
+  if (nick === "" || /[*?]/.test(nick) || !/^\*+@\*+$/.test(rest)) return undefined;
+  return nick;
+}
+
 const SETTLE_POLL_MS = 25;
 const SETTLE_MAX_MS = 30_000;
 
@@ -598,8 +610,17 @@ export function createRunner(opts: RunnerOptions): Runner {
         const roster = registry.all().map((p) => ({ nick: p.nick, status: agentStatus(snapshot.get(p.nick)) }));
         services.nickServ(e.nick, agentsOnline(roster));
       }),
-      // Modes are read live through `host.modeOf`; the event is only traced.
+      // Modes are read live through `host.modeOf`; the event is only traced, except `b`: a channel ban
+      // on an agent nick (`/ban coder` is `MODE #chan +b coder`) goes into the Ban_List, so the invite
+      // resolver stops claiming that nick for the channel (it does not exorcise; use /kick for that).
       host.subscribe("irc.mode", (e) => {
+        if (e.mode === "b" && e.target !== undefined) {
+          const nick = banNickOf(e.target);
+          if (nick !== undefined && registry.lookup(nick) !== undefined) {
+            if (e.adding) bans.add(e.channel, nick);
+            else bans.remove(e.channel, nick);
+          }
+        }
         logger.debug("channel mode changed", {
           channel: e.channel,
           mode: e.mode,

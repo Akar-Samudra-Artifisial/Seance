@@ -13,8 +13,8 @@ export type IrcModeEvent = {
   readonly channel: string;
   /** Nick of the operator who made the change. */
   readonly by: string;
-  /** Mode letter without sign: `o`, `v` or `m`. */
-  readonly mode: "o" | "v" | "m";
+  /** Mode letter without sign: `o`, `v`, `m` or `b`. */
+  readonly mode: "o" | "v" | "m" | "b";
   readonly adding: boolean;
   /** Target nick for `o`/`v`; undefined for channel-wide modes such as `m`. */
   readonly target?: string;

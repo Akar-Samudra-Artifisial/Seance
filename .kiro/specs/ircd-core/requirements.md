@@ -152,6 +152,14 @@
 8. IF a mode change uses a mode character other than `o`, `v`, or `m`, THEN THE IRCd SHALL reply `472 ERR_UNKNOWNMODE` and SHALL make no change to any channel or member flag.
 9. IF a mode change names a target nick that is not a member of the named existing channel, THEN THE IRCd SHALL reply `441 ERR_USERNOTINCHANNEL` and SHALL make no change to any channel or member flag.
 10. WHEN the IRCd successfully applies a mode change, THE IRCd SHALL publish a mode-change event identifying the channel, the affected mode, and any target member for other components.
+11. WHEN a channel operator sends `MODE <channel> +b <nick|mask>` or `-b`, THE IRCd SHALL add or remove the ban mask (normalised to `nick!user@host`, rfc1459 case-mapped, at most 50 per channel) and broadcast the change; a non-operator SHALL receive `482 ERR_CHANOPRIVSNEEDED`. (Audit 10.11)
+12. WHEN a member sends `MODE <channel> b` or `MODE <channel> +b`, THE IRCd SHALL reply one `367 RPL_BANLIST` per mask and end with `368 RPL_ENDOFBANLIST`.
+13. IF a client whose `nick!user@host` matches a ban mask sends `JOIN` for the channel, THEN THE IRCd SHALL reply `474 ERR_BANNEDFROMCHAN` and SHALL NOT join the client.
+14. IF `INVITE` names a nick matching a ban mask of the channel, THEN THE IRCd SHALL reply `474 ERR_BANNEDFROMCHAN` and SHALL NOT deliver the invite or resolve an agent.
+15. WHEN the IRCd applies `+b` or `-b`, THE IRCd SHALL publish the mode-change event with the mask as target, so that the runner can mirror bans of agent nicks into its ban list.
+16. THE IRCd SHALL match ban masks with an iterative glob matcher (`*` and `?`, no regular expression, O(pattern x text)) and SHALL collapse runs of `*` when it stores a mask, so that a hostile mask cannot block the event loop. (Audit 10.13)
+17. IF the argument of `+b` is not a valid mask, THEN THE IRCd SHALL send the client a server `NOTICE` naming the mask and SHALL NOT answer `461`; IF the channel already holds 50 masks, THEN THE IRCd SHALL reply `478 ERR_BANLISTFULL` (`<channel> <mask> :Channel ban list is full`); a duplicate mask SHALL be ignored silently. (Audit 10.14)
+18. THE documentation SHALL state that the `user` part of `nick!user@host` is client-supplied (so `*!user@*` bans are weak), that a nick ban can be dodged by a nick change, and that host bans are recommended. The ircd's `474` check is the authority for JOIN and INVITE; the runner needs no start-up mirror because ircd state and the runner live in one process and bans exist only after start.
 
 ### Requirement 10: KICK
 

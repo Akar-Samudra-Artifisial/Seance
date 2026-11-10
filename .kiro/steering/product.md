@@ -15,7 +15,7 @@ Séance is a 1995-style IRC client and server for commanding a team of AI agents
   - channel = isolated task with its own git worktree
   - `+o` = may write (edit, commit, shell); `+v` = may speak; no mode = listen only
   - `/kick` = hard stop (cancel session, reset worktree, keep the log)
-  - `/ban` = agent cannot be invited
+  - `/ban` = `MODE #chan +b <nick>` (`/unban` = `-b`): the agent cannot be invited or join; the runner mirrors the ban into its ban list
   - `/whois` = model, tools, status, credits
 - Stay protocol-compatible: irssi and HexChat must be able to connect, and humans and agents are peers.
 - Deliver a retro, keyboard-first web client with tasteful Halloween touches.

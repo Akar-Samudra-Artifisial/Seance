@@ -3,6 +3,7 @@ import type { IrcMessage } from "@seance/irc-protocol";
 import type { Client } from "../client.js";
 import type { CommandRouter, RouterContext } from "../command-router.js";
 import { reflectedReply } from "../replies.js";
+import { isBanned } from "../ban-mask.js";
 import { buildNamesReplies } from "../names.js";
 import { sendTopicReply } from "../topic-reply.js";
 
@@ -10,6 +11,15 @@ import { sendTopicReply } from "../topic-reply.js";
 function joinOne(ctx: RouterContext, client: Client, name: string): void {
   if (!isValidChannel(name)) {
     reflectedReply(ctx, client, Numerics.ERR_NOSUCHCHANNEL, [name], "No such channel"); // Req 5.4
+    return;
+  }
+  const existing = ctx.channels.get(name);
+  if (
+    existing !== undefined &&
+    !existing.members.has(client.id) &&
+    isBanned(existing.bans, client.nick ?? "*", client.user ?? client.nick ?? "*", client.host ?? ctx.serverName)
+  ) {
+    reflectedReply(ctx, client, Numerics.ERR_BANNEDFROMCHAN, [existing.name], "Cannot join channel (+b)");
     return;
   }
   const result = ctx.channels.join(client.id, name, client.nick); // creator gets +o (Req 5.1)

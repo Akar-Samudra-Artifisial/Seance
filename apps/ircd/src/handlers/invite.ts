@@ -4,6 +4,7 @@ import type { Client } from "../client.js";
 import { nowMs } from "../clock.js";
 import type { CommandRouter, RouterContext } from "../command-router.js";
 import { awayReply, prefixOf, reflectedReply } from "../replies.js";
+import { isBanned } from "../ban-mask.js";
 
 /**
  * Ask the resolver whether it claims an unconnected nick. Only a synchronous
@@ -73,6 +74,27 @@ function handleInvite(ctx: RouterContext, client: Client, msg: IrcMessage): void
   const inviterNick = client.nick ?? "*";
   const found = ctx.connections.getByNick(targetParam);
   const target = found !== undefined && found.registered ? found : undefined;
+
+  // A banned nick cannot be invited (`MODE +b`, audit 10.11): a clear 474 instead of a silent invite.
+  const banned =
+    target !== undefined
+      ? isBanned(
+          channel.bans,
+          target.nick ?? targetParam,
+          target.user ?? target.nick ?? targetParam,
+          target.host ?? ctx.serverName,
+        )
+      : isBanned(channel.bans, targetParam);
+  if (banned) {
+    reflectedReply(
+      ctx,
+      client,
+      Numerics.ERR_BANNEDFROMCHAN,
+      [channel.name],
+      `${targetParam} is banned from ${channel.name} (+b)`,
+    );
+    return;
+  }
 
   let targetNick: string;
   if (target !== undefined) {

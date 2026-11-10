@@ -22,8 +22,15 @@ export function budgetFor(prefix: string, target: string): number {
  * and DEL. The runner adds its own colour codes after this step, so agent text can never carry any.
  */
 export function stripControls(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/[\u0000-\u001F\u007F]/g, "");
+  // A colour code is `\x03` plus up to two digits and an optional `,NN` background: remove it whole,
+  // otherwise `\x0312The veil` would leave a literal "12" in front of the text (audit 10.6).
+  return (
+    text
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x03(?:\d{1,2}(?:,\d{1,2})?)?/g, "")
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001F\u007F]/g, "")
+  );
 }
 
 function colorCode(color: number): string {

@@ -45,7 +45,8 @@ export interface HostEvents {
   "irc.mode": {
     channel: string;
     by: string;
-    mode: "o" | "v" | "m";
+    /** `b` carries the ban mask (`nick!user@host`) in `target`. */
+    mode: "o" | "v" | "m" | "b";
     adding: boolean;
     target?: string;
   };
