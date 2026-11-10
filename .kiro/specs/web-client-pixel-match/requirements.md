@@ -160,7 +160,7 @@ Figma file: `GFgFsC9HEkntrirqCmJP5I` (Séance). Layout values come from one Figm
 
 1. THE Status button SHALL show the Status icon (`switch-status`), a channel button the `#` icon (`switch-channel`), a query button the ghost (`switch-query`), 12 px, with 4 px between icon and text.
 2. THE active button SHALL be bold and sunken; a button with unread lines SHALL use `#000080` text; a button with a mention SHALL use the accent orange. These existing rules stay.
-3. THE credits panel SHALL be a 160x22 sunken panel with the candle slice at 7,6 (10x10), the text `credits: ` in IBM Plex Mono 13 from x 22, and the value in bold, in HTML, with the value formatted with one decimal as before. It SHALL carry `role="status"` semantics as today.
+3. THE credits panel SHALL be a 160x22 sunken panel with the candle slice at 7,6 (10x10), the text `credits: ` in IBM Plex Mono 13 from x 22, and the value in bold, in HTML, with the value formatted with two decimals (changed 2026-11-10 from one decimal: a typical prompt costs 0.01 to 0.05 credits, so one decimal read `0.0`; Frame_01 shows `42.7`, the app now shows `42.70`). It SHALL carry `role="status"` semantics as today.
 
 ### Requirement 9: WHOIS separators stay; no empty chat lines
 

@@ -7,7 +7,8 @@ import { useClientStore } from "../store/react.js";
 
 /**
  * Credits panel at the right of the Switchbar (R8.3): a 160x22 sunken field with the candle slice
- * at 7,6 and `credits: <value>` in Plex Mono 13 from x22, the value bold with one decimal.
+ * at 7,6 and `credits: <value>` in Plex Mono 13 from x22, the value bold with two decimals (a typical
+ * prompt costs 0.01 to 0.05 credits, so one decimal showed 0.0 for all normal use).
  * Compact hides the label and keeps the candle and the value (R11.4).
  */
 export function CreditsCounter(): ReactNode {
@@ -20,7 +21,7 @@ export function CreditsCounter(): ReactNode {
     >
       <CreditsCandleSlice className="absolute left-[7px] top-1.5 block size-2.5" />
       <span className="hidden md:inline">credits: </span>
-      <span className="font-bold">{total.toFixed(1)}</span>
+      <span className="font-bold">{total.toFixed(2)}</span>
     </div>
   );
 }

@@ -511,6 +511,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: queued messages keep sender and raw text and are re-checked and built at delivery, a `try again` notice once per startup and only for addressed lines, one `<agent> dropped N queued message(s)` notice, a 60 s timeout on `worktrees.ensure`, an optional `IrcHost.isBanned` backed by the ircd's ban matcher, tests
 - Notes: the ban check is applied at delivery only; the direct path still relies on the ircd, which lets a banned member that is already in the channel keep speaking
 
+### 2026-11-10 — Credits counter with two decimals (web-client-extras task 10.19)
+- Kiro features: spec web-client-extras task 10.19 and web-client-pixel-match R8.3, steering web-ui (tokens, 360 px), Playwright pixel and overflow runs
+- Produced: `credits: 0.01` instead of `0.0`, updated unit and e2e tests, ten regenerated app baselines (counter only)
+- Notes: reading the runner showed the ChanServ "credits used" line names no agent and carries a cumulative per-channel amount, so the notice-based update (task 10.20) was paused for a decision instead of double counting
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

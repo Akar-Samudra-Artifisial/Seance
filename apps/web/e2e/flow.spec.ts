@@ -140,7 +140,8 @@ test("Credits_Counter follows a WHOIS of the fake agent", async ({ page }) => {
   const members = page.getByRole("list", { name: /^Members of #credits/ });
   await expect(members.getByText("@op2")).toBeVisible();
   const counter = page.getByRole("status", { name: "Credits used by agents" });
-  await expect(counter).toHaveText(/^credits: \d+\.\d$/);
+  // Two decimals since 2026-11-10 (one decimal showed 0.0 for a 0.01-credit session).
+  await expect(counter).toHaveText(/^credits: \d+\.\d{2}$/);
 
   await send("/invite coder #credits");
   await expect(members.getByText("coder")).toBeVisible();
@@ -155,7 +156,7 @@ test("Credits_Counter follows a WHOIS of the fake agent", async ({ page }) => {
 
   const total = /total ([\d.]+)/.exec(await creditsLine.innerText())?.[1];
   expect(total, "total in the credits line").toBeDefined();
-  await expect(counter).toHaveText(`credits: ${Number(total).toFixed(1)}`);
+  await expect(counter).toHaveText(`credits: ${Number(total).toFixed(2)}`);
 });
 
 test("a kick without a reason shows the exorcism line without brackets", async ({ page }) => {

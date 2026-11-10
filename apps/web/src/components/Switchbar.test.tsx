@@ -84,7 +84,8 @@ describe("Switchbar layout and CreditsCounter", () => {
     );
     expect(screen.getAllByRole("button")).toHaveLength(2);
     const counter = screen.getByRole("status", { name: "Credits used by agents" });
-    expect(counter.textContent).toBe("credits: 12.0");
+    // Two decimals since the 2026-11-10 fix: 0.01-credit prompts showed as 0.0.
+    expect(counter.textContent).toBe("credits: 12.00");
     expect(container.querySelector("[style]")).toBeNull();
   });
 

@@ -257,9 +257,10 @@ describe("Switchbar and credits (5.8)", () => {
     expect(panel.className).toContain("md:w-40");
     expect(panel.className).toContain("h-[22px]");
     expect(panel.querySelector("svg")?.getAttribute("data-icon")).toBe("credits-candle-slice");
-    expect(panel.textContent).toMatch(/^credits: \d+\.\d$/);
+    // Two decimals (2026-11-10): 5.00 from the 320 line above.
+    expect(panel.textContent).toBe("credits: 5.00");
     const value = panel.querySelector(".font-bold");
-    expect(value?.textContent).toMatch(/^\d+\.\d$/);
+    expect(value?.textContent).toMatch(/^\d+\.\d{2}$/);
     // Compact: the label is hidden, candle and value stay (R11.4).
     expect(within(panel).getByText("credits:", { exact: false }).className).toContain("hidden");
   });

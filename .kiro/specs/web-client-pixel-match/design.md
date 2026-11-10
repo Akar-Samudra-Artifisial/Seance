@@ -246,7 +246,7 @@ A single constant `EVENT_LINE_KINDS = ["join","part","quit","nick","mode","topic
 
 ### Fixture content (from Frame_01)
 
-Channel `#fix-bug-123`, topic `Fix NPE on login when email is null`, modes `+mnt`; members `@bayu`, `@coder` (agent), `+reviewer` (agent), `researcher` (agent, away `reading docs`); windows `Status` (minimised), `#fix-bug-123` (active), `#landing-page` (unread), `coder` (query); credits `42.70`; connection `seance.local:6697` with TLS; lag 0.12 s. Lines in order are those of nodes 1:1352 to 1:1379, with the Client's own wording where it differs (the `-tool-` rows are fed as agent notices and may differ in wording; the mask list says which rows).
+Channel `#fix-bug-123`, topic `Fix NPE on login when email is null`, modes `+mnt`; members `@bayu`, `@coder` (agent), `+reviewer` (agent), `researcher` (agent, away `reading docs`); windows `Status` (minimised), `#fix-bug-123` (active), `#landing-page` (unread), `coder` (query); credits `42.70` (the store value; the panel shows it with two decimals since 2026-11-10, Frame_01 draws `42.7` with one, Requirement 8.3); connection `seance.local:6697` with TLS; lag 0.12 s. Lines in order are those of nodes 1:1352 to 1:1379, with the Client's own wording where it differs (the `-tool-` rows are fed as agent notices and may differ in wording; the mask list says which rows).
 
 ## Screenshot test plan
 
