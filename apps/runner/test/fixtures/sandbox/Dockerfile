@@ -17,5 +17,12 @@ RUN ln -s /opt/seance/fake-kiro /usr/local/bin/kiro-cli
 
 USER 10001:10001
 ENV HOME=/home/agent
+# Same npm settings as sandbox/Dockerfile (agent-sandbox task 21): offline, cache in the tmpfs $HOME.
+# Node 25+ images no longer bundle the package-manager shim; node, npm and npx are all there is.
+ENV NPM_CONFIG_CACHE=/home/agent/.npm \
+    NPM_CONFIG_OFFLINE=true \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_AUDIT=false
 WORKDIR /home/agent
 ENTRYPOINT ["/usr/local/bin/seance-entry"]

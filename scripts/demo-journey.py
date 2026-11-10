@@ -149,17 +149,20 @@ def journey(host: str, port: int, ch: str) -> int:
     irc.pump(3, r"MODE")
     irc.send(
         f"PRIVMSG {ch} :coder: fix the TypeError in login.js when email is null (return 'Welcome <name>' "
-        "without the domain), run `node login.test.js`, then git commit with message "
-        "'fix: handle null email in login'. Reply in at most 3 short lines."
+        "without the domain), run `npm test`, then commit (in the sandbox the runner commits for you). "
+        "Reply in at most 3 short lines."
     )
     irc.pump(300, r":coder!\S* PRIVMSG .*(?i:commit)")
     irc.pump(30)
     a5 = irc.seen[mark:]
     check("no permission denied for +o coder", not any("denied" in l for l in a5))
+    # none mode: the coder commits and says so. podman mode: the coder says the runner will commit,
+    # and ChanServ reports the runner's host-side commit (agent-sandbox Requirement 14.6).
     check(
         "coder reports a commit",
         any(
             re.search(r":coder!\S* PRIVMSG .*(?i:committed|commit [0-9a-f]{7})", l)
+            or re.search(r":ChanServ!\S* NOTICE \S+ :coder committed [0-9a-f]{7}", l)
             for l in a5
         ),
     )

@@ -91,6 +91,86 @@ describe("image pinning (12.8, decision 5)", () => {
     expect(text).toContain('ENTRYPOINT ["/usr/local/bin/seance-entry"]');
     expect(text).not.toMatch(/KIRO_API_KEY/);
   });
+
+  // agent-sandbox task 21 (Requirement 16): Node and npm in the agent image, from the pinned node base.
+  describe("Node and npm in the agent image (task 21)", () => {
+    const NODE_BASE =
+      "docker.io/library/node:26-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68";
+    const text = read("sandbox/Dockerfile");
+    const lines = text.split("\n");
+    const at = (re: RegExp): number => lines.findIndex((l) => re.test(l));
+
+    it("takes node from the same digest the test fixture pins, as a named build stage", () => {
+      expect(text).toContain(`FROM ${NODE_BASE} AS node`);
+      expect(read("apps/runner/test/fixtures/sandbox/Dockerfile")).toContain(`FROM ${NODE_BASE}`);
+      // Every FROM (both stages) is pinned; none is a tag alone.
+      for (const line of lines.filter((l) => /^\s*FROM\s/i.test(l))) {
+        expect(line).toMatch(/^FROM \S+@sha256:[0-9a-f]{64}(\s+AS\s+\w+)?$/);
+      }
+    });
+
+    // Task 21.3: the pinned node:26 image has no corepack (Node 25+ dropped it), so its COPY broke the build.
+    it("copies only the node binary and the npm files, and links npm and npx", () => {
+      const copies = lines.filter((l) => /^COPY --from=/.test(l));
+      expect(copies).toEqual([
+        "COPY --from=node /usr/local/bin/node /usr/local/bin/node",
+        "COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm",
+      ]);
+      for (const file of DOCKERFILES) {
+        expect(read(file).split("\n").filter((l) => /corepack/i.test(l)), file).toEqual([]);
+      }
+      expect(text).toContain("ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm");
+      expect(text).toContain("ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx");
+      // No package manager installs from the network beyond the existing apt line.
+      expect(text).not.toMatch(/\bnpm (?:install|i|ci)\b|curl |wget /);
+      expect(text.match(/apt-get install/g)).toHaveLength(1);
+    });
+
+    it("strips setuid and setgid bits after the last COPY and before USER", () => {
+      const strip = at(/find \/ -xdev -type f -perm \/6000 -exec chmod a-s/);
+      const lastCopy = Math.max(...lines.map((l, i) => (/^COPY /.test(l) ? i : -1)));
+      expect(strip).toBeGreaterThan(lastCopy);
+      expect(strip).toBeLessThan(at(/^USER 10001:10001$/));
+    });
+
+    it("lets npm run offline with its cache and logs in the tmpfs $HOME", () => {
+      expect(text).toMatch(/NPM_CONFIG_CACHE=\/home\/agent\/\.npm/);
+      expect(text).toMatch(/NPM_CONFIG_OFFLINE=true/);
+      expect(text).toMatch(/NPM_CONFIG_UPDATE_NOTIFIER=false/);
+    });
+  });
+
+  // agent-sandbox task 21.2 (Requirement 17): one rule for both sandbox modes in the coder's instructions.
+  describe("coder instructions: tests and git (task 21.2)", () => {
+    const config = JSON.parse(read("agents/.kiro/agents/coder.json")) as { prompt: string; resources: string[] };
+    const skill = read("agents/.kiro/skills/seance-fix-and-commit/SKILL.md");
+    const flat = (s: string): string => s.replace(/\s+/g, " ");
+
+    it.each([
+      ["agents/.kiro/agents/coder.json prompt", config.prompt],
+      ["seance-fix-and-commit SKILL.md", skill],
+    ])("%s says npm test and the not-a-git-repository rule", (_where, raw) => {
+      const text = flat(raw);
+      expect(text).toContain("npm test");
+      expect(text).toMatch(/commit with git as usual/i);
+      expect(text).toMatch(/"not a git repository".*expected in the Podman sandbox.*runner commits/i);
+      expect(text).toContain("<agent>: turn in <channel>");
+      expect(text).toMatch(/do not ask the user to install anything/i);
+      expect(text).toMatch(/repair the worktree/i);
+    });
+
+    it("the coder still loads the skill, and the message matches the runner's commit message", () => {
+      expect(config.resources).toContain("skill://.kiro/skills/seance-fix-and-commit/SKILL.md");
+      expect(read("apps/runner/src/worktree/worktree-manager.ts")).toContain("`${agent}: turn in ${channel}`");
+    });
+
+    it("scripts/demo-journey.py asks for npm test and a commit the runner may make, and accepts its notice", () => {
+      const demo = read("scripts/demo-journey.py");
+      expect(demo).toContain("run `npm test`, then commit (in the sandbox the runner commits for you)");
+      expect(demo).not.toContain("git commit with message");
+      expect(demo).toMatch(/:ChanServ!\\S\* NOTICE \\S\+ :coder committed \[0-9a-f\]\{7\}/);
+    });
+  });
 });
 
 describe("scripts", () => {

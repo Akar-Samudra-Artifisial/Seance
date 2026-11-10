@@ -10,7 +10,9 @@
 //   FAKE_AGENT_SCRIPT  inline JSON (starts with `{`) or a path to a JSON file
 //   FAKE_AGENT_DUMP_FILE  optional; the latest `fake/dump` state is written there after every input line
 import { spawnSync } from "node:child_process";
-import { readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
@@ -40,12 +42,12 @@ export type Step =
   | { readonly stop: string }
   /**
    * Sandbox suite only (agent-sandbox task 8.3): `status`, `env:NAME,NAME`, `write:/path`,
-   * `connect:host:port` or `git`. The core stays pure: the stdio wrapper runs the probe and the
+   * `connect:host:port`, `git` or `npm` (task 21: `node --version` and `npm test` in a temp project). The core stays pure: the stdio wrapper runs the probe and the
    * result is sent as a message chunk `probe <spec> => <result>` (with `@cwd` expanded).
    */
   | { readonly probe: string };
 
-export const PROBE_SPEC = /^(?:status|git|env:[A-Z_][A-Z0-9_]*(?:,[A-Z_][A-Z0-9_]*)*|write:(?:@cwd)?\/[^\0]*|connect:[0-9A-Za-z.-]+:[0-9]{1,5})$/;
+export const PROBE_SPEC = /^(?:status|git|npm|env:[A-Z_][A-Z0-9_]*(?:,[A-Z_][A-Z0-9_]*)*|write:(?:@cwd)?\/[^\0]*|connect:[0-9A-Za-z.-]+:[0-9]{1,5})$/;
 
 export interface TurnScript {
   readonly match?: string;
@@ -765,6 +767,22 @@ const runProbe = (spec: string): string => {
       const status = readFileSync("/proc/self/status", "utf8");
       const pick = (k: string): string => /^(\S+):\s*(.*)$/m.exec(status.split("\n").find((l) => l.startsWith(`${k}:`)) ?? "")?.[2]?.trim() ?? "?";
       return `CapEff=${pick("CapEff")} NoNewPrivs=${pick("NoNewPrivs")} Uid=${pick("Uid").split(/\s+/)[0] ?? "?"}`;
+    }
+    if (spec === "npm") {
+      // agent-sandbox task 21: `node --version` and `npm test` in a throwaway project (not the
+      // worktree, so nothing is left to commit). npm runs offline; the project has no dependencies.
+      const version = spawnSync("node", ["--version"], { encoding: "utf8" });
+      if (version.status !== 0) return `node failed ${String(version.status)}`;
+      const dir = mkdtempSync(join(tmpdir(), "seance-npm-"));
+      try {
+        writeFileSync(join(dir, "package.json"), '{"name":"probe","private":true,"scripts":{"test":"node t.js"}}\n');
+        writeFileSync(join(dir, "t.js"), 'console.log("probe-ok");\n');
+        const test = spawnSync("npm", ["test", "--silent"], { cwd: dir, encoding: "utf8", timeout: 30_000 });
+        const out = test.stdout.trim().split("\n").at(-1) ?? "";
+        return test.status === 0 ? `node ${version.stdout.trim()} npm-test ${out}` : `npm failed ${String(test.status)}`;
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
     if (spec === "git") {
       const r = spawnSync("git", ["rev-parse", "--git-dir"], { encoding: "utf8" });

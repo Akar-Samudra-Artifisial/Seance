@@ -16,6 +16,42 @@ Running log of Kiro features used while building Séance. It is raw material for
 | ACP | `spikes/acp/`, `apps/runner` | Séance itself drives Kiro agents over `kiro-cli acp` as IRC users |
 | PBT | `packages/irc-protocol` | fast-check properties from the spec (`parse(serialize(m)) == m`) |
 
+## Write-up (draft for Devpost)
+
+Draft skeleton. Fill each section from the log below; keep the whole write-up under about 900 words. Numbers counted on 2026-11-10.
+
+### By the numbers
+- 14 specs in `.kiro/specs/`, 764 ticked tasks, 99 log entries in this file.
+- 151 fast-check properties in 81 test files; about 2,600 unit tests (web 958, ircd 701, runner 928) plus 49 functional and 12 pixel end-to-end tests.
+- Live on AWS since 2026-11-09: <https://35-172-120-185.sslip.io/>.
+
+### Two ways Séance uses Kiro
+- **Built with Kiro**: spec-driven in Kiro IDE, guarded by hooks and steering. Sections below.
+- **Runs on Kiro**: every IRC agent (`coder`, `reviewer`, `researcher`) is a `kiro-cli acp` session. IRC modes are the permission model (`+v` speaks, `+o` writes, `/kick` cancels and resets the worktree). Point to `apps/runner` and `spikes/acp/FINDINGS.md`.
+
+### Specs
+- Spec-first for every feature: list the 14 specs with one line each.
+- Story: correctness properties in `design.md` became fast-check properties (example: `parse(serialize(m)) == m` in `ircd-core`).
+- Story: review findings turned into follow-up tasks inside the same spec (example: web-client-extras 10.20 to 10.23, silent WHOIS and the per-channel counter, each with the reason recorded in `tasks.md`).
+
+### Steering
+- Always-on vs fileMatch: name the files and one concrete effect each (example: `irc-protocol.md` kept numerics RFC 2812 exact; `web-ui.md` kept the Win95/ghost design system; `security.md` kept agents inside the repo).
+
+### Hooks
+- `guard-shell`: quote the 2026-11-08 entry (`Blocked by .kiro/hooks/guard-shell: path "/tmp" resolves outside the repository root`).
+- `test-on-save`, `verify-after-task`, `kiro-usage-log` (this file is its output).
+
+### Custom agents, skills and MCP
+- `seance-dev`, `seance-reviewer` (read-only), `seance-spec`; skills `irc-rfc2812`, `acp-runner`, `kiroween-submission`.
+- MCP: Playwright for the pixel checks against the Figma frames, Context7 for library docs.
+
+### Spec-driven vs vibe coding: what worked, what did not
+- Worked: <fill>.
+- Did not: <fill, e.g. an assumption that a review or production test proved wrong, and how the spec absorbed it>.
+
+### What we would do next
+- <fill: Crew App manifest, irssi over TLS, persistent logs>.
+
 ## Entry template
 
 ```md
@@ -535,6 +571,21 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Kiro features: spec web-client-extras (R8.25, R8.26, design section, task 10.23), steering (web-ui: same format and layout), PBT (P3 now sums `used` per agent and channel), Playwright functional and pixel runs
 - Produced: per-channel `credits` record, `creditsForActive`/`creditsScope` selectors, scope-aware accessible name, reducer, selector, component and e2e tests
 - Notes: found on the deployed host (counter 0.36 against `#demo9 0.04`); pixel baselines unchanged because the fixture's channel amount equals its total
+
+### 2026-11-10 — Node and npm in the agent sandbox image (agent-sandbox task 21.1)
+- Kiro features: spec agent-sandbox (Requirement 16, D23, task 21), steering (security: every base pinned by digest, non-root, setuid strip), skill seance-fix-and-commit (read, change pending)
+- Produced: `node:26-bookworm-slim` stage copied into `sandbox/Dockerfile`, npm offline settings, `docs/SANDBOX.md` image and git section, file tests, a real-Podman `npm` probe case
+- Notes: found while recording the demo; the agent-instruction change (21.2) waits for a decision because `none` mode has no runner commits
+
+### 2026-11-10 — One git rule for the coder in both sandbox modes (agent-sandbox task 21.2)
+- Kiro features: spec agent-sandbox (Requirement 17, D24, task 21), skill seance-fix-and-commit, agent config coder.json, steering (security: corepack offline)
+- Produced: mode-neutral "not a git repository means the runner commits" rule, `npm test` in the instructions and `demo-journey.py`, `COREPACK_ENABLE_NETWORK=0`, file tests
+- Notes: `demo-journey.py`'s commit check only matched the coder's own PRIVMSG, so it now also accepts ChanServ's `coder committed <sha>` for podman runs
+
+### 2026-11-10 — Sandbox image builds again without corepack (agent-sandbox task 21.3)
+- Kiro features: spec agent-sandbox (Requirement 16, D23, task 21.3), skill seance-fix-and-commit (formatting only)
+- Produced: corepack COPY, link and variables removed from both Dockerfiles, file test that no line mentions it, docs and spec text, SKILL.md blank lines restored
+- Notes: found on the deployed host: the pinned Node 26 image ships only npm, so the image build in `deploy/bootstrap.sh` failed; the repo tests read the Dockerfile and could not see that
 
 ## Roadmap
 

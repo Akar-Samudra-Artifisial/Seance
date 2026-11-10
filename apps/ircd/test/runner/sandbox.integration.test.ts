@@ -140,6 +140,19 @@ describe("agent sandbox with real rootless Podman", () => {
     TIMEOUT_MS,
   );
 
+  // agent-sandbox task 21: the fixture image shares the production image's node base. /tmp is
+  // noexec, which npm test must survive (node runs from /usr/local/bin, the script is only read).
+  it.skipIf(!available)(
+    title("runs node --version and npm test offline in a throwaway project"),
+    async () => {
+      const { op } = await scene([{ probe: "npm" }]);
+      await grant(op, "+v");
+      op.send("PRIVMSG #sbx :coder: npm");
+      expect(await reply(op, "npm")).toMatch(/=> node v26\.\S+ npm-test probe-ok/);
+    },
+    TIMEOUT_MS,
+  );
+
   it.skipIf(!available)(
     title("writes in the worktree belong to the runner's user; writes elsewhere fail; an op agent's turn is committed on the host"),
     async () => {

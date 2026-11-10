@@ -163,3 +163,14 @@ Spike scripts and pinned flag spellings first, then pure code (config, guard, ar
 - [x] 18. `PublicEgressError`: public podman requires `SEANCE_SANDBOX_BLOCKED_CIDRS`, in `apps/ircd` and `runner.start()`; probe documented as best effort
 - [x] 19. Second concurrent `openSession` for one (agent, cwd) is rejected, never shares the first session; concurrency tests
 - [x] 20. README and `docs/SANDBOX.md`: `.gitmodules` and nested `.git` refused by design; `ensure` test
+
+## Demo blocker (2026-11-10, Requirement 16)
+
+- [x] 21. Node and npm in the image; the agent knows the worktree has no git metadata
+  - [x] 21.1 `sandbox/Dockerfile`: `node` stage pinned by the test image's digest, `COPY --from` of `node` and the npm files, `npm` and `npx` links recreated (no corepack, see 21.3), setuid strip moved after the last copy, npm offline settings (also in the test image); `docs/SANDBOX.md` section on the image and on git without metadata; tests in `apps/runner/test/sandbox-files.test.ts`; real-Podman case (`npm` probe in the Fake_Agent) in `apps/ircd/test/runner/sandbox.integration.test.ts`
+    - _Requirements: 16.1 to 16.6_
+  - [x] 21.2 One mode-neutral git rule (decided 2026-11-10, D24): `agents/.kiro/agents/coder.json` and the `seance-fix-and-commit` skill say run `npm test`, commit with git as usual, and treat "not a git repository" as the Podman sandbox where the runner commits as `<agent>: turn in <channel>` (no repair, no install requests, one line saying the runner will commit); `scripts/demo-journey.py` asks for `npm test` and a commit "the runner commits for you" and also accepts ChanServ's `coder committed <sha>`; tests in `sandbox-files.test.ts`; `docs/SANDBOX.md`. No runner or ircd source change
+    - WHOIS `tools:` text: decided not to change. It comes from the agent profile and is shared by both modes; `commits by runner` would be false with `SEANCE_SANDBOX=none`
+    - _Requirements: 16.4, 17.1 to 17.5_
+  - [x] 21.3 Build fix (verified on the deployed host): the pinned `node:26-bookworm-slim` holds only npm under `/usr/local/lib/node_modules` (Node 25+ dropped corepack), so the corepack `COPY` broke `deploy/bootstrap.sh`'s image build. Removed the corepack `COPY`, link and both corepack variables from `sandbox/Dockerfile` and the test image; node, npm and npx unchanged; `sandbox-files.test.ts` expects the two COPY lines and no corepack mention; docs and spec text updated; `seance-fix-and-commit` SKILL.md blank lines restored (wording unchanged)
+    - _Requirements: 16.1, 16.4_

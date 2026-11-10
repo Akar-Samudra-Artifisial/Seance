@@ -255,3 +255,28 @@ The sandbox limits what an agent can **write and reach**. The Kiro credential re
 6. SWEEP (finding 6). THE sweep SHALL list container names (`ps -a --format {{.Names}}`), pass only Séance container names to `rm`, and forget the names it removed.
 7. PUBLIC EGRESS (item 2). `assertSandboxForPublic` SHALL also throw `PublicEgressError`, naming `SEANCE_SANDBOX_BLOCKED_CIDRS` and `IRCD_PUBLIC`, when the deployment is public, the runner is enabled, the sandbox is podman and no CIDR is configured. `apps/ircd` and `runner.start()` SHALL both check it. `docs/SANDBOX.md` SHALL say the egress probe is best effort: an unreachable host looks the same as a blocked one.
 8. REFUSED REPOSITORIES (item 4). `README.md` and `docs/SANDBOX.md` SHALL state that a target repository that commits `.gitmodules`, and any nested `.git` in a worktree, are refused by design (also in `none` mode), and a test SHALL show `ensure` refusing a repository with `.gitmodules`.
+
+### Requirement 16: Node and npm in the agent image (task 21, demo blocker 2026-11-10)
+
+**User Story:** As a channel operator, I want an op agent to run the project's tests in the sandbox, so that "fix, run the tests, then commit" works on the public host.
+
+#### Acceptance Criteria
+
+1. `sandbox/Dockerfile` SHALL provide Node 26 and npm by a multi-stage copy from `docker.io/library/node:26-bookworm-slim` pinned by the same digest as the test image (`apps/runner/test/fixtures/sandbox/Dockerfile`), copying only the `node` binary and the npm files (with `npx`); the image ships no corepack, because Node 25 and later images no longer include it (task 21.3); every `FROM`, including the build stage, SHALL stay pinned by digest (12.8).
+2. THE image SHALL keep running as uid 10001, and the setuid and setgid bits SHALL be stripped after the last `COPY`, before `USER`.
+3. THE build SHALL add no network install beyond the existing apt line (no `npm install`, `curl` or `wget`).
+4. npm SHALL work offline for a project without dependencies: its cache and logs live in the tmpfs `$HOME` (`NPM_CONFIG_CACHE=/home/agent/.npm`), and `NPM_CONFIG_OFFLINE`, `NPM_CONFIG_UPDATE_NOTIFIER=false`, `NPM_CONFIG_FUND=false` and `NPM_CONFIG_AUDIT=false` keep it from asking the registry. The test image SHALL carry the same settings.
+5. A real-Podman case (skipped without Podman and the pinned base) SHALL run `node --version` and `npm test` for a throwaway project inside the container.
+6. `docs/SANDBOX.md` SHALL list the image contents and explain that the worktree has no git metadata on purpose (D3) and how the runner commits.
+
+### Requirement 17: One git rule in the agent instructions (task 21.2)
+
+**User Story:** As a channel operator, I want the coder to treat the missing git metadata in the sandbox as normal, so that it neither reports a broken worktree nor asks me to install anything.
+
+#### Acceptance Criteria
+
+1. THE coder's agent config (`agents/.kiro/agents/coder.json`) and the `seance-fix-and-commit` skill SHALL state one rule for both sandbox modes: run tests with `npm test`; commit with git as usual; IF git says "not a git repository", that is expected in the Podman sandbox (no git metadata on purpose, D3) and the runner commits the worktree after the turn as `<agent>: turn in <channel>`; the agent SHALL NOT try to repair the worktree, SHALL NOT ask the user to install anything, and SHALL say in one line that the runner will commit.
+2. THE runner's code SHALL NOT change for this: `none` mode keeps working as today (the agent commits, Requirement 14.8), and production runs podman (`guard.ts`).
+3. `scripts/demo-journey.py` SHALL ask the coder to "run `npm test`, then commit (in the sandbox the runner commits for you)", and its commit check SHALL accept either the coder's own report or ChanServ's `coder committed <sha>`.
+4. THE WHOIS `tools:` text SHALL stay unchanged: it comes from the agent profile and is shared by both modes, so `commits by runner` would be false with `SEANCE_SANDBOX=none`.
+5. A repository test SHALL check that both instruction texts contain `npm test` and the "not a git repository … runner commits" rule.

@@ -127,6 +127,14 @@ Environment: `HOME=/home/agent`, `TMPDIR=/tmp`, `SEANCE_KIRO_BIN` (the validated
 
 ACP stays newline-delimited JSON-RPC on stdio, carried by `podman run -i`.
 
+## What the image holds, and why git has no metadata
+
+`sandbox/Dockerfile` builds on `debian:bookworm-slim` and adds `ca-certificates`, `netcat-openbsd` (for `seance-probe`) and `git` from apt, then copies Node 26 and npm from `node:26-bookworm-slim` (both pinned by digest; task 21). Only the `node` binary and the npm files (with `npx`) are copied; there is no corepack, because Node 25 and later images no longer ship it; the setuid and setgid bits are stripped after the last copy, and the image still runs as uid 10001. npm is set to work offline (`NPM_CONFIG_OFFLINE=true`, cache in the tmpfs `$HOME`), so `npm test` runs for a project without dependencies; a project that needs packages from a registry cannot install them inside the sandbox. With no corepack in the image, nothing can fetch yarn or pnpm on first use either.
+
+The worktree is mounted without its git metadata on purpose (design D3): its `.git` file points at the main repository's `.git/worktrees/<channel>`, which is not mounted, so `git` inside the container reports `not a git repository`. That is not a broken worktree. The runner commits an op agent's changes on the host after each turn, with hardened git, as `<agent>: turn in <channel>`, and ChanServ reports `<agent> committed <sha> (<n> files)`.
+
+The coder's instructions (`agents/.kiro/agents/coder.json` and the `seance-fix-and-commit` skill) carry one rule for both modes: run tests with `npm test` and commit with git as usual; if git says "not a git repository", that is the sandbox, so the agent does not repair the worktree, does not ask anyone to install anything, and says in one line that the runner will commit. With `SEANCE_SANDBOX=none` git works and the agent commits itself, as before (the runner makes no host-side commit there, Requirement 14.8).
+
 ## Repositories that are refused by design
 
 A target repository (`SEANCE_TARGET_REPO`) that commits a `.gitmodules` file is refused: `ensure` fails with a `config-exclusion` error naming the path, and no agent starts in that channel. A nested `.git` (a directory, or a `gitdir:` file) is refused wherever it appears in a worktree. Git cannot commit a `.git` path, so in practice it is something an agent creates (`git init sub`, a `git clone`): the scan reports it, nothing is committed, and the next prompt guard removes it and resets the worktree. All of this is deliberate. A nested repository carries its own git config (`core.fsmonitor`, hooks) that is written by whoever controls the files, and the host runs git over the worktree. It holds in `none` mode as well. To use a repository with submodules, remove the submodules (and `.gitmodules`) first, or vendor their contents as plain files.
