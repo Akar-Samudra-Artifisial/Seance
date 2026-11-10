@@ -3,7 +3,8 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { parseCreditsLine } from "./credits.js";
 import { initialState, reduce } from "./reducer.js";
-import { CREDITS_MAX } from "./reducer.route.js";
+import { CREDITS_CHANNELS_MAX, CREDITS_MAX } from "./reducer.route.js";
+import { creditsForActive } from "./selectors.js";
 import type { ClientState } from "./types.js";
 
 const msg = (nick: string, text: string): IrcMessage => ({ prefix: "ircd.test", command: "320", params: ["me", nick, text] });
@@ -44,20 +45,35 @@ describe("parseCreditsLine", () => {
   });
 });
 
+// web-client-extras R8.25 (task 10.23): `credits` keeps the `used` amount per agent and channel.
 describe("credits in the reducer", () => {
   it("starts empty with a null prototype", () => {
     expect(Object.getPrototypeOf(initialState("me").credits)).toBeNull();
   });
 
-  it("stores the latest total per nick (irc_lower) and replaces earlier values", () => {
+  it("stores `used` under agent and channel, not the lifetime total", () => {
+    const s = run(initialState("me"), [msg("Coder", "credits: #Demo9 0.04 / total 0.36")]);
+    expect(s.credits["coder"]?.["#demo9"]).toBe(0.04);
+    expect(Object.getPrototypeOf(s.credits["coder"])).toBeNull();
+  });
+
+  it("replaces a later line for the same channel and keeps other channels", () => {
     const s = run(initialState("me"), [
-      msg("Coder", "credits: #dev 1.00 / total 2.00"),
-      msg("coder", "credits: #dev 9.60 / total 12.00"),
-      msg("Reviewer", "credits: #dev 1 / total 3"),
+      msg("coder", "credits: #demo9 0.04 / total 0.36"),
+      msg("coder", "credits: #a 0.10 / total 0.46"),
+      msg("CODER", "credits: #demo9 0.06 / total 0.48"),
+      msg("coder", "credits: #b 0.20 / total 0.68"),
     ]);
-    expect(Object.keys(s.credits).sort()).toEqual(["coder", "reviewer"]);
-    expect(s.credits["coder"]).toBe(12);
-    expect(s.credits["reviewer"]).toBe(3);
+    expect({ ...s.credits["coder"] }).toEqual({ "#a": 0.1, "#demo9": 0.06, "#b": 0.2 });
+  });
+
+  it("keeps two agents in one channel apart", () => {
+    const s = run(initialState("me"), [
+      msg("coder", "credits: #dev 0.04 / total 1"),
+      msg("reviewer", "credits: #dev 0.03 / total 2"),
+    ]);
+    expect(s.credits["coder"]?.["#dev"]).toBe(0.04);
+    expect(s.credits["reviewer"]?.["#dev"]).toBe(0.03);
   });
 
   it("ignores garbage and keeps the 320 line in the pending WHOIS", () => {
@@ -66,22 +82,39 @@ describe("credits in the reducer", () => {
     expect(s.whoisPending["coder"]?.special).toEqual(["model: x", "credits: #dev -1 / total 2"]);
   });
 
-  it("handles prototype names as nicks and caps at the maximum", () => {
+  it("caps agents at CREDITS_MAX, dropping the oldest, and treats prototype names as plain keys", () => {
     const nicks = ["constructor", "__proto__", ...Array.from({ length: CREDITS_MAX + 5 }, (_, i) => `a${i}`)];
     const s = run(initialState("me"), nicks.map((n) => msg(n, "credits: #c 1 / total 2")));
     expect(Object.keys(s.credits)).toHaveLength(CREDITS_MAX);
     expect(Object.keys(s.credits)).not.toContain("constructor");
     expect(Object.keys(s.credits)).toContain(`a${CREDITS_MAX + 4}`);
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype); // nothing was written through __proto__
+  });
+
+  it("caps channels per agent at CREDITS_CHANNELS_MAX and takes __proto__ or constructor as a channel name", () => {
+    const channels = ["__proto__", "constructor", ...Array.from({ length: CREDITS_CHANNELS_MAX + 3 }, (_, i) => `#c${i}`)];
+    const first = run(initialState("me"), [msg("coder", "credits: __proto__ 0.5 / total 1")]);
+    expect(Object.keys(first.credits["coder"] ?? {})).toEqual(["__proto__"]);
+    expect(Object.getPrototypeOf(first.credits["coder"])).toBeNull();
+    const s = run(initialState("me"), channels.map((c) => msg("coder", `credits: ${c} 0.01 / total 1`)));
+    const kept = Object.keys(s.credits["coder"] ?? {});
+    expect(kept).toHaveLength(CREDITS_CHANNELS_MAX);
+    expect(kept).not.toContain("__proto__");
+    expect(kept).not.toContain("constructor");
+    expect(kept).toContain(`#c${CREDITS_CHANNELS_MAX + 2}`);
   });
 });
 
-// Feature: web-client-polish, Property 3: Credits total
+// Feature: web-client-polish, Property 3: Credits total. Updated by web-client-extras task 10.23: the
+// session total is the sum of the last `used` per (agent, channel), not of lifetime totals.
 // **Validates: Requirements 5.5, 5.6, 5.7**
 describe("P3 credits total", () => {
   const nickArb = fc.constantFrom("Coder", "coder", "Reviewer", "researcher", "Alice", "bob");
+  const channelArb = fc.constantFrom("#dev", "#DEV", "#ops", "#a");
   const validArb = fc.record({
     kind: fc.constant("valid" as const),
     nick: nickArb,
+    channel: channelArb,
     used: fc.nat(1000),
     total: fc.nat(100000),
   });
@@ -92,23 +125,20 @@ describe("P3 credits total", () => {
   });
   const lineArb = fc.oneof(validArb, garbageArb);
 
-  it("sums the last total per distinct nick; garbage changes nothing", () => {
+  it("sums the last `used` per agent and channel outside a channel window; garbage changes nothing", () => {
     fc.assert(
-      fc.property(fc.array(lineArb, { minLength: 320, maxLength: 320 }), (lines) => {
+      fc.property(fc.array(lineArb, { minLength: 1, maxLength: 320 }), (lines) => {
         const expected = new Map<string, number>();
         const msgs = lines.map((l) => {
           if (l.kind === "valid") {
-            expected.set(l.nick.toLowerCase(), l.total);
-            return msg(l.nick, `credits: #dev ${l.used}.00 / total ${l.total}.00`);
+            expected.set(`${l.nick.toLowerCase()} ${l.channel.toLowerCase()}`, l.used);
+            return msg(l.nick, `credits: ${l.channel} ${l.used}.00 / total ${l.total}.00`);
           }
           return msg(l.nick, l.text);
         });
-        const state = run(initialState("me"), msgs);
-        const sum = Object.values(state.credits).reduce((a, b) => a + b, 0);
+        const state = run(initialState("me"), msgs); // Status is active: the session total
         const expectedSum = [...expected.values()].reduce((a, b) => a + b, 0);
-        expect(sum).toBe(expectedSum);
-        expect(Number.isFinite(sum) && sum >= 0).toBe(true);
-        expect(Object.keys(state.credits).sort()).toEqual([...expected.keys()].sort());
+        expect(creditsForActive(state)).toBe(expectedSum);
       }),
     );
   });

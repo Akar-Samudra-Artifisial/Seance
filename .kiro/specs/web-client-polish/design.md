@@ -79,7 +79,7 @@ exorcismText(parts: ExorcismParts): { agent: string; kicker: string; reason: str
 
 - `reducer.modes.ts`: `324`, `221`, channel and user `MODE`; flags with parameters never enter `modes`.
 - `reducer.away.ts`: `301`, `305`, `306`, inbound `AWAY`; follows `NICK`/`QUIT`; bounded record helpers from `record.ts`.
-- `reducer.whois.ts`: on a `320` line that parses, store `credits[agent] = total`.
+- `reducer.whois.ts`: on a `320` line that parses, store `credits[agent] = total` (superseded by web-client-extras R8.25/R8.26, task 10.23: credits are kept per agent and channel).
 - `reducer.ts`: `KICK` of a Known_Agent adds the nick to `exorcised` of that window; a `JOIN` of the same nick removes it; own leave drops the field.
 - `classify.ts`: remove the `[exorcised]` marker for `exorcised-kick`; `exorcismText` applies the empty-reason or reason-equals-kicker rule.
 - `ReduceResult` gets `pong?: string` (token of an inbound `PONG`).
@@ -154,6 +154,8 @@ For any set of channel windows, `statusCounts("active")` equals the counts compu
 
 ### Property 3: Credits total
 For any sequence of `320` lines, `creditsTotal` equals the sum of the last parsed `total` per distinct agent nick; lines that do not match `credits: <chan> <used> / total <total>` change nothing; the total is finite and non-negative. **Validates: R5.5 to R5.7**
+
+> Superseded by web-client-extras R8.25/R8.26 (task 10.23): credits are kept per agent and channel, and `creditsForActive` replaced `creditsTotal`.
 
 ### Property 4: Exorcism text
 For any agent, kicker and reason, the parenthesised reason is present exactly when the reason has visible text and is not equal to the kicker under rfc1459 case-mapping; the rendered text never contains `[exorcised]`. **Validates: R11.1, R11.2**

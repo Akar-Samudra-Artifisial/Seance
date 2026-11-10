@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { initialState } from "./reducer.js";
-import { creditsTotal, exorcismText, modeSuffix, parseCreditsLine, statusCounts, titleOf } from "./selectors.js";
+import { initialState, reduce } from "./reducer.js";
+import {
+  creditsForActive,
+  creditsScope,
+  exorcismText,
+  modeSuffix,
+  parseCreditsLine,
+  statusCounts,
+  titleOf,
+} from "./selectors.js";
 import { nullRecord } from "./record.js";
 import type { ClientState, Member, Window } from "./types.js";
 
@@ -84,11 +92,35 @@ describe("statusCounts", () => {
   });
 });
 
-describe("creditsTotal", () => {
-  it("sums the stored totals", () => {
-    const credits = Object.assign(nullRecord<number>(), { coder: 25, reviewer: 10.5 });
-    expect(creditsTotal({ ...initialState("a"), credits })).toBe(35.5);
-    expect(creditsTotal(initialState("a"))).toBe(0);
+// web-client-extras R8.26 (task 10.23): creditsTotal is gone; the counter shows the active channel.
+describe("creditsForActive", () => {
+  const per = (entries: Record<string, number>): Record<string, number> => Object.assign(nullRecord<number>(), entries);
+  const credits = Object.assign(nullRecord<Readonly<Record<string, number>>>(), {
+    coder: per({ "#demo9": 0.04, "#ops": 0.32 }),
+    reviewer: per({ "#demo9": 0.02, "#x": Number.NaN, "#y": -1 }),
+  });
+  const withActive = (win: Window | undefined): ClientState =>
+    win === undefined ? { ...initialState("a"), credits } : withWindows([win], win.key, { credits });
+
+  it("sums every agent's amount for the active channel", () => {
+    expect(creditsForActive(withActive(channel("#demo9", [])))).toBeCloseTo(0.06, 10);
+    expect(creditsScope(withActive(channel("#demo9", [])))).toBe("channel");
+    expect(creditsForActive(withActive(channel("#empty", [])))).toBe(0);
+  });
+
+  it("matches channel names that differ only by case under rfc1459", () => {
+    // The 320 line says #D[E]MO9; the window is #d{e}mo9 ([ and { are one letter under rfc1459).
+    const stored = reduce(initialState("a"), { prefix: "srv", command: "320", params: ["a", "coder", "credits: #D[E]MO9 0.50 / total 9"] }, 0).state;
+    const s = withWindows([channel("#d{e}mo9", [])], "c:#d{e}mo9", { credits: stored.credits });
+    expect(creditsForActive(s)).toBe(0.5);
+  });
+
+  it("sums all channels outside a channel window (Status or a query) and ignores bad values", () => {
+    expect(creditsForActive(withActive(undefined))).toBeCloseTo(0.38, 10);
+    expect(creditsScope(withActive(undefined))).toBe("session");
+    const query: Window = { key: "q:coder", kind: "query", name: "coder", lines: [], unread: false, mentioned: false };
+    expect(creditsForActive(withActive(query))).toBeCloseTo(0.38, 10);
+    expect(creditsForActive(initialState("a"))).toBe(0);
   });
 });
 

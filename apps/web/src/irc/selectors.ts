@@ -91,14 +91,33 @@ export function statusCounts(state: ClientState, scope: "active" | "all"): Statu
   return tally([...seen.values()], state.away);
 }
 
-/** Sum of the latest credits total per agent. */
-export function creditsTotal(state: ClientState): number {
+/** Which amount the credits counter shows (R8.26): one channel, or the whole session. */
+export type CreditsScope = "channel" | "session";
+
+/**
+ * R8.26: credits for the counter. With a channel window active, the sum of every agent's `used` in that
+ * channel (rfc1459 case-mapping); with any other window active (Status, a query), the sum over every
+ * agent and every channel, the session total. Non-finite and negative values are ignored. Pure.
+ */
+export function creditsForActive(state: ClientState): number {
+  const active = getOwn(state.windows, state.activeKey);
+  const channel = active?.kind === "channel" ? irc_lower(active.name) : undefined;
   let sum = 0;
-  for (const k of Object.keys(state.credits)) {
-    const v = getOwn(state.credits, k);
-    if (v !== undefined && Number.isFinite(v) && v >= 0) sum += v;
+  for (const agent of Object.keys(state.credits)) {
+    const perChannel = getOwn(state.credits, agent);
+    if (perChannel === undefined) continue;
+    const keys = channel === undefined ? Object.keys(perChannel) : [channel];
+    for (const k of keys) {
+      const v = getOwn(perChannel, k);
+      if (v !== undefined && Number.isFinite(v) && v >= 0) sum += v;
+    }
   }
   return sum;
+}
+
+/** Whether {@link creditsForActive} covers the active channel or the whole session. */
+export function creditsScope(state: ClientState): CreditsScope {
+  return getOwn(state.windows, state.activeKey)?.kind === "channel" ? "channel" : "session";
 }
 
 /**

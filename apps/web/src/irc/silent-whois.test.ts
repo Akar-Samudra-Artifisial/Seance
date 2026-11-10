@@ -27,7 +27,8 @@ const reply = (total: string): IrcMessage[] => [
   n("311", "coder", "coder", "seance.local", "*", "coder (Séance agent)"),
   n("319", "coder", "#dev"),
   n("312", "coder", "seance.local", "Séance"),
-  n("320", "coder", `credits: #dev 0.01 / total ${total}`),
+  // Task 10.23: the counter keeps `used` per channel, so the amount under test is the channel's.
+  n("320", "coder", `credits: #dev ${total} / total 9.99`),
   n("301", "coder", "running a tool"),
   n("317", "coder", "3", "1700000000"),
   n("318", "coder", "End of /WHOIS list"),
@@ -40,7 +41,7 @@ describe("silent WHOIS", () => {
     const start = beginSilentWhois(base(), "Coder");
     const before = lineCount(start);
     const s = run(start, reply("0.03"));
-    expect(s.credits["coder"]).toBe(0.03);
+    expect(s.credits["coder"]?.["#dev"]).toBe(0.03);
     expect(lineCount(s)).toBe(before);
     expect(s.silentWhois).toEqual([]);
     expect(Object.keys(s.whoisPending)).toEqual([]);
@@ -61,7 +62,7 @@ describe("silent WHOIS", () => {
     const start = claimSilentWhois(beginSilentWhois(base(), "coder"), "CODER");
     expect(start.silentWhois).toEqual([]);
     const s = run(start, reply("0.05"));
-    expect(s.credits["coder"]).toBe(0.05);
+    expect(s.credits["coder"]?.["#dev"]).toBe(0.05);
     const whois = Object.values(s.windows).flatMap((w) => w.lines).filter((l) => l.kind === "whois");
     expect(whois).toHaveLength(1);
     expect(whois[0]?.whois?.away).toBe("running a tool");

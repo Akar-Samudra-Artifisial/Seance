@@ -83,9 +83,10 @@ describe("Switchbar layout and CreditsCounter", () => {
       </ClientStoreProvider>,
     );
     expect(screen.getAllByRole("button")).toHaveLength(2);
-    const counter = screen.getByRole("status", { name: "Credits used by agents" });
-    // Two decimals since the 2026-11-10 fix: 0.01-credit prompts showed as 0.0.
-    expect(counter.textContent).toBe("credits: 12.00");
+    // Task 10.23: the counter shows `used` (9.60), not the lifetime total (12.00); #dev is the only
+    // channel with credits, so the channel and the session amount agree here.
+    const counter = screen.getByRole("status", { name: /^Credits used / });
+    expect(counter.textContent).toBe("credits: 9.60");
     expect(container.querySelector("[style]")).toBeNull();
   });
 

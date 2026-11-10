@@ -229,7 +229,7 @@ describe("silent WHOIS triggers", () => {
     env.feed(":srv 320 alice coder :credits: #dev 0.02 / total 0.07");
     env.feed(":srv 318 alice coder :End of /WHOIS list");
     expect(allLines(env).length).toBe(before);
-    expect(env.store.getState().client.credits["coder"]).toBe(0.07);
+    expect(env.store.getState().client.credits["coder"]?.["#dev"]).toBe(0.02);
     expect(Object.keys(env.store.getState().client.whoisPending)).toEqual([]);
     expect(env.store.getState().client.silentExpired).toEqual([]);
   });
@@ -258,7 +258,7 @@ describe("silent WHOIS triggers", () => {
     env.feed(":srv 320 alice coder :credits: #dev 0.02 / total 0.08");
     env.feed(":srv 318 alice coder :End of /WHOIS list");
     expect(whoisLines(env)).toHaveLength(1);
-    expect(env.store.getState().client.credits["coder"]).toBe(0.08);
+    expect(env.store.getState().client.credits["coder"]?.["#dev"]).toBe(0.02);
   });
 
   it("empties the set of timed-out entries on disconnect", () => {
@@ -343,6 +343,6 @@ describe("silent WHOIS triggers", () => {
     env.feed(":srv 318 alice coder :End of /WHOIS list");
     const lines = Object.values(env.store.getState().client.windows).flatMap((w) => w.lines);
     expect(lines.filter((l) => l.kind === "whois")).toHaveLength(1);
-    expect(env.store.getState().client.credits["coder"]).toBe(0.04);
+    expect(env.store.getState().client.credits["coder"]?.["#dev"]).toBe(0.01);
   });
 });

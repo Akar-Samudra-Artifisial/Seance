@@ -253,16 +253,40 @@ describe("Switchbar and credits (5.8)", () => {
     const { store, recv } = connected();
     recv(":srv 320 alice coder :credits: #dev 1.25 / total 5.00");
     mount(store, <CreditsCounter />);
-    const panel = screen.getByRole("status", { name: "Credits used by agents" });
+    // Task 10.23: the label names the scope; the layout and the format are unchanged (R8.3, R11.4).
+    const panel = screen.getByRole("status", { name: /^Credits used / });
     expect(panel.className).toContain("md:w-40");
     expect(panel.className).toContain("h-[22px]");
     expect(panel.querySelector("svg")?.getAttribute("data-icon")).toBe("credits-candle-slice");
-    // Two decimals (2026-11-10): 5.00 from the 320 line above.
-    expect(panel.textContent).toBe("credits: 5.00");
+    // `used` of the active channel #dev (1.25), not the lifetime total (5.00).
+    expect(panel.textContent).toBe("credits: 1.25");
     const value = panel.querySelector(".font-bold");
     expect(value?.textContent).toMatch(/^\d+\.\d{2}$/);
     // Compact: the label is hidden, candle and value stay (R11.4).
     expect(within(panel).getByText("credits:", { exact: false }).className).toContain("hidden");
+  });
+
+  it("shows the active channel's amount, the session sum outside a channel, and labels the scope", () => {
+    const { store, recv } = connected();
+    recv(":alice!a@h JOIN #demo9");
+    recv(":srv 320 alice coder :credits: #demo9 0.04 / total 0.36");
+    recv(":srv 320 alice coder :credits: #dev 0.32 / total 0.36");
+    recv(":srv 320 alice reviewer :credits: #demo9 0.01 / total 0.01");
+    act(() => {
+      store.getState().setActiveWindow("c:#demo9");
+    });
+    mount(store, <CreditsCounter />);
+    const inChannel = screen.getByRole("status", { name: "Credits used in this channel" });
+    expect(inChannel.textContent).toBe("credits: 0.05");
+    act(() => {
+      store.getState().setActiveWindow("status");
+    });
+    const session = screen.getByRole("status", { name: "Credits used this session" });
+    expect(session.textContent).toBe("credits: 0.37");
+    act(() => {
+      store.getState().setActiveWindow("c:#dev");
+    });
+    expect(screen.getByRole("status", { name: "Credits used in this channel" }).textContent).toBe("credits: 0.32");
   });
 });
 

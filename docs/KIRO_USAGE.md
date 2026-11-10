@@ -531,6 +531,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: `silentExpired` in the reducer state (late 311/312/319/317/301 ignored, 320 credits only, 318 or error ends it), cleared with the silent set; `silentSentAt` pruned; reducer and store tests
 - Notes: a late 318 after the 10 s timeout used to print a WHOIS block nobody asked for; one narrow race (a /whois typed before the late replies) is documented in design.md
 
+### 2026-11-10 — Credits counter shows the active channel's cost (web-client-extras task 10.23)
+- Kiro features: spec web-client-extras (R8.25, R8.26, design section, task 10.23), steering (web-ui: same format and layout), PBT (P3 now sums `used` per agent and channel), Playwright functional and pixel runs
+- Produced: per-channel `credits` record, `creditsForActive`/`creditsScope` selectors, scope-aware accessible name, reducer, selector, component and e2e tests
+- Notes: found on the deployed host (counter 0.36 against `#demo9 0.04`); pixel baselines unchanged because the fixture's channel amount equals its total
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

@@ -176,8 +176,12 @@ export interface ClientState {
    * silently. At most MAX_WHOIS_PENDING entries, the oldest dropped first.
    */
   readonly silentExpired: readonly string[];
-  /** Latest credits `total` per agent from `320` lines; key = irc_lower(nick), null-prototype, max 50. */
-  readonly credits: Readonly<Record<string, number>>;
+  /**
+   * Credits per agent and channel from `320` lines (R8.25): irc_lower(nick) -> irc_lower(channel) ->
+   * the `used` amount of that agent in that channel. Both levels null-prototype; at most 50 agents
+   * (CREDITS_MAX) and 50 channels per agent (CREDITS_CHANNELS_MAX), oldest written dropped first.
+   */
+  readonly credits: Readonly<Record<string, Readonly<Record<string, number>>>>;
   /** Away text per nick; key = irc_lower(nick), null-prototype, max 200 (AWAY_MAX). Cleared on reconnect. */
   readonly away: Readonly<Record<string, string>>;
   readonly nextLineId: number;

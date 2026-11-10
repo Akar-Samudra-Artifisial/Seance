@@ -1,8 +1,15 @@
 import type { IrcMessage } from "@seance/irc-protocol";
 import { keyOf } from "./casemap.js";
-import { getOwn, withEntry, withoutEntry } from "./record.js";
+import { getOwn, nullRecord, withEntry, withoutEntry } from "./record.js";
 import { parseCreditsLine } from "./credits.js";
-import { CREDITS_MAX, MAX_WHOIS_PENDING, appendStatus, appendTo, capRecord } from "./reducer.route.js";
+import {
+  CREDITS_CHANNELS_MAX,
+  CREDITS_MAX,
+  MAX_WHOIS_PENDING,
+  appendStatus,
+  appendTo,
+  capRecord,
+} from "./reducer.route.js";
 import type { ClientState, WhoisPending } from "./types.js";
 
 /** Numerics whose replies are collected into `whoisPending`. */
@@ -169,9 +176,7 @@ export function onWhoisReply(state: ClientState, msg: IrcMessage, nowMs: number)
   // collected, so its 318 cannot print a block nobody asked for.
   if (state.silentExpired.includes(key)) {
     if (msg.command !== "320") return state;
-    const late = parseCreditsLine(msg.params[2] ?? "");
-    if (late === undefined) return state;
-    return { ...state, credits: capRecord(withEntry(withoutEntry(state.credits, key), key, late.total), CREDITS_MAX) };
+    return withCreditsLine(state, key, msg.params[2]);
   }
   const existing = getOwn(state.whoisPending, key);
   // A 301 for a nick with a silent WHOIS belongs to that WHOIS, never a visible away line (R8.18).
@@ -182,10 +187,29 @@ export function onWhoisReply(state: ClientState, msg: IrcMessage, nowMs: number)
   const pending = withEntry(existing === undefined ? state.whoisPending : withoutEntry(state.whoisPending, key), key, updated);
   const next = { ...state, whoisPending: capRecord(pending, MAX_WHOIS_PENDING) };
   if (msg.command !== "320") return next;
-  const parsed = parseCreditsLine(msg.params[2] ?? "");
-  if (parsed === undefined) return next;
-  const withoutOld = withoutEntry(state.credits, key);
-  return { ...next, credits: capRecord(withEntry(withoutOld, key, parsed.total), CREDITS_MAX) };
+  return withCreditsLine(next, key, msg.params[2]);
+}
+
+/**
+ * R8.25: a `320` credits line stores the `used` amount of that agent in that channel (the number
+ * after the channel); the lifetime `total` is not kept. Both levels are null-prototype records keyed
+ * by irc_lower, capped at CREDITS_MAX agents and CREDITS_CHANNELS_MAX channels per agent, the oldest
+ * written first to go. Anything that is not a strict credits line leaves the state alone.
+ */
+export function withCreditsLine(state: ClientState, agentKey: string, text: string | undefined): ClientState {
+  const parsed = parseCreditsLine(text ?? "");
+  if (parsed === undefined) return state;
+  const channelKey = keyOf(parsed.channel);
+  const channels = getOwn(state.credits, agentKey) ?? nullRecord<number>();
+  const updatedChannels = capRecord(
+    withEntry(withoutEntry(channels, channelKey), channelKey, parsed.used),
+    CREDITS_CHANNELS_MAX,
+  );
+  const agents = capRecord(
+    withEntry(withoutEntry(state.credits, agentKey), agentKey, updatedChannels),
+    CREDITS_MAX,
+  );
+  return { ...state, credits: agents };
 }
 
 /** 318: emit the grouped block into the Active_Window and drop the collected data. */

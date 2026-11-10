@@ -1,7 +1,7 @@
 // Task 8.1: the fixture script puts the store in the Frame_01 state (R13.1 to R13.3).
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { creditsTotal, plain } from "../irc/index.js";
+import { creditsForActive, plain } from "../irc/index.js";
 import { sessionStartText } from "../irc/reducer.route.js";
 import { FIGMA_01_MAIN, FIXTURE_MARKER, stepTime } from "./figma-01-main.js";
 import { FixtureShell, createFixtureStore } from "./shell.js";
@@ -33,7 +33,8 @@ describe("Frame_01 fixture store", () => {
   it("marks researcher away and coder back, and shows credits 42.7, lag 0.12 and TLS", () => {
     expect(Object.keys(client.away)).toEqual(["researcher"]);
     expect(client.away["researcher"]).toBe("reading docs");
-    expect(creditsTotal(client).toFixed(1)).toBe("42.7");
+    // Task 10.23: the counter shows the active channel, which is the one the fixture's 320 line names.
+    expect(creditsForActive(client).toFixed(2)).toBe("42.70");
     expect(ui.lagSeconds).toBe(0.12);
     expect(ui.serverUrl).toBe("wss://seance.local:6697");
     expect(client.phase).toBe("registered");

@@ -48,7 +48,7 @@ The plan first adds tokens and pure core pieces (modes, away, credits, selectors
     - Reducer sets `prefix` on join, part, quit lines; `exorcised` list per window (max 20), removed on rejoin, dropped on own leave and reconnect
     - _Requirements: 10.3, 11.6, 11.7_
   - [x] 2.8 Add the selectors
-    - `titleOf`, `modeSuffix`, `statusCounts`, `creditsTotal`, `exorcismText` in `src/irc/selectors.ts`; export from `index.ts`
+    - `titleOf`, `modeSuffix`, `statusCounts`, `creditsTotal`, `exorcismText` in `src/irc/selectors.ts`; export from `index.ts` (`creditsTotal` was later replaced by `creditsForActive`, web-client-extras task 10.23)
     - Unit tests for each; `tsconfig.core.json` must still pass (no DOM)
     - _Requirements: 1.2, 1.3, 1.4, 6.4, 11.2, 12.4_
   - [x] 2.9 Write property tests for title, counts and exorcism text

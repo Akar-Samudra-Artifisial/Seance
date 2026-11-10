@@ -664,7 +664,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         void _list;
         const idle: ClientState = {
           ...rest,
-          ...(serverChanged ? { credits: nullRecord<number>() } : {}),
+          ...(serverChanged ? { credits: nullRecord<Readonly<Record<string, number>>>() } : {}),
           ownNick: params.nick,
           phase: "disconnected",
         };

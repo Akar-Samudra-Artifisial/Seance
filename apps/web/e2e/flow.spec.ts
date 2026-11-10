@@ -139,7 +139,8 @@ test("Credits_Counter follows a WHOIS of the fake agent", async ({ page }) => {
   await send("/join #credits");
   const members = page.getByRole("list", { name: /^Members of #credits/ });
   await expect(members.getByText("@op2")).toBeVisible();
-  const counter = page.getByRole("status", { name: "Credits used by agents" });
+  // Task 10.23: in a channel window the counter shows that channel's cost.
+  const counter = page.getByRole("status", { name: "Credits used in this channel" });
   // Two decimals since 2026-11-10 (one decimal showed 0.0 for a 0.01-credit session).
   await expect(counter).toHaveText(/^credits: \d+\.\d{2}$/);
 
@@ -154,9 +155,9 @@ test("Credits_Counter follows a WHOIS of the fake agent", async ({ page }) => {
     await expect(creditsLine).toBeVisible({ timeout: 1_000 });
   }).toPass({ timeout: 30_000 });
 
-  const total = /total ([\d.]+)/.exec(await creditsLine.innerText())?.[1];
-  expect(total, "total in the credits line").toBeDefined();
-  await expect(counter).toHaveText(`credits: ${Number(total).toFixed(2)}`);
+  const used = /credits: #credits ([\d.]+) \//.exec(await creditsLine.innerText())?.[1];
+  expect(used, "channel amount in the credits line").toBeDefined();
+  await expect(counter).toHaveText(`credits: ${Number(used).toFixed(2)}`);
 });
 
 // web-client-extras R8.19: the counter refreshes itself after an agent's reply (a silent WHOIS 2 s
@@ -166,7 +167,7 @@ test("Credits_Counter updates after an agent reply without /whois, and shows no 
   await send("/join #silent");
   const members = page.getByRole("list", { name: /^Members of #silent/ });
   await expect(members.getByText("@op4")).toBeVisible();
-  const counter = page.getByRole("status", { name: "Credits used by agents" });
+  const counter = page.getByRole("status", { name: "Credits used in this channel" });
   await expect(counter).toHaveText("credits: 0.00");
 
   await send("/invite coder #silent");
@@ -180,13 +181,15 @@ test("Credits_Counter updates after an agent reply without /whois, and shows no 
   await expect(log.locator("div").filter({ hasText: REPLY_TEXT }).filter({ hasText: "<+coder>" }).last()).toBeVisible({
     timeout: 30_000,
   });
-  await expect(counter).not.toHaveText("credits: 0.00", { timeout: 15_000 });
-  await expect(counter).toHaveText(/^credits: \d+\.\d{2}$/);
+  // Task 10.23: one turn in #silent costs FAKE_TURN_CREDITS, whatever coder spent in other channels.
+  await expect(counter).toHaveText("credits: 0.01", { timeout: 15_000 });
   // The silent WHOIS added no block and no WHOIS line to any window.
   await expect(log.getByText(/End of \/WHOIS/)).toHaveCount(0);
   await expect(log.getByText(/credits: #silent/)).toHaveCount(0);
   await page.getByRole("button", { name: "Status window" }).click();
   await expect(page.getByRole("log").getByText(/End of \/WHOIS|credits: #silent/)).toHaveCount(0);
+  // Outside a channel the counter shows the session sum; this page only saw #silent's amount.
+  await expect(page.getByRole("status", { name: "Credits used this session" })).toHaveText("credits: 0.01");
 
   // Release the agent: the runner allows two agent channels (SEANCE_MAX_AGENT_CHANNELS).
   await page.getByRole("navigation", { name: "Windows" }).getByRole("button", { name: /#silent/ }).click();

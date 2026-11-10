@@ -22,6 +22,8 @@ export const MAX_QUERIES = 50;
 export const MAX_CLOSED = 50;
 export const MAX_WHOIS_PENDING = 50;
 export const CREDITS_MAX = 50;
+/** R8.25: channels kept per agent in `credits`; the oldest written is dropped first. */
+export const CREDITS_CHANNELS_MAX = 50;
 
 /** A line to append; id and timestamp are assigned by `appendTo`. */
 export interface LineSpec {

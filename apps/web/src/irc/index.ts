@@ -42,8 +42,10 @@ export { EVENT_LINE_KINDS, GATED_KINDS, KNOWN_AGENTS, classifyLine, isKnownAgent
 export type { ReduceResult } from "./reducer.js";
 export { initialState, reduce } from "./reducer.js";
 export type { CreditsLine, StatusCounts } from "./selectors.js";
+export type { CreditsScope } from "./selectors.js";
 export {
-  creditsTotal,
+  creditsForActive,
+  creditsScope,
   exorcismText,
   modeSuffix,
   parseCreditsLine,
