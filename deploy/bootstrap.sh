@@ -330,6 +330,15 @@ make_target() {
 
 # ---- 8. sandbox images (pinned base images pulled by digest; agent image built locally) ------
 SANDBOX_IMAGE=""
+IMAGE_CHANGED=0
+# sha256 of the agent image's build context: every file under sandbox/ (sorted by path, path included)
+# and the kiro-cli binary. Stored as the label io.seance.context-sha; a different value means a rebuild.
+agent_context_sha() {
+  {
+    (cd "$REPO_DIR/sandbox" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum)
+    printf '%s  kiro-cli\n' "$(sha256sum "$KIRO_BIN" | cut -d' ' -f1)"
+  } | sha256sum | cut -d' ' -f1
+}
 build_images() {
   local base bases=()
   mapfile -t bases < <(grep -h '^FROM ' "$REPO_DIR/sandbox/Dockerfile" "$REPO_DIR/apps/runner/test/fixtures/sandbox/Dockerfile" | awk '{ print $2 }' | sort -u)
@@ -342,11 +351,17 @@ build_images() {
       as_seance podman pull --quiet "$base" >/dev/null
     fi
   done
-  local current
+  local current ctx_sha label=io.seance.context-sha
   current=$(sed -n 's/^SEANCE_SANDBOX_IMAGE=//p' "$ENV_FILE" 2>/dev/null || true)
+  ctx_sha=$(agent_context_sha)
   if [[ $current == localhost/seance-agent@sha256:* ]] && as_seance podman image exists "$current"; then
-    SANDBOX_IMAGE=$current
-    return
+    local have
+    have=$(as_seance podman image inspect --format "{{index .Labels \"$label\"}}" "$current" 2>/dev/null || true)
+    if [ "$have" = "$ctx_sha" ]; then
+      SANDBOX_IMAGE=$current
+      return
+    fi
+    log "agent image rebuilt: sandbox context changed"
   fi
   log "building the agent image with $KIRO_BIN"
   need_seance_network
@@ -359,11 +374,12 @@ build_images() {
   local sha
   sha=$(sha256sum "$ctx/kiro-cli" | cut -d' ' -f1)
   as_seance podman build --pull=never --quiet --build-arg "KIRO_CLI_SHA256=$sha" \
-    -t localhost/seance-agent:build -f "$ctx/Dockerfile" "$ctx" >/dev/null
+    --label "$label=$ctx_sha" -t localhost/seance-agent:build -f "$ctx/Dockerfile" "$ctx" >/dev/null
   local digest
   digest=$(as_seance podman image inspect --format '{{.Digest}}' localhost/seance-agent:build)
   [[ $digest == sha256:* ]] || die "no digest for localhost/seance-agent:build"
   SANDBOX_IMAGE=localhost/seance-agent@$digest
+  [ "$SANDBOX_IMAGE" = "$current" ] || IMAGE_CHANGED=1
   rm -rf "$ctx"
   log "agent image $SANDBOX_IMAGE"
 }
@@ -476,6 +492,10 @@ main() {
   build_images
   write_config
   install_units
+  if [ "$IMAGE_CHANGED" = 1 ] && systemctl is-active --quiet seance-ircd.service; then
+    log "restarting seance-ircd: the runner uses the new agent image digest"
+    systemctl restart seance-ircd.service
+  fi
   if systemctl is-active --quiet seance-sandbox-nft.service; then
     # Nothing needed the network and the agents are running: leave them alone.
     systemctl enable --now seance-kiro-refresh.timer

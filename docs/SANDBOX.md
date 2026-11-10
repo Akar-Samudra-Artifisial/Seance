@@ -129,7 +129,7 @@ ACP stays newline-delimited JSON-RPC on stdio, carried by `podman run -i`.
 
 ## What the image holds, and why git has no metadata
 
-`sandbox/Dockerfile` builds on `debian:bookworm-slim` and adds `ca-certificates`, `netcat-openbsd` (for `seance-probe`) and `git` from apt, then copies Node 26 and npm from `node:26-bookworm-slim` (both pinned by digest; task 21). Only the `node` binary and the npm files (with `npx`) are copied; there is no corepack, because Node 25 and later images no longer ship it; the setuid and setgid bits are stripped after the last copy, and the image still runs as uid 10001. npm is set to work offline (`NPM_CONFIG_OFFLINE=true`, cache in the tmpfs `$HOME`), so `npm test` runs for a project without dependencies; a project that needs packages from a registry cannot install them inside the sandbox. With no corepack in the image, nothing can fetch yarn or pnpm on first use either.
+`sandbox/Dockerfile` builds on `debian:bookworm-slim` and adds `ca-certificates`, `netcat-openbsd` (for `seance-probe`), `git` and `libatomic1` (the copied `node` binary links `libatomic.so.1`, which bookworm-slim lacks; its other libraries, libc, libm, libstdc++ and libgcc_s, are already there) from apt, then copies Node 26 and npm from `node:26-bookworm-slim` (both pinned by digest; task 21). Only the `node` binary and the npm files (with `npx`) are copied; there is no corepack, because Node 25 and later images no longer ship it; the setuid and setgid bits are stripped after the last copy, and the image still runs as uid 10001. npm is set to work offline (`NPM_CONFIG_OFFLINE=true`, cache in the tmpfs `$HOME`), so `npm test` runs for a project without dependencies; a project that needs packages from a registry cannot install them inside the sandbox. With no corepack in the image, nothing can fetch yarn or pnpm on first use either.
 
 The worktree is mounted without its git metadata on purpose (design D3): its `.git` file points at the main repository's `.git/worktrees/<channel>`, which is not mounted, so `git` inside the container reports `not a git repository`. That is not a broken worktree. The runner commits an op agent's changes on the host after each turn, with hardened git, as `<agent>: turn in <channel>`, and ChanServ reports `<agent> committed <sha> (<n> files)`.
 
@@ -221,7 +221,7 @@ export SEANCE_SANDBOX_IMAGE=localhost/seance-agent@<that digest>
 - a non-root user with uid 10001 and home `/home/agent`;
 - the base image pinned by digest (`debian:bookworm-slim`), setuid bits removed;
 - `ENTRYPOINT` `seance-entry`, which stages `/run/seance/auth` into `$HOME/.local/share/kiro-cli` and then runs `kiro-cli "$@"`, so `acp --agent <name>` works;
-- `seance-probe`, `nc` (netcat-openbsd), `ca-certificates`, and `git` (so git fails with "not a repository").
+- `seance-probe`, `nc` (netcat-openbsd), `ca-certificates`, `libatomic1` (for the copied `node`), and `git` (so git fails with "not a repository"). The build runs `node --version` and `npm --version` once, so a missing library fails the build.
 
 The runner never pulls images. Build or load the image on the host first. The test image for the integration suite is `apps/runner/test/fixtures/sandbox/Dockerfile` (the Fake_Agent instead of `kiro-cli`).
 

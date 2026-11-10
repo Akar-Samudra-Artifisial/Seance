@@ -268,6 +268,8 @@ The sandbox limits what an agent can **write and reach**. The Kiro credential re
 4. npm SHALL work offline for a project without dependencies: its cache and logs live in the tmpfs `$HOME` (`NPM_CONFIG_CACHE=/home/agent/.npm`), and `NPM_CONFIG_OFFLINE`, `NPM_CONFIG_UPDATE_NOTIFIER=false`, `NPM_CONFIG_FUND=false` and `NPM_CONFIG_AUDIT=false` keep it from asking the registry. The test image SHALL carry the same settings.
 5. A real-Podman case (skipped without Podman and the pinned base) SHALL run `node --version` and `npm test` for a throwaway project inside the container.
 6. `docs/SANDBOX.md` SHALL list the image contents and explain that the worktree has no git metadata on purpose (D3) and how the runner commits.
+7. THE image SHALL install `libatomic1` (the copied `node` binary links `libatomic.so.1`) and SHALL run `node --version` at build time, so a missing shared library fails the build (task 21.4).
+8. `deploy/bootstrap.sh` SHALL reuse the current agent image only when its label `io.seance.context-sha` equals the sha256 over every file of `sandbox/` (sorted) plus the kiro-cli binary's sha; otherwise it SHALL rebuild with `--pull=never`, log "agent image rebuilt: sandbox context changed", and restart `seance-ircd` when it is running (task 21.4).
 
 ### Requirement 17: One git rule in the agent instructions (task 21.2)
 

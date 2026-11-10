@@ -587,6 +587,11 @@ Draft skeleton. Fill each section from the log below; keep the whole write-up un
 - Produced: corepack COPY, link and variables removed from both Dockerfiles, file test that no line mentions it, docs and spec text, SKILL.md blank lines restored
 - Notes: found on the deployed host: the pinned Node 26 image ships only npm, so the image build in `deploy/bootstrap.sh` failed; the repo tests read the Dockerfile and could not see that
 
+### 2026-11-10 — Agent image gets libatomic1 and rebuilds when sandbox/ changes (agent-sandbox task 21.4)
+- Kiro features: spec agent-sandbox (Requirement 16.7 and 16.8, task 21.4)
+- Produced: `libatomic1` and a build-time `node --version` in `sandbox/Dockerfile`, a context-hash label and restart in `deploy/bootstrap.sh`, file tests, docs and spec text
+- Notes: found on the deployed host: the copied node binary needs `libatomic.so.1`, and the old reuse rule kept the stale image; the test image is built on the node base, so the repo tests could not see either
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

@@ -16,14 +16,20 @@
 FROM docker.io/library/node:26-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68 AS node
 
 # debian:bookworm-slim, index digest of 2026-11-05 (the node image above is built on bookworm too, so
-# its binary finds the same libc and libstdc++).
+# its binary finds the same libc).
 FROM docker.io/library/debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
 # ca-certificates for HTTPS to Kiro; netcat for seance-probe; git so that `git` inside the sandbox
 # fails with "not a repository" instead of "not found" (no git metadata is mounted on purpose, design
 # D3: the runner commits the worktree on the host after each turn).
+#
+# libatomic1: the node binary copied below links libatomic.so.1, which debian:bookworm-slim lacks (the
+# node image has it, so a test image built on that base never showed the gap). The node binary's other
+# shared libraries are libc, libm, libstdc++ and libgcc_s; libstdc++6 and libgcc-s1 already come with
+# bookworm-slim (apt depends on them) and libc6 is its base, so nothing else is added. The
+# `node --version` step below fails the build if a library is ever missing again.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates netcat-openbsd git \
+ && apt-get install -y --no-install-recommends ca-certificates netcat-openbsd git libatomic1 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --uid 10001 --user-group --create-home --home-dir /home/agent --shell /usr/sbin/nologin agent
 
@@ -31,6 +37,8 @@ COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
  && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
+RUN node --version && npm --version
 
 COPY --chmod=0755 kiro-cli /usr/local/bin/kiro-cli
 COPY --chmod=0755 seance-entry seance-probe /usr/local/bin/

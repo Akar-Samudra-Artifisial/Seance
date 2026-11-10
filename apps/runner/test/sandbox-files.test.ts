@@ -126,6 +126,17 @@ describe("image pinning (12.8, decision 5)", () => {
       expect(text.match(/apt-get install/g)).toHaveLength(1);
     });
 
+    // Task 21.4: the copied node binary links libatomic.so.1, which bookworm-slim does not ship.
+    it("installs libatomic1 for the copied node binary and runs node once at build time", () => {
+      const apt = lines.filter((l) => /apt-get install/.test(l));
+      expect(apt).toHaveLength(1);
+      expect(apt[0]).toMatch(/\blibatomic1\b/);
+      const lastNodeCopy = at(/^COPY --from=node \/usr\/local\/lib\/node_modules\/npm/);
+      const probe = at(/^RUN node --version/);
+      expect(probe).toBeGreaterThan(lastNodeCopy);
+      expect(probe).toBeLessThan(at(/^USER 10001:10001$/));
+    });
+
     it("strips setuid and setgid bits after the last COPY and before USER", () => {
       const strip = at(/find \/ -xdev -type f -perm \/6000 -exec chmod a-s/);
       const lastCopy = Math.max(...lines.map((l, i) => (/^COPY /.test(l) ? i : -1)));
@@ -620,5 +631,29 @@ describe("nftables template (7.3, D19)", () => {
     expect(names).toContain("prod.us-east-1.auth.desktop.kiro.dev");
     expect(names).toContain("cognito-identity.us-east-1.amazonaws.com"); // Kiro firewall page, social sign-in
     for (const n of names) expect(n).toMatch(/^[A-Za-z0-9.-]+$/);
+  });
+});
+
+// Task 21.4: deploy/bootstrap.sh has no test of its own, so the context-hash rule is pinned here.
+describe("deploy/bootstrap.sh agent image rebuild rule", () => {
+  const sh = read("deploy/bootstrap.sh");
+
+  it("hashes every sandbox/ file in sorted order plus the kiro-cli binary", () => {
+    expect(sh).toMatch(/agent_context_sha\(\)/);
+    expect(sh).toMatch(/cd "\$REPO_DIR\/sandbox" && find \. -type f -print0 \| LC_ALL=C sort -z \| xargs -0 sha256sum/);
+    expect(sh).toMatch(/sha256sum "\$KIRO_BIN"/);
+  });
+
+  it("labels the built image and reuses it only when the label matches", () => {
+    expect(sh).toContain("label=io.seance.context-sha");
+    expect(sh).toContain('--label "$label=$ctx_sha"');
+    expect(sh).toContain('if [ "$have" = "$ctx_sha" ]; then');
+    expect(sh).toContain("agent image rebuilt: sandbox context changed");
+    expect(sh).toContain("--pull=never");
+  });
+
+  it("restarts seance-ircd after a changed image when it is running", () => {
+    expect(sh).toMatch(/IMAGE_CHANGED.*= 1.*&& systemctl is-active --quiet seance-ircd\.service/);
+    expect(sh).toContain("restarting seance-ircd: the runner uses the new agent image digest");
   });
 });
