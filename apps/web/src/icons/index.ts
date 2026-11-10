@@ -24,6 +24,5 @@ export { ToolAgents } from "./ToolAgents.js";
 export { ToolChannels } from "./ToolChannels.js";
 export { ToolConnect } from "./ToolConnect.js";
 export { ToolLogs } from "./ToolLogs.js";
-export { ToolOptions } from "./ToolOptions.js";
 export { ToolTheme } from "./ToolTheme.js";
 export { TrayStatus } from "./TrayStatus.js";

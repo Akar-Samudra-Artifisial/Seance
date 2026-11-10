@@ -113,13 +113,6 @@ export const ICON_SOURCES = [
     "paths": 5
   },
   {
-    "component": "ToolOptions",
-    "file": "figma-icons/tool-options.svg",
-    "viewBox": "0 0 16 16",
-    "currentColor": null,
-    "paths": 6
-  },
-  {
     "component": "ToolTheme",
     "file": "figma-icons/tool-theme.svg",
     "viewBox": "0 0 13 13",

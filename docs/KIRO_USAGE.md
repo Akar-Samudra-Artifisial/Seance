@@ -486,6 +486,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: Options button, Tools › Options… and the Favorites menu removed (six menus, new slot widths), the title-bar Maximise button toggles browser full screen, tests for Alt keys, arrow wrap and the Fullscreen API, ten regenerated app baselines
 - Notes: the Figma-export diff ratios rose by about 0.0007 (0.01378 and 0.01368) and stay under their limits; a rejected `requestFullscreen()` is swallowed on purpose
 
+### 2026-11-10 — Tidy after removing Options and Favorites (web-client-extras task 9 follow-up)
+- Kiro features: spec web-client-extras task 9 (superseded notes in web-client-pixel-match and web-client-polish), steering web-ui, hook guard-shell
+- Produced: "six menus" wording, unused `ToolOptions` icon and its Figma SVG removed through `scripts/gen-icons.mjs`, toolbar separator ids renumbered, a test that `MENU_SLOTS`, `SLOT_CLASS` and `MENU_DEFS` stay the same length
+- Notes: guard-shell blocked a `cd ../` command that left the repo path check; pixel baselines needed no change
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

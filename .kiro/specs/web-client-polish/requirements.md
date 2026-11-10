@@ -59,10 +59,10 @@ Out of scope: the Options dialog and model picker, the channel list window, the 
 
 #### Acceptance Criteria
 
-1. THE Menu_Bar SHALL show the menus File, View, Favorites, Tools, Commands, Window and Help, in this order, in Win95_Sans 12 px black on the chrome face, 20 px high, each with an underlined mnemonic letter.
+1. *(Superseded 2026-11-10 by web-client-extras task 9: Favorites was removed, six menus remain.)* THE Menu_Bar SHALL show the menus File, View, Favorites, Tools, Commands, Window and Help, in this order, in Win95_Sans 12 px black on the chrome face, 20 px high, each with an underlined mnemonic letter.
 2. THE Menu_Bar SHALL be keyboard accessible with `role="menubar"`, roving tabindex, `ArrowLeft`/`ArrowRight` between menus, `ArrowDown`/`Enter`/`Space` to open, `ArrowUp`/`ArrowDown` inside a menu, `Home`/`End`, `Escape` to close and return focus, and `Alt+<mnemonic>` to open a menu.
 3. THE items SHALL map to existing commands only: File: Connect… (opens the Connect_Dialog), Reconnect, Close window, Quit. View: Mention sound (checkbox), Next window, Previous window. Tools: Whois of the selected nick. Commands: Join… , Part, Query…, Names, Topic…, Away, Back, Quit (each inserts or runs the matching slash command in the Input_Line through the Command_Parser). Window: one item per open window in Switchbar order with the active one checked, plus Close window. Help: Keyboard shortcuts (shows the existing `/help` text in the Status_Window).
-4. THE menus Favorites and every item without an existing command (for example Options…, Channel list…, Favorites entries, Tools › Options) SHALL be rendered `aria-disabled="true"` with a disabled look, SHALL not be focus traps, and SHALL do nothing when activated.
+4. *(Superseded 2026-11-10 by web-client-extras task 9: Favorites and Tools › Options… no longer exist; other items without a command stay disabled with a reason.)* THE menus Favorites and every item without an existing command (for example Options…, Channel list…, Favorites entries, Tools › Options) SHALL be rendered `aria-disabled="true"` with a disabled look, SHALL not be focus traps, and SHALL do nothing when activated.
 5. WHEN an item needs an argument the Menu_Bar SHALL put the command prefix into the Input_Line (for example `/join #`) and move focus there, instead of opening a new dialog.
 6. WHILE the Store is not `registered`, THE items that need a connection SHALL be disabled.
 7. THE Menu_Bar SHALL contain no inline `style`, and its popups SHALL close on outside click and on `Escape`.

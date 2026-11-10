@@ -90,7 +90,7 @@ Toolbar x positions (frame-relative): connect 7, separator 37, options 42, separ
 
 **Changed 2026-11-10 (web-client-extras task 9, tidying the dead controls).** The Options button and its separator are gone from the toolbar, and the Favorites menu is gone from the menu bar, so the app no longer matches Frame_01 at those places: the toolbar items after connect sit 30 px further left (channel list 47, agents 74, separator 104, logs 109, separator 139, theme 144) and the menu labels after View move 75 px left (Tools 115, Commands 164, Window 233, Help 289). The slot widths are now `[42, 42, 49, 69, 56, 56]`. The Figma comparison masks (`e2e/pixel.spec.ts`) keep covering the whole menu bar and toolbar rows, and the Figma export tests still pass within their limits. Measured on 2026-11-10 (macOS Chromium, 1440x900): Frame 01 17,861 pixels (ratio 0.01378, was 0.01309, limit 0.0157) and Frame 06 Classic 17,728 pixels (ratio 0.01368, was 0.01298, limit 0.0156), so the limits stay. The ten app baselines (`e2e/__screenshots__/<project>/01-main.png` and `06-classic.png` for the five projects) were regenerated with `--update-snapshots=all --grep-invert "Figma export"`; only the toolbar and menu bar rows differ (about 1,870 pixels at desktop, 1,630 in compact).
 
-Menu x positions: File 31, View 73, Favorites 115, Tools 190, Commands 239, Window 308, Help 364.
+Menu x positions: File 31, View 73, Favorites 115, Tools 190, Commands 239, Window 308, Help 364. *(Superseded by web-client-extras task 9 on 2026-11-10: Favorites was removed, so there are six menus and the labels after View sit 75 px further left; see the note above.)*
 
 Chat colours in Frame_01 (all from the design context): event `#6a9955`, action `#9a80c2`, message text `#d8d4c8`, coder `#3b78ff`, reviewer `#4caf50`, researcher `#9a7fd1`, human `#e08a2e`, `-ChanServ-` `#c8761f`, timestamp `#7a756b`.
 
@@ -176,7 +176,7 @@ Source of truth: `apps/web/design/figma-icons/*.svg` (committed). The script `ap
 |---|---|---|---|---|
 | `app-candle` | `AppCandle` | 10x16 | own colours | title bar |
 | `tool-connect` | `ToolConnect` | 10x15 | own | toolbar |
-| `tool-options` | `ToolOptions` | 16x16 | own | toolbar |
+| `tool-options` | `ToolOptions` | 16x16 | own | toolbar *(removed with the Options button by web-client-extras task 9; the SVG, the component and its manifest entry are gone)* |
 | `tool-channels` | `ToolChannels` | 12x14 | own | toolbar |
 | `tool-agents` | `ToolAgents` | 12x16 | own | toolbar |
 | `tool-logs` | `ToolLogs` | 12x14 | own | toolbar |
@@ -280,7 +280,7 @@ interface ChannelModes {                                       // apps/ircd chan
 }
 
 type ToolbarItem =
-  | { kind: "button"; id: "connect" | "options" | "channels" | "agents" | "logs" | "theme"; label: string; disabled: boolean }
+  | { kind: "button"; id: "connect" | "options" | "channels" | "agents" | "logs" | "theme"; label: string; disabled: boolean } // "options" removed by web-client-extras task 9
   | { kind: "separator" };
 
 interface MenuDef { id: string; label: string; slotWidth: number; entries: readonly MenuEntry[]; disabled: boolean }
@@ -361,7 +361,7 @@ The layout tokens sum to 900 with the tray and to 870 without it.
 
 - **Unit** (`vitest`): layout tokens, menu data and slot widths, toolbar item list and offsets, `fit`, `readableClass`, `groupChanges`, reducer rules (invite, empty line, WHOIS rows), icon generator output.
 - **Property:** P1 to P7 as above.
-- **Component** (`@testing-library/react`): child icon and buttons in the menu bar, no child header, Favorites item, toolbar order and separators, status bar panels per breakpoint (class based), overlay open and close with focus handling, `»` menu.
+- **Component** (`@testing-library/react`): child icon and buttons in the menu bar, no child header, Favorites item *(superseded: web-client-extras task 9 removed it)*, toolbar order and separators, status bar panels per breakpoint (class based), overlay open and close with focus handling, `»` menu.
 - **Ircd** (`apps/ircd/test`): `n`, `t`, grouped `MODE`, `324`, `004`; updated old expectations.
 - **E2E** (`apps/web/e2e/pixel.spec.ts`): the five projects above.
 - **Manual:** side-by-side check list in `tasks.md`.

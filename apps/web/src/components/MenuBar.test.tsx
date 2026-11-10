@@ -4,7 +4,9 @@ import { createClientStore } from "../store/client-store.js";
 import { ClientStoreProvider } from "../store/react.js";
 import type { SocketCloseInfo, WebSocketLike } from "../store/socket.js";
 import { createClientStorage } from "../store/storage.js";
-import { MenuBar } from "./MenuBar.js";
+import { MENU_SLOTS } from "../layout/metrics.js";
+import { MENU_DEFS } from "../shortcuts/shortcuts.js";
+import { MenuBar, SLOT_CLASS } from "./MenuBar.js";
 
 afterEach(cleanup);
 
@@ -243,6 +245,14 @@ describe("MenuBar", () => {
       fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "#dev" }));
       expect(store.getState().ui.minimised).toEqual([]);
       expect(store.getState().client.activeKey).toBe("c:#dev");
+    });
+  });
+
+  describe("slot tables stay in step with the menus", () => {
+    it("MENU_SLOTS, SLOT_CLASS and MENU_DEFS have the same length, and each class names its slot width", () => {
+      expect(SLOT_CLASS).toHaveLength(MENU_SLOTS.length);
+      expect(MENU_DEFS).toHaveLength(MENU_SLOTS.length);
+      expect(SLOT_CLASS.map((c) => /^w-\[(\d+)px\]$/.exec(c)?.[1])).toEqual(MENU_SLOTS.map(String));
     });
   });
 

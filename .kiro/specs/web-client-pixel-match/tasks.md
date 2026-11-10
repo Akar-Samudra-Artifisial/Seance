@@ -81,7 +81,7 @@ Order: spikes and assets first, then the pure rules (colours, event lines, empty
     - _Requirements: 2.4, 3.1_
   - [x] 5.5 Toolbar: item list, separators, offsets, label; keep roving focus
     - _Requirements: 4.1 to 4.6_
-  - [x] 5.6 Menus: enable Favorites with the single disabled item; slot widths
+  - [x] 5.6 Menus: enable Favorites with the single disabled item; slot widths *(Favorites and the Options button were removed later by web-client-extras task 9; six menus remain)*
     - _Requirements: 5.1 to 5.3_
   - [x] 5.7 Chat pane bevel and the always-visible scrollbar from spike 0.3; Firefox fallback
     - _Requirements: 7.1 to 7.6_

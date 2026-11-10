@@ -108,7 +108,7 @@ Figma file: `GFgFsC9HEkntrirqCmJP5I` (Séance). Layout values come from one Figm
 
 #### Acceptance Criteria
 
-1. THE toolbar SHALL contain, in this order, with 2x22 sunken separators where `|` stands: `connect` `|` `options` `|` `channel list` `agents` `|` `logs` `|` `theme toggle`. `channel list` and `agents` SHALL sit 1 px apart, with no separator between them.
+1. *(`options` removed by web-client-extras task 9, 2026-11-10; the toolbar is now `connect` `|` `channel list` `agents` `|` `logs` `|` `theme toggle`.)* THE toolbar SHALL contain, in this order, with 2x22 sunken separators where `|` stands: `connect` `|` `options` `|` `channel list` `agents` `|` `logs` `|` `theme toggle`. `channel list` and `agents` SHALL sit 1 px apart, with no separator between them.
 2. EACH button SHALL be 26x24, 4 px from the toolbar's top. The first button SHALL start 4 px from the left. A separator SHALL start 4 px after the button before it, and the next button SHALL start 3 px after the separator. The separator SHALL be 1 px lower than the buttons and 22 px high.
 3. THE glyph SHALL be centred in the button (Frame_01 offsets: connect glyph at 8,5; options at 5,4; channel list at 7.5,5.5; agents at 7.4,5.4; logs at 7.5,5.5; theme at 7,6).
 4. THE label `Theme: Ghost` SHALL end 33 px from the right edge of the toolbar (Frame_01 measurement) (Desktop and Medium); it SHALL be hidden in Compact.
@@ -116,6 +116,8 @@ Figma file: `GFgFsC9HEkntrirqCmJP5I` (Séance). Layout values come from one Figm
 6. THE buttons SHALL keep `role="toolbar"` roving focus, `aria-label` and `title`, and the `aria-disabled` pattern.
 
 ### Requirement 5: Menus and Favorites
+
+> **Superseded 2026-11-10 by web-client-extras task 9.** The Favorites menu (criterion 1) and the Options toolbar button (Requirement 4, criteria 1 and 5) had nothing behind them and were removed. There are six menus, with slot widths 42, 42, 49, 69, 56, 56 (criterion 2 below lists the original seven); criterion 3 still holds. The text below is kept as history.
 
 **User Story:** As a user, I want Favorites to open like the other menus.
 

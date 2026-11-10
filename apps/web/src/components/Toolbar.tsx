@@ -113,7 +113,7 @@ export function Toolbar(): ReactNode {
         document.getElementById("nick-list")?.focus();
       },
     },
-    sep("sep-3"),
+    sep("sep-2"),
     {
       kind: "button",
       id: "logs",
@@ -126,7 +126,7 @@ export function Toolbar(): ReactNode {
         else setActiveWindow("status");
       },
     },
-    sep("sep-4"),
+    sep("sep-3"),
     {
       kind: "button",
       id: "theme",

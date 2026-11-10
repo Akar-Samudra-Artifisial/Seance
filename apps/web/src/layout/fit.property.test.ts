@@ -3,6 +3,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { fitCount } from "./fit.js";
+import { MENU_SLOTS } from "./metrics.js";
 
 const widths = fc.array(fc.integer({ min: 1, max: 120 }), { minLength: 1, maxLength: 9 });
 const width = fc.integer({ min: 0, max: 1500 });
@@ -42,9 +43,10 @@ describe("P6 menu fit", () => {
     );
   });
 
-  it("shows all seven menus at 1440 and fewer at 360", () => {
-    const menus = [42, 42, 75, 49, 69, 56, 56];
-    expect(fitCount(1434, menus, 20 + 54, 24)).toBe(7);
-    expect(fitCount(354, menus, 20 + 54, 24)).toBeLessThan(7);
+  it("shows all six menus at 1440 and fewer at 360", () => {
+    const menus = [...MENU_SLOTS];
+    expect(menus).toHaveLength(6);
+    expect(fitCount(1434, menus, 20 + 54, 24)).toBe(6);
+    expect(fitCount(354, menus, 20 + 54, 24)).toBeLessThan(6);
   });
 });

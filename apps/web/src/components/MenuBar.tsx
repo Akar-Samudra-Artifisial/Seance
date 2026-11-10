@@ -31,7 +31,7 @@ const barButtonClass =
   "hit-target h-5 px-2 pb-[7px] text-left font-chrome text-xs leading-[13px] text-chrome-outline hover:bg-title-from hover:text-chrome-highlight focus-visible:bg-title-from focus-visible:text-chrome-highlight aria-expanded:bg-title-from aria-expanded:text-chrome-highlight aria-disabled:text-chrome-shadow aria-disabled:hover:bg-chrome-face aria-disabled:hover:text-chrome-shadow";
 
 /** Slot widths of R5.2 as static classes (File..Help); the order matches MENU_SLOTS. */
-const SLOT_CLASS = ["w-[42px]", "w-[42px]", "w-[49px]", "w-[69px]", "w-[56px]", "w-[56px]"] as const;
+export const SLOT_CLASS = ["w-[42px]", "w-[42px]", "w-[49px]", "w-[69px]", "w-[56px]", "w-[56px]"] as const;
 
 /** `open.index` of the `»` list itself (Compact). */
 const OVERFLOW = -1;
@@ -44,7 +44,7 @@ function isApplePlatform(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(navigator.platform) || /Mac OS X|iPhone|iPad/.test(navigator.userAgent);
 }
 
-/** Win95 menu bar (R2): seven menus, roving tabindex, mnemonics, MDI child buttons at the right end. */
+/** Win95 menu bar (R2): six menus, roving tabindex, mnemonics, MDI child buttons at the right end. */
 export function MenuBar(): ReactNode {
   // Narrow subscriptions: a new chat line replaces `windows`, which must not re-render the menu bar.
   const phase = useClientStore((s) => s.client.phase);
