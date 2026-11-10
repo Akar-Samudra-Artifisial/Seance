@@ -139,14 +139,14 @@ describe("Title bar (5.4)", () => {
 });
 
 describe("Toolbar (5.5)", () => {
-  it("orders the items connect | options | channels agents | logs | theme", () => {
+  it("orders the items connect | channels agents | logs | theme (no options button)", () => {
     const { store } = connected();
     mount(store, <Toolbar />);
     const toolbar = screen.getByRole("toolbar");
     const sequence = Array.from(toolbar.children).map((el) =>
       el.getAttribute("data-testid") === "toolbar-separator" ? "|" : el.getAttribute("data-toolbar-item"),
     );
-    expect(sequence).toEqual(["connect", "|", "options", "|", "channels", "agents", "|", "logs", "|", "theme"]);
+    expect(sequence).toEqual(["connect", "|", "channels", "agents", "|", "logs", "|", "theme"]);
   });
 
   it("uses 26x24 buttons with the R4.2 offsets and 2x22 separators", () => {
@@ -156,7 +156,7 @@ describe("Toolbar (5.5)", () => {
     const offsets = within(toolbar)
       .getAllByRole("button")
       .map((b) => /\bml-(\S+)/.exec(b.className)?.[1]);
-    expect(offsets).toEqual(["1", "[3px]", "[3px]", "px", "[3px]", "[3px]"]);
+    expect(offsets).toEqual(["1", "[3px]", "px", "[3px]", "[3px]"]);
     for (const b of within(toolbar).getAllByRole("button")) {
       expect(b.className).toContain("w-[26px]");
       expect(b.className).toContain("h-6");

@@ -481,6 +481,11 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: `ConnectDialog.tsx` renders through `Dialog.tsx` (full-width caption bar, `X` Close equal to Cancel), `Dialog` gains `overlayClassName` and exports `captionClass`, four new component tests
 - Notes: reusing `Dialog` removed the dialog's own Tab trap and Esc handler (one of each remains); the caption `X` is now the first Tab stop, so the old Tab-cycle test changed on purpose
 
+### 2026-11-10 — Dead controls removed, Maximise toggles full screen (web-client-extras task 9)
+- Kiro features: spec web-client-extras (task 9, requirement 5.4 superseded, 5.5 added), steering web-ui (keyboard-first, Win95 chrome), Playwright e2e and pixel runs
+- Produced: Options button, Tools › Options… and the Favorites menu removed (six menus, new slot widths), the title-bar Maximise button toggles browser full screen, tests for Alt keys, arrow wrap and the Fullscreen API, ten regenerated app baselines
+- Notes: the Figma-export diff ratios rose by about 0.0007 (0.01378 and 0.01368) and stay under their limits; a rejected `requestFullscreen()` is swallowed on purpose
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.

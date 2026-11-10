@@ -48,7 +48,7 @@ export function totalHeight(withTray: boolean): number {
 }
 
 /** Menu bar slot widths in order File..Help (R5.2): text 8 px inside each slot. */
-export const MENU_SLOTS = [42, 42, 75, 49, 69, 56, 56] as const;
+export const MENU_SLOTS = [42, 42, 49, 69, 56, 56] as const;
 
 /** Width kept free in the menu bar: child icon (5 + 14 + 1) and child buttons (16 + 16 + 2 + 16 + 2). */
 export const MENU_RESERVE = 20 + 52;

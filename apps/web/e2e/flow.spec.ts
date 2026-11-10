@@ -90,28 +90,22 @@ test("window titles, menus, minimise/restore and status bar", async ({ page }) =
   await expect(page.getByRole("region", { name: "Status window" })).toBeVisible();
   await expect(page).toHaveTitle(/^Séance — \[Status: chrome1/);
 
-  // The seven menus; Favorites opens with one inert item (pixel-match R5.1); Options… is disabled.
+  // The six menus (Favorites and Tools › Options… were removed: nothing was behind them).
   const menubar = page.getByRole("menubar", { name: "Main menu" });
-  await expect(menubar.getByRole("menuitem")).toHaveText([
-    "File",
-    "View",
-    "Favorites",
-    "Tools",
-    "Commands",
-    "Window",
-    "Help",
-  ]);
-  await menubar.getByRole("menuitem", { name: "Favorites" }).click();
-  await expect(page.getByRole("menu", { name: "Favorites" }).getByRole("menuitem", { name: "No favorites yet" })).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  await page.keyboard.press("Escape");
+  await expect(menubar.getByRole("menuitem")).toHaveText(["File", "View", "Tools", "Commands", "Window", "Help"]);
   await menubar.getByRole("menuitem", { name: "Tools" }).click();
-  const options = page.getByRole("menu").getByRole("menuitem", { name: "Options…" });
-  await expect(options).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByRole("menu", { name: "Tools" }).getByRole("menuitem")).toHaveText(["Whois…"]);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Options" })).toHaveCount(0);
+
+  // Maximise toggles browser full screen; the label follows the real state.
+  const fullScreen = page.getByRole("button", { name: "Full screen" });
+  await expect(fullScreen).toBeVisible();
+  await fullScreen.click();
+  await expect(page.getByRole("button", { name: "Exit full screen" })).toBeVisible();
+  await page.getByRole("button", { name: "Exit full screen" }).click();
+  await expect(page.getByRole("button", { name: "Full screen" })).toBeVisible();
 
   // Channel window title in the Title_Bar; the child buttons sit in the menu bar (pixel-match R2.2).
   await send("/join #chrome");

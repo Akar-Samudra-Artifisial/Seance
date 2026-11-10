@@ -31,7 +31,7 @@ const barButtonClass =
   "hit-target h-5 px-2 pb-[7px] text-left font-chrome text-xs leading-[13px] text-chrome-outline hover:bg-title-from hover:text-chrome-highlight focus-visible:bg-title-from focus-visible:text-chrome-highlight aria-expanded:bg-title-from aria-expanded:text-chrome-highlight aria-disabled:text-chrome-shadow aria-disabled:hover:bg-chrome-face aria-disabled:hover:text-chrome-shadow";
 
 /** Slot widths of R5.2 as static classes (File..Help); the order matches MENU_SLOTS. */
-const SLOT_CLASS = ["w-[42px]", "w-[42px]", "w-[75px]", "w-[49px]", "w-[69px]", "w-[56px]", "w-[56px]"] as const;
+const SLOT_CLASS = ["w-[42px]", "w-[42px]", "w-[49px]", "w-[69px]", "w-[56px]", "w-[56px]"] as const;
 
 /** `open.index` of the `»` list itself (Compact). */
 const OVERFLOW = -1;
@@ -104,14 +104,6 @@ export function MenuBar(): ReactNode {
     run: () => {
       submitInput(text);
     },
-  });
-  const unsupported = (id: string, label: string, reason: string): MenuEntry => ({
-    kind: "item",
-    id,
-    label,
-    disabled: true,
-    reason,
-    run: () => undefined,
   });
   const NOT_CONNECTED = "Connect first";
   const NOT_IN_CHANNEL = registered ? "Switch to a channel window first" : NOT_CONNECTED;
@@ -203,8 +195,6 @@ export function MenuBar(): ReactNode {
         },
       },
     ],
-    // R5.1: opens like the others; its only item is inert until favorites exist.
-    favorites: [unsupported("no-favorites", "No favorites yet", "Coming soon")],
     tools: [
       needsArgs(
         active?.kind === "query" ? `/whois ${active.name}` : "/whois ",
@@ -213,7 +203,6 @@ export function MenuBar(): ReactNode {
         "Whois…",
         NOT_CONNECTED,
       ),
-      unsupported("options", "Options…", "Coming soon"),
     ],
     commands: [
       needsArgs("/join #", registered, "join", "Join…", NOT_CONNECTED),

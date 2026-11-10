@@ -18,7 +18,6 @@ export interface Shortcut {
 export const MENU_DEFS = [
   { id: "file", label: "File", mnemonic: 0 },
   { id: "view", label: "View", mnemonic: 0 },
-  { id: "favorites", label: "Favorites", mnemonic: 1 },
   { id: "tools", label: "Tools", mnemonic: 0 },
   { id: "commands", label: "Commands", mnemonic: 0 },
   { id: "window", label: "Window", mnemonic: 0 },

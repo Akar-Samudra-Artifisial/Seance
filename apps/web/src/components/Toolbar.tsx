@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
-import { ToolAgents, ToolChannels, ToolConnect, ToolLogs, ToolOptions, ToolTheme } from "../icons/index.js";
+import { ToolAgents, ToolChannels, ToolConnect, ToolLogs, ToolTheme } from "../icons/index.js";
 import type { IconProps } from "../icons/index.js";
 import { useClientStore } from "../store/react.js";
 import { useCompact } from "./layout-hooks.js";
@@ -36,7 +36,8 @@ type ToolbarItem = ToolbarButton | ToolbarSeparator;
 const sep = (id: string): ToolbarSeparator => ({ kind: "separator", id });
 
 /**
- * 32 px icon toolbar (pixel-match R4): connect | options | channels agents | logs | theme, then the
+ * 32 px icon toolbar (pixel-match R4): connect | channels agents | logs | theme (the Figma options
+ * button was removed: it had nothing behind it), then the
  * theme label 33 px from the right edge (hidden in Compact).
  */
 export function Toolbar(): ReactNode {
@@ -77,17 +78,6 @@ export function Toolbar(): ReactNode {
       },
     },
     sep("sep-1"),
-    {
-      kind: "button",
-      id: "options",
-      icon: ToolOptions,
-      label: "Options",
-      disabled: true,
-      reason: "Coming soon",
-      offset: "ml-[3px]",
-      run: () => undefined,
-    },
-    sep("sep-2"),
     {
       kind: "button",
       id: "channels",

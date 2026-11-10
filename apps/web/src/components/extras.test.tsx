@@ -342,7 +342,9 @@ describe("explained disabled controls (R5)", () => {
         <Toolbar />
       </>,
     );
-    expect(screen.getByRole("button", { name: "Options" }).getAttribute("aria-description")).toBe("Coming soon");
+    // The "Coming soon" controls (Options, Favorites) were removed, so no control gives that reason.
+    expect(screen.queryByRole("button", { name: "Options" })).toBeNull();
+    expect(document.body.querySelector("[aria-description='Coming soon']")).toBeNull();
     expect(screen.getByRole("button", { name: "Connect" }).getAttribute("aria-description")).toBe("Disconnect first");
     expect(screen.getByRole("button", { name: "Minimise" }).getAttribute("aria-description")).toMatch(/browser tab/);
     fireEvent.click(screen.getByRole("menuitem", { name: "View" }));

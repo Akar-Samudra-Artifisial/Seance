@@ -4,7 +4,7 @@
 
 The web client still shows toolbar and menu controls that do nothing and say nothing: Channel list, Toggle theme, Help → Keyboard shortcuts, and several more. This spec gives them behaviour, or an explanation. It also fixes the runner WHOIS `tools:` line, which names a sandbox that is not in use.
 
-Goal: **no visible toolbar or menu control in `apps/web` is dead without explanation.** Options (toolbar button and Tools menu) stays out of scope and is explained instead.
+Goal: **no visible toolbar or menu control in `apps/web` is dead without explanation.** Options (toolbar button and Tools menu) and the Favorites menu had no feature behind them; they were first explained ("Coming soon") and, in the follow-up of 2026-11-10 (task 9), removed from the chrome. They stay a future idea in `DESIGN.md` and the README.
 
 Figma sources (Talk-to-Figma channel `8p9g0i9k`, or the Figma power file `GFgFsC9HEkntrirqCmJP5I`):
 
@@ -78,9 +78,10 @@ Figma sources (Talk-to-Figma channel `8p9g0i9k`, or the Figma power file `GFgFsC
 #### Acceptance Criteria
 
 1. EVERY visible toolbar, menu, menu-bar caption and title-bar control that is disabled or inert SHALL be an Explained_Disabled control, in every state of the client.
-2. THE reasons SHALL be specific ("Coming soon", "Disconnect first", "Already the last window", "Connect first", "Join a channel first").
+2. THE reasons SHALL be specific ("Disconnect first", "Already the last window", "Connect first", "Join a channel first").
 3. A generic test SHALL render the controls in several states and fail on any disabled control without a reason.
-4. Options (toolbar and Tools menu) SHALL remain disabled with the reason "Coming soon".
+4. (Superseded 2026-11-10.) THE toolbar Options button, Tools › Options… and the Favorites menu SHALL NOT exist, because a control that never works looks unfinished: the toolbar is connect | channel list, agents | status window | theme, the menu bar is File, View, Tools, Commands, Window, Help (every remaining menu keeps its `Alt+<letter>` key and the arrow keys wrap over the six). Controls that are disabled only in some states keep their reasons.
+5. THE title-bar Maximise button SHALL toggle browser full screen through the Fullscreen API on `document.documentElement` where `document.fullscreenEnabled` is true: `aria-label` and `title` are `Full screen` and, while in full screen, `Exit full screen`, following `fullscreenchange` (also after Esc). A rejected request is ignored silently. Where full screen is not available the button stays inert with "Not available in a browser tab". Minimise stays inert with that reason.
 
 ### Requirement 6: Runner WHOIS tools label
 

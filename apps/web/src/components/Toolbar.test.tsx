@@ -49,7 +49,15 @@ describe("Toolbar", () => {
     setup(false);
     expect(screen.getByRole("toolbar", { name: "Toolbar" })).toBeTruthy();
     const buttons = screen.getAllByRole("button");
-    expect(buttons).toHaveLength(6);
+    // Options was removed (nothing was behind it): connect, channel list, agents, status, theme.
+    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Connect",
+      "Channel list",
+      "Agents",
+      "Status window",
+      "Toggle theme",
+    ]);
+    expect(screen.queryByRole("button", { name: "Options" })).toBeNull();
     for (const b of buttons) {
       expect(b.getAttribute("aria-label")).toBeTruthy();
       // web-client-extras R5: a disabled button explains itself in the tooltip ("<label>: <reason>").
@@ -67,20 +75,25 @@ describe("Toolbar", () => {
   });
 
   // web-client-extras: Toggle theme now works (R3), so it left this list; Agents joined it outside a channel.
-  it("disables options, channel list and agents with aria-disabled and ignores clicks", () => {
+  it("disables channel list and agents with their reasons and ignores clicks", () => {
     const store = setup(false);
-    for (const name of ["Options", "Channel list", "Agents"]) {
+    const reasons: Readonly<Record<string, string>> = {
+      "Channel list": "Connect first",
+      Agents: "Switch to a channel window first",
+    };
+    for (const [name, reason] of Object.entries(reasons)) {
       const b = screen.getByRole("button", { name });
       expect(b.getAttribute("aria-disabled")).toBe("true");
+      expect(b.getAttribute("aria-description")).toBe(reason);
       fireEvent.click(b);
     }
     expect(store.getState().ui.connectRequests).toBe(0);
   });
 
-  it("keeps Options disabled even when connected, and enables the channel list", () => {
+  it("enables the channel list when connected, and Connect says why it is off", () => {
     setup(true);
-    expect(screen.getByRole("button", { name: "Options" }).getAttribute("aria-description")).toBe("Coming soon");
     expect(screen.getByRole("button", { name: "Channel list" }).getAttribute("aria-disabled")).toBeNull();
+    expect(screen.getByRole("button", { name: "Connect" }).getAttribute("aria-description")).toBe("Disconnect first");
   });
 
   it("toggle theme switches the theme and the label", () => {
@@ -126,10 +139,10 @@ describe("Toolbar", () => {
     expect(buttons[1]?.getAttribute("tabindex")).toBe("0");
     expect(buttons[0]?.getAttribute("tabindex")).toBe("-1");
     fireEvent.keyDown(toolbar, { key: "End" });
-    expect(document.activeElement).toBe(buttons[5]);
+    expect(document.activeElement).toBe(buttons[4]);
     fireEvent.keyDown(toolbar, { key: "ArrowRight" });
     expect(document.activeElement).toBe(buttons[0]);
     fireEvent.keyDown(toolbar, { key: "ArrowLeft" });
-    expect(document.activeElement).toBe(buttons[5]);
+    expect(document.activeElement).toBe(buttons[4]);
   });
 });

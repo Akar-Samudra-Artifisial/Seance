@@ -52,13 +52,53 @@ function setup(register = true) {
 const bar = (name: string): HTMLElement => screen.getByRole("menuitem", { name });
 
 describe("MenuBar", () => {
-  it("shows the seven menus in order inside a menubar", () => {
+  // Favorites was removed (it had nothing behind it); six menus remain.
+  it("shows the six menus in order inside a menubar, without Favorites", () => {
     setup();
     const menubar = screen.getByRole("menubar");
     const names = within(menubar)
       .getAllByRole("menuitem")
       .map((b) => b.textContent);
-    expect(names).toEqual(["File", "View", "Favorites", "Tools", "Commands", "Window", "Help"]);
+    expect(names).toEqual(["File", "View", "Tools", "Commands", "Window", "Help"]);
+    expect(screen.queryByRole("menuitem", { name: "Favorites" })).toBeNull();
+  });
+
+  it("wraps ArrowLeft/ArrowRight around the six menus, and Alt+A (the old Favorites key) opens nothing", () => {
+    setup();
+    const file = bar("File");
+    file.focus();
+    fireEvent.keyDown(file, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(bar("Help"));
+    fireEvent.keyDown(bar("Help"), { key: "ArrowRight" });
+    expect(document.activeElement).toBe(bar("File"));
+    // Every remaining menu still opens with its own Alt key.
+    for (const [code, name] of [
+      ["KeyF", "File"],
+      ["KeyV", "View"],
+      ["KeyT", "Tools"],
+      ["KeyC", "Commands"],
+      ["KeyW", "Window"],
+      ["KeyH", "Help"],
+    ] as const) {
+      fireEvent.keyDown(document, { key: code.slice(3).toLowerCase(), code, altKey: true });
+      expect(screen.getByRole("menu", { name })).toBeTruthy();
+      fireEvent.keyDown(screen.getByRole("menu", { name }), { key: "Escape" });
+    }
+    fireEvent.keyDown(document, { key: "a", code: "KeyA", altKey: true });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("walks an open menu with ArrowRight through Tools, Commands, Window, Help and back to File", () => {
+    setup();
+    fireEvent.click(bar("View"));
+    const order: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const open = screen.getAllByRole("menu")[0];
+      if (open === undefined) throw new Error("no open menu");
+      order.push(open.getAttribute("aria-label") ?? "");
+      fireEvent.keyDown(open, { key: "ArrowRight" });
+    }
+    expect(order).toEqual(["View", "Tools", "Commands", "Window", "Help", "File"]);
   });
 
   it("uses a roving tabindex and ArrowLeft/ArrowRight/Home/End between menus", () => {
@@ -147,33 +187,14 @@ describe("MenuBar", () => {
   });
 
   describe("disabled items", () => {
-    // pixel-match R5.1 changes this on purpose: Favorites opens like the other menus and holds one
-    // inert item (it used to be an aria-disabled menu that never opened).
-    it("opens Favorites with the single inert 'No favorites yet' item", () => {
-      const { socket } = setup();
-      const sent = socket.sent.length;
-      const fav = bar("Favorites");
-      expect(fav.getAttribute("aria-disabled")).toBeNull();
-      fav.focus();
-      fireEvent.keyDown(fav, { key: "ArrowDown" });
-      const menu = screen.getByRole("menu", { name: "Favorites" });
-      const items = within(menu).getAllByRole("menuitem");
-      expect(items.map((i) => i.textContent)).toEqual(["No favorites yet"]);
-      expect(items[0]?.getAttribute("aria-disabled")).toBe("true");
-      fireEvent.click(items[0] as HTMLElement);
-      expect(screen.getByRole("menu", { name: "Favorites" })).toBeTruthy();
-      expect(socket.sent.length).toBe(sent);
-    });
-
-    it("keeps unsupported items inert and the menu open", () => {
-      const { socket } = setup();
-      const sent = socket.sent.length;
+    // Options… and Favorites had no task behind them and were removed; Tools holds Whois… only.
+    it("has no Options… item: the Tools menu holds only Whois…", () => {
+      setup();
       fireEvent.click(bar("Tools"));
-      const options = screen.getByRole("menuitem", { name: "Options…" });
-      expect(options.getAttribute("aria-disabled")).toBe("true");
-      fireEvent.click(options);
-      expect(screen.getByRole("menu", { name: "Tools" })).toBeTruthy();
-      expect(socket.sent.length).toBe(sent);
+      const menu = screen.getByRole("menu", { name: "Tools" });
+      expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Whois…"]);
+      expect(screen.queryByRole("menuitem", { name: "Options…" })).toBeNull();
+      expect(screen.queryByText("Coming soon")).toBeNull();
     });
 
     it("disables connection-bound items until registered", () => {
@@ -234,7 +255,7 @@ describe("MenuBar", () => {
       const widths = within(menubar)
         .getAllByRole("menuitem")
         .map((b) => /w-\[(\d+)px\]/.exec(b.className)?.[1]);
-      expect(widths).toEqual(["42", "42", "75", "49", "69", "56", "56"]);
+      expect(widths).toEqual(["42", "42", "49", "69", "56", "56"]);
       for (const b of within(menubar).getAllByRole("menuitem")) {
         expect(b.className).toContain("text-left");
         expect(b.querySelector("u")).not.toBeNull();
@@ -263,13 +284,13 @@ describe("MenuBar", () => {
     };
 
     it("moves the menus that do not fit into the » list and opens them from there", () => {
-      narrow(360);
+      narrow(280); // with six menus, 280 px is what leaves File, View and Tools visible
       setup();
       const menubar = screen.getByRole("menubar");
       const names = within(menubar)
         .getAllByRole("menuitem")
         .map((b) => b.getAttribute("aria-label") ?? b.textContent);
-      expect(names).toEqual(["File", "View", "Favorites", "Tools", "More menus"]);
+      expect(names).toEqual(["File", "View", "Tools", "More menus"]);
       const more = screen.getByRole("menuitem", { name: "More menus" });
       fireEvent.click(more);
       const list = screen.getByRole("menu", { name: "More menus" });
@@ -283,7 +304,7 @@ describe("MenuBar", () => {
     });
 
     it("keeps keyboard order: ArrowRight from the last visible menu lands on »; Alt+mnemonic still opens hidden menus", () => {
-      narrow(360);
+      narrow(280);
       setup();
       const tools = bar("Tools");
       tools.focus();
@@ -299,7 +320,7 @@ describe("MenuBar", () => {
       narrow(1434);
       setup();
       expect(screen.queryByRole("menuitem", { name: "More menus" })).toBeNull();
-      expect(within(screen.getByRole("menubar")).getAllByRole("menuitem")).toHaveLength(7);
+      expect(within(screen.getByRole("menubar")).getAllByRole("menuitem")).toHaveLength(6);
     });
   });
 

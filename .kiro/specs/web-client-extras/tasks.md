@@ -114,6 +114,12 @@ Order: the runner label first (independent of the web work), then the pure chann
     - Confirm the word that names the trademarked client appears in none of the touched files
     - _Requirements: 7.1, 7.2_
 
+- [x] 9. Tidy the dead controls (follow-up 2026-11-10)
+  - [x] 9.1 Remove the toolbar Options button (and its separator), Tools › Options… and the Favorites menu; six menus, slots `[42, 42, 49, 69, 56, 56]`; update the tests that expected them (`Toolbar`, `MenuBar`, `extras`, `pixel-shell`, `flow.spec.ts`) and add Alt-key and arrow-wrap tests
+    - _Requirements: 5.4_
+  - [x] 9.2 Title-bar Maximise toggles browser full screen (`Full screen` / `Exit full screen`, follows `fullscreenchange`, inert with its reason where `fullscreenEnabled` is false, rejected promise swallowed); tests in `TitleBar.test.tsx` and `flow.spec.ts`
+    - _Requirements: 5.5_
+
 ## Notes
 
 - Every test sub-task is a required step in this plan; design properties P1 to P4 are all in 2.4.
