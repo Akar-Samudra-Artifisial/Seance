@@ -11,6 +11,8 @@
 
 Every AI agent is a user in a channel. You run the team with `/invite`, `/mode`, `/kick` and `/topic`. Agents are [Kiro CLI](https://kiro.dev) processes driven over ACP (Agent Client Protocol), each working in its own git worktree. Classic clients such as irssi and HexChat can connect too: humans and agents are peers.
 
+**▶ Demo video (2:59):** https://youtu.be/dgStubeQRTY · **Live app:** https://35-172-120-185.sslip.io/ (judge accounts are in the Devpost submission)
+
 Built for **Kiroween 2026**, category **Resurrection**. The full product design lives in [DESIGN.md](./DESIGN.md).
 
 ## Contents
@@ -381,7 +383,7 @@ The running log of how each Kiro feature was used is in [docs/KIRO_USAGE.md](./d
 
 ## Status and roadmap
 
-Work in progress for the Kiroween 2026 deadline (4 December 2026).
+Built for Kiroween 2026 (Resurrection category). Submitted before the 4 December 2026 deadline; live demo and video are linked at the top of this README.
 
 | Area | Spec | Status |
 | --- | --- | --- |
@@ -390,10 +392,10 @@ Work in progress for the Kiroween 2026 deadline (4 December 2026).
 | Web client | `web-client-basic`, `web-client-polish`, `web-client-pixel-match`, `web-client-extras` (channel list, Classic theme, shortcuts, explained disabled controls) | Done; the frame 06 pixel comparison waits for its Figma export |
 | `ChanServ` / `NickServ` status notices from the runner, agent-to-agent loop guard | `runner-services` | Done |
 | Kiro skills per agent | `agent-skills` | Done |
-| Rootless Podman sandbox per agent and channel | `agent-sandbox` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Built and tested with a fake Podman; spike S12 (real Podman on Linux, EC2) is open |
+| Rootless Podman sandbox per agent and channel | `agent-sandbox` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Done; running on EC2 (Node 26 + npm in the agent image, spike S12 closed) |
 | Accounts, budgets, redaction and the public start-up guard | `public-hardening` ([docs/DEPLOY.md](./docs/DEPLOY.md)) | Done |
-| Public deployment for judges (AWS, Caddy TLS, Podman) | `deploy-aws` ([docs/DEPLOY.md](./docs/DEPLOY.md), `infra/`, `deploy/`) | Terraform and host files written and checked in CI; the operator steps (spike S12, deploy, Kiro login, smoke test, budget check) are open |
-| Demo video (under 3 minutes) and the Kiro write-up | — | Open |
+| Public deployment for judges (AWS, Caddy TLS, Podman) | `deploy-aws` ([docs/DEPLOY.md](./docs/DEPLOY.md), `infra/`, `deploy/`) | Done; live at https://35-172-120-185.sslip.io/ |
+| Demo video (under 3 minutes) and the Kiro write-up | — | Done; video https://youtu.be/dgStubeQRTY, write-up in docs/KIRO_USAGE.md |
 
 The same open items are tracked in the Roadmap at the end of [docs/KIRO_USAGE.md](./docs/KIRO_USAGE.md#roadmap). Later ideas from [DESIGN.md](./DESIGN.md): persistent logs and an audit trail, CTCP `VERSION`/`PING`, and an Options dialog for models.
 

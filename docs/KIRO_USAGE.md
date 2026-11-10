@@ -16,9 +16,9 @@ Running log of Kiro features used while building Séance. It is raw material for
 | ACP | `spikes/acp/`, `apps/runner` | Séance itself drives Kiro agents over `kiro-cli acp` as IRC users |
 | PBT | `packages/irc-protocol` | fast-check properties from the spec (`parse(serialize(m)) == m`) |
 
-## Write-up (draft for Devpost)
+## Write-up (Devpost submission)
 
-Draft skeleton. Fill each section from the log below; keep the whole write-up under about 900 words. Numbers counted on 2026-11-10.
+The write-up is final and mirrored in the Devpost submission. Numbers counted on 2026-11-10.
 
 ### By the numbers
 - 14 specs in `.kiro/specs/`, 764 ticked tasks, 99 log entries in this file.
@@ -46,11 +46,13 @@ Draft skeleton. Fill each section from the log below; keep the whole write-up un
 - MCP: Playwright for the pixel checks against the Figma frames, Context7 for library docs.
 
 ### Spec-driven vs vibe coding: what worked, what did not
-- Worked: <fill>.
-- Did not: <fill, e.g. an assumption that a review or production test proved wrong, and how the spec absorbed it>.
+- Worked: spec-driven work paid off where correctness mattered. The IRC parser, the permission handler and the exorcism flow were right the first time they met a real client, because the correctness properties existed before the code (fast-check, e.g. `parse(serialize(m)) == m`). Review findings became follow-up tasks inside the same spec with the reason recorded (web-client-extras 10.20 to 10.23).
+- Did not: assuming the tests were the world. Three production bugs were invisible to the fake Podman and to tests that only read the Dockerfile: the `/home/agent` tmpfs owned by root, Node 26 without corepack, and the node binary needing `libatomic.so.1`. Each was written back into the agent-sandbox spec as a requirement first (task 21.x), then fixed in code with a test that pins it, and `bootstrap.sh` now rebuilds the image when the sandbox context changes.
 
 ### What we would do next
-- <fill: Crew App manifest, irssi over TLS, persistent logs>.
+- A Kiro Crew App manifest so a team can declare its agents, channels and modes in one file.
+- irssi over TLS on the public server (today TCP 6667 listens on 127.0.0.1 only).
+- Persistent logs and an audit trail.
 
 ## Entry template
 
@@ -592,11 +594,21 @@ Draft skeleton. Fill each section from the log below; keep the whole write-up un
 - Produced: `libatomic1` and a build-time `node --version` in `sandbox/Dockerfile`, a context-hash label and restart in `deploy/bootstrap.sh`, file tests, docs and spec text
 - Notes: found on the deployed host: the copied node binary needs `libatomic.so.1`, and the old reuse rule kept the stale image; the test image is built on the node base, so the repo tests could not see either
 
+### 2026-11-10 — Submission docs: demo link, status table and final write-up
+- Kiro features: skill kiroween-submission (checklist), spec agent-sandbox task 21.x (cited in the write-up)
+- Produced: README demo and live-app line, three status rows marked done, write-up bullets filled, Roadmap closed
+- Notes: docs only, no code, specs, tests or `.kiro/` changes; `pnpm lint --force` passes
+
+### 2026-11-10 — Final wording for the submitted state
+- Kiro features: skill kiroween-submission (checklist)
+- Produced: write-up heading now "Devpost submission"; README status sentence says the project is submitted
+- Notes: wording only, no code, specs or `.kiro/` changes
+
 ## Roadmap
 
-Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.
+Submission deadline: 4 December 2026, 14:00 PT. New log entries go above this section.
 
-- **deploy-aws operator steps** (spec written, files in `infra/` and `deploy/`): `terraform apply`, the full deploy, the Kiro login, the browser smoke test, the budget alert check and, after judging, the teardown. Runbook: [DEPLOY.md](./DEPLOY.md).
-- **Spike S12 on EC2**: `sudo /opt/seance/deploy/spike-s12.sh` (deploy-aws task 1, agent-sandbox task 0.4); record the results in `spikes/acp/FINDINGS.md`.
-- **Demo video** under 3 minutes on YouTube.
-- **Write-up** of how Séance was built with Kiro, from this log.
+- **deploy-aws operator steps**: done. Live on AWS since 2026-11-09 at <https://35-172-120-185.sslip.io/> (commit c4eb37f). Runbook: [DEPLOY.md](./DEPLOY.md).
+- **Spike S12 on EC2**: done, all PASS on 2026-11-09 (results in `spikes/acp/FINDINGS.md`).
+- **Demo video** (2:59): done, <https://youtu.be/dgStubeQRTY>.
+- **Write-up**: done, final in this file and mirrored in the Devpost submission.
