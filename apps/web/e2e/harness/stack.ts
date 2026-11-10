@@ -35,10 +35,16 @@ const START_TIMEOUT_MS = 60_000;
 /** A coloured sentence from `coder`: colour 12 (blue), text, reset. */
 export const FAKE_REPLY = "\x0312The veil is thin tonight.\x0F";
 
-/** Enough unmatched turns for every message a spec sends; each one replies with FAKE_REPLY. */
+/**
+ * Enough unmatched turns for every message a spec sends; each one replies with FAKE_REPLY and meters
+ * FAKE_TURN_CREDITS, so the credits counter has something to show (web-client-extras R8.19).
+ */
+export const FAKE_TURN_CREDITS = 0.01;
 const FAKE_SCRIPT = JSON.stringify({
   settleMs: 0,
-  turns: Array.from({ length: 8 }, () => ({ steps: [{ chunk: FAKE_REPLY }] })),
+  turns: Array.from({ length: 8 }, () => ({
+    steps: [{ chunk: FAKE_REPLY }, { metadata: { credits: [{ value: FAKE_TURN_CREDITS, unit: "credit" }] } }],
+  })),
 });
 
 interface ManagedProcess {

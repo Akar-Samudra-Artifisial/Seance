@@ -159,6 +159,41 @@ test("Credits_Counter follows a WHOIS of the fake agent", async ({ page }) => {
   await expect(counter).toHaveText(`credits: ${Number(total).toFixed(2)}`);
 });
 
+// web-client-extras R8.19: the counter refreshes itself after an agent's reply (a silent WHOIS 2 s
+// later), and that WHOIS prints nothing. Each Fake_Agent turn meters FAKE_TURN_CREDITS (0.01).
+test("Credits_Counter updates after an agent reply without /whois, and shows no WHOIS block", async ({ page }) => {
+  const send = await connectAs(page, "op4");
+  await send("/join #silent");
+  const members = page.getByRole("list", { name: /^Members of #silent/ });
+  await expect(members.getByText("@op4")).toBeVisible();
+  const counter = page.getByRole("status", { name: "Credits used by agents" });
+  await expect(counter).toHaveText("credits: 0.00");
+
+  await send("/invite coder #silent");
+  await expect(members.getByText("coder")).toBeVisible();
+  await send("/mode #silent +v coder");
+  await expect(members.getByText("+coder")).toBeVisible();
+  // Sent while the session may still be starting: the runner queues it (agent-runner Req 3.21).
+  await send("coder: tell me something");
+
+  const log = page.getByRole("log");
+  await expect(log.locator("div").filter({ hasText: REPLY_TEXT }).filter({ hasText: "<+coder>" }).last()).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(counter).not.toHaveText("credits: 0.00", { timeout: 15_000 });
+  await expect(counter).toHaveText(/^credits: \d+\.\d{2}$/);
+  // The silent WHOIS added no block and no WHOIS line to any window.
+  await expect(log.getByText(/End of \/WHOIS/)).toHaveCount(0);
+  await expect(log.getByText(/credits: #silent/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Status window" }).click();
+  await expect(page.getByRole("log").getByText(/End of \/WHOIS|credits: #silent/)).toHaveCount(0);
+
+  // Release the agent: the runner allows two agent channels (SEANCE_MAX_AGENT_CHANNELS).
+  await page.getByRole("navigation", { name: "Windows" }).getByRole("button", { name: /#silent/ }).click();
+  await send("/kick coder done");
+  await expect(log.locator("div").filter({ hasText: "*** coder has been exorcised by op4" }).last()).toBeVisible();
+});
+
 test("a kick without a reason shows the exorcism line without brackets", async ({ page }) => {
   const send = await connectAs(page, "op3");
   await send("/join #bare");

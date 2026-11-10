@@ -36,7 +36,7 @@ import {
   onChannelModeReply,
   onUserModeReply,
 } from "./reducer.modes.js";
-import { isErrorNumeric, onEndOfWhois, onErrorNumeric, onList, onWhoisReply } from "./reducer.whois.js";
+import { isErrorNumeric, isSilentExpired, onEndOfWhois, onErrorNumeric, onList, onWhoisReply } from "./reducer.whois.js";
 import { countListNames, finishListNames, onListReply } from "./reducer.list.js";
 import { exorcismText } from "./selectors.js";
 import { EXORCISED_MAX } from "./types.js";
@@ -421,6 +421,8 @@ function route(state: ClientState, msg: IrcMessage, nowMs: number): ReduceResult
     case "317":
       return done(onWhoisReply(state, msg, nowMs));
     case "301":
+      // R8.24: a late 301 of a timed-out silent WHOIS is ignored entirely.
+      if (isSilentExpired(state, msg.params[1])) return done(state);
       return done(onWhoisReply(onAwayReply(state, msg), msg, nowMs));
     case "318":
       return done(onEndOfWhois(state, msg, nowMs));

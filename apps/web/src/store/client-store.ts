@@ -21,8 +21,15 @@ import {
   stepConnection,
 } from "../irc/index.js";
 import type { ClientState, ConnectParams, History, HistoryDirection, InputContext, LineKind } from "../irc/index.js";
-import { channelKey, chatKey } from "../irc/casemap.js";
+import { channelKey, chatKey, keyOf } from "../irc/casemap.js";
 import { isKnownAgent } from "../irc/classify.js";
+import {
+  beginSilentWhois,
+  claimSilentWhois,
+  expireSilentWhois,
+  forgetSilentExpired,
+  markSilentMessaged,
+} from "../irc/reducer.whois.js";
 import { getOwn, nullRecord, withEntry, withoutEntry } from "../irc/record.js";
 import { appendStatus, appendTo, nickOf, openWindow, rememberClosed } from "../irc/reducer.route.js";
 import type { LineSpec } from "../irc/reducer.route.js";
@@ -145,6 +152,14 @@ export interface ClientStore {
 }
 
 const LAG_INTERVAL_MS = 30_000;
+/** R8.19: delay after an agent's line before the silent WHOIS, so the runner's ledger has the cost. */
+export const SILENT_WHOIS_DELAY_MS = 2_000;
+/** R8.20: at most one silent WHOIS per agent in this window. */
+export const SILENT_WHOIS_INTERVAL_MS = 30_000;
+/** R8.20: at most this many silent WHOIS requests in flight. */
+export const SILENT_WHOIS_MAX_IN_FLIGHT = 3;
+/** R8.22: a silent WHOIS without 318 or an error ends quietly after this long. */
+export const SILENT_WHOIS_TIMEOUT_MS = 10_000;
 /** The channel list gives up waiting for 323 after this long (R1.5). */
 export const LIST_TIMEOUT_MS = 15_000;
 const LAG_PREFIX = "seance-lag-";
@@ -257,6 +272,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         clearQueue("send failed");
         return;
       }
+      noteUserMessage(msg);
       const target = msg.params[0];
       const text = msg.params[1];
       if (msg.command.toUpperCase() === "PRIVMSG" && target !== undefined && text !== undefined) {
@@ -327,10 +343,133 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       lagTimer = deps.setTimeout(lagTick, LAG_INTERVAL_MS);
     };
 
+    // ---- silent WHOIS for the credits counter (web-client-extras R8.18 to R8.21) -------------
+    /** Scheduled (not yet sent) silent WHOIS per agent key. */
+    const silentTimers = new Map<string, unknown>();
+    /** When the last silent WHOIS for an agent key was sent (deps.now()); feeds the rate limit and the age. */
+    const silentSentAt = new Map<string, number>();
+    /** R8.22: the end-of-life timer of each silent WHOIS in flight. */
+    const silentTimeouts = new Map<string, unknown>();
+
+    /** Drop every scheduled silent WHOIS and forget the ones in flight (disconnect, reconnect, dispose). */
+    const stopSilent = (): void => {
+      for (const t of silentTimers.values()) deps.clearTimeout(t);
+      for (const t of silentTimeouts.values()) deps.clearTimeout(t);
+      silentTimers.clear();
+      silentTimeouts.clear();
+      silentSentAt.clear();
+      const c = get().client;
+      if (c.silentWhois.length > 0 || c.silentMessaged.length > 0 || c.silentExpired.length > 0) {
+        update((st) => ({ ...st, silentWhois: [], silentMessaged: [], silentExpired: [] }));
+      }
+    };
+
+    /**
+     * Forget send times nothing needs any more: the timeout (10 s) and the rate limit (30 s) both read
+     * `silentSentAt`, so an entry goes once it is older than the longer of the two and its key is no
+     * longer in flight.
+     */
+    const pruneSentAt = (): void => {
+      const live = get().client.silentWhois;
+      const now = deps.now();
+      for (const [key, sent] of silentSentAt) {
+        if (!live.includes(key) && now - sent >= SILENT_WHOIS_INTERVAL_MS) silentSentAt.delete(key);
+      }
+    };
+
+    /**
+     * R8.22, R8.24: a silent WHOIS that got no 318 and no error ends quietly after
+     * SILENT_WHOIS_TIMEOUT_MS; its key moves to `silentExpired` so late replies print nothing.
+     */
+    const expireSilent = (key: string): void => {
+      const t = silentTimeouts.get(key);
+      if (t !== undefined) deps.clearTimeout(t);
+      silentTimeouts.delete(key);
+      if (get().client.silentWhois.includes(key)) update((st) => expireSilentWhois(st, key));
+      pruneSentAt();
+    };
+
+    /** True while the silent WHOIS for `key` is in flight and younger than the timeout. */
+    const silentLive = (key: string): boolean => {
+      if (!get().client.silentWhois.includes(key)) return false;
+      const sent = silentSentAt.get(key);
+      return sent !== undefined && deps.now() - sent < SILENT_WHOIS_TIMEOUT_MS;
+    };
+
+    /** True when a silent WHOIS for `key` would be dropped by the per-agent rate limit. */
+    const silentLimited = (key: string): boolean => {
+      const sent = silentSentAt.get(key);
+      return sent !== undefined && deps.now() - sent < SILENT_WHOIS_INTERVAL_MS;
+    };
+
+    /** Sends one silent WHOIS now, unless a limit says no; extra requests are dropped, never queued. */
+    const sendSilentWhois = (nick: string): void => {
+      const s = socket;
+      const c = get().client;
+      const key = keyOf(nick);
+      if (s === null || c.phase !== "registered" || silentLimited(key)) return;
+      // A WHOIS for the nick already in flight (silent, or the user's own) answers this one too.
+      if (c.silentWhois.includes(key) || getOwn(c.whoisPending, key) !== undefined) return;
+      if (c.silentWhois.length >= SILENT_WHOIS_MAX_IN_FLIGHT) return;
+      if (!sendMessage(s, { command: "WHOIS", params: [nick] })) return;
+      pruneSentAt();
+      silentSentAt.set(key, deps.now());
+      // A new silent request replaces an old timed-out one for the same nick; both stay silent.
+      update((st) => beginSilentWhois(forgetSilentExpired(st, nick), nick));
+      silentTimeouts.set(
+        key,
+        deps.setTimeout(() => {
+          silentTimeouts.delete(key);
+          expireSilent(key);
+        }, SILENT_WHOIS_TIMEOUT_MS),
+      );
+    };
+
+    /** An agent's reply: ask again after a short delay, so the ledger holds the finished prompt's cost. */
+    const scheduleSilentWhois = (nick: string): void => {
+      const key = keyOf(nick);
+      if (socket === null || get().client.phase !== "registered") return;
+      if (silentTimers.has(key) || silentLimited(key)) return;
+      silentTimers.set(
+        key,
+        deps.setTimeout(() => {
+          silentTimers.delete(key);
+          sendSilentWhois(nick);
+        }, SILENT_WHOIS_DELAY_MS),
+      );
+    };
+
+    /**
+     * The one trigger (R8.19): a channel line from a Known_Agent. Task 10.21 removed the triggers on the
+     * own KICK and on ChanServ's "credits used": a WHOIS of an agent in no channel has no credits line.
+     */
+    const silentTriggers = (msg: IrcMessage): void => {
+      const from = nickOf(msg.prefix);
+      const target = msg.params[0] ?? "";
+      const isChannel = target.startsWith("#") || target.startsWith("&");
+      if (msg.command.toUpperCase() === "PRIVMSG" && isChannel && isKnownAgent(from)) scheduleSilentWhois(from);
+    };
+
+    /**
+     * R8.23: a user message to a nick with a silent WHOIS in flight; a 401 for that nick may now answer
+     * the user, so the reducer shows it instead of swallowing it.
+     */
+    const noteUserMessage = (msg: IrcMessage): void => {
+      const upper = msg.command.toUpperCase();
+      if (upper !== "PRIVMSG" && upper !== "NOTICE") return;
+      const c = get().client;
+      // In flight or timed out (R8.24): a late error for a timed-out key may answer the user too.
+      const silent = [...c.silentWhois, ...c.silentExpired];
+      if (silent.length === 0) return;
+      const keys = (msg.params[0] ?? "").split(",").map(keyOf).filter((k) => silent.includes(k));
+      if (keys.length > 0) update((st) => keys.reduce(markSilentMessaged, st));
+    };
+
     /** Detach and close the current socket without reacting to its events. */
     const release = (code: number, reason: string): void => {
       clearQueue("connection closed");
       stopLag();
+      stopSilent();
       const s = socket;
       socket = null;
       framer = new LineFramer();
@@ -395,6 +534,18 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       }
       const phase = msg.command === "001" ? stepConnection(before.phase, { type: "welcome" }) : before.phase;
       update(() => ({ ...result.state, phase }));
+      if (phase === "registered") silentTriggers(msg);
+      // The reducer ended a silent WHOIS (318 or an error): its timeout is no longer needed.
+      let ended = false;
+      for (const key of before.silentWhois) {
+        if (!result.state.silentWhois.includes(key)) {
+          const t = silentTimeouts.get(key);
+          if (t !== undefined) deps.clearTimeout(t);
+          silentTimeouts.delete(key);
+          ended = true;
+        }
+      }
+      if (ended) pruneSentAt();
       if (result.mention && audioUnlocked && get().ui.mentionSound) {
         try {
           deps.audio?.play();
@@ -487,6 +638,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
       const before = get().client.phase;
       clearQueue("connection closed");
       stopLag();
+      stopSilent();
       set((st) => ({ ui: { ...st.ui, lagSeconds: null } }));
       setPhase({ type: "socket-closed" });
       if (before === "connecting") {
@@ -700,8 +852,26 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
             }
             let quitting = false;
             for (const msg of result.messages) {
-              if (!sendMessage(s, msg)) return;
               const upper = msg.command.toUpperCase();
+              // R8.18: the user's /whois wins over a silent one in flight. That request's replies become
+              // the user's block, so no second WHOIS is sent and nothing prints twice.
+              const whoisNick = upper === "WHOIS" ? msg.params[msg.params.length - 1] : undefined;
+              if (whoisNick !== undefined) {
+                const key = keyOf(whoisNick);
+                if (silentLive(key)) {
+                  update((c) => claimSilentWhois(c, whoisNick));
+                  const t = silentTimeouts.get(key);
+                  if (t !== undefined) deps.clearTimeout(t);
+                  silentTimeouts.delete(key);
+                  continue;
+                }
+                // R8.22: a stuck silent entry (no answer within the timeout) never swallows the user's WHOIS.
+                if (get().client.silentWhois.includes(key)) expireSilent(key);
+                // R8.24: the user asked: replies for this nick are the user's block again.
+                if (get().client.silentExpired.includes(key)) update((c) => forgetSilentExpired(c, whoisNick));
+              }
+              if (!sendMessage(s, msg)) return;
+              noteUserMessage(msg);
               if (upper === "QUIT") quitting = true;
               // Audit 10.8: `/mode #chan` alone asks for the channel modes; show the 324 in that window.
               if (upper === "MODE" && msg.params.length === 1) {

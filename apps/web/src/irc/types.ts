@@ -159,6 +159,23 @@ export interface ClientState {
   readonly closedLines: Readonly<Record<string, readonly Line[]>>;
   /** Key = irc_lower(nick). */
   readonly whoisPending: Readonly<Record<string, WhoisPending>>;
+  /**
+   * Keys (irc_lower) of nicks with a silent WHOIS in flight (web-client-extras R8.18): the replies are
+   * collected as usual and `320` still updates `credits`, but `318` and an error for the nick end it
+   * without a line. At most MAX_WHOIS_PENDING entries.
+   */
+  readonly silentWhois: readonly string[];
+  /**
+   * Keys of `silentWhois` entries to which the user sent a PRIVMSG or NOTICE after the silent WHOIS went
+   * out (R8.23): a 401 for such a nick may answer the user, so it is shown, not swallowed.
+   */
+  readonly silentMessaged: readonly string[];
+  /**
+   * Keys of silent WHOIS requests that timed out (R8.24): their late replies are not a user WHOIS.
+   * 311/312/319/317/301 are ignored, 320 still updates `credits`, 318 or an error ends the entry
+   * silently. At most MAX_WHOIS_PENDING entries, the oldest dropped first.
+   */
+  readonly silentExpired: readonly string[];
   /** Latest credits `total` per agent from `320` lines; key = irc_lower(nick), null-prototype, max 50. */
   readonly credits: Readonly<Record<string, number>>;
   /** Away text per nick; key = irc_lower(nick), null-prototype, max 200 (AWAY_MAX). Cleared on reconnect. */

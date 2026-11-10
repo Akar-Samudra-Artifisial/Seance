@@ -516,6 +516,21 @@ Running log of Kiro features used while building Séance. It is raw material for
 - Produced: `credits: 0.01` instead of `0.0`, updated unit and e2e tests, ten regenerated app baselines (counter only)
 - Notes: reading the runner showed the ChanServ "credits used" line names no agent and carries a cumulative per-channel amount, so the notice-based update (task 10.20) was paused for a decision instead of double counting
 
+### 2026-11-10 — Credits counter refreshes itself with a silent WHOIS (web-client-extras task 10.20)
+- Kiro features: spec web-client-extras (R8.18 to R8.21, design section, task 10.20), steering (web-ui, irc-protocol: same WHOIS line, untrusted replies), Playwright functional and pixel runs
+- Produced: `silentWhois` state with silent 318/401 handling, Store triggers (agent reply + 2 s, own KICK, ChanServ "credits used") with 30 s and 3-in-flight limits, reducer, store and e2e tests; the e2e Fake_Agent meters 0.01 per turn
+- Notes: the user's decision kept the ChanServ number unused; a typed `/whois` during a silent one takes it over so nothing prints twice
+
+### 2026-11-10 — Silent WHOIS review follow-up (web-client-extras task 10.21, R8.22 and R8.23)
+- Kiro features: spec web-client-extras (criteria 19, 22 and 23, design section, task 10.21), steering (web-ui, irc-protocol), Playwright functional and pixel runs
+- Produced: KICK and ChanServ triggers removed, a 10 s timeout for a silent WHOIS without an answer, a 401 after the user's own message to the nick stays visible, store tests
+- Notes: the deployed host showed that a WHOIS of an agent in no channel has no credits line, so the two removed triggers had never updated the counter
+
+### 2026-11-10 — Late silent WHOIS replies print nothing (web-client-extras task 10.22, R8.24)
+- Kiro features: spec web-client-extras (criterion 24, design note, task 10.22), steering (web-ui, irc-protocol)
+- Produced: `silentExpired` in the reducer state (late 311/312/319/317/301 ignored, 320 credits only, 318 or error ends it), cleared with the silent set; `silentSentAt` pruned; reducer and store tests
+- Notes: a late 318 after the 10 s timeout used to print a WHOIS block nobody asked for; one narrow race (a /whois typed before the late replies) is documented in design.md
+
 ## Roadmap
 
 Still open before the submission (4 December 2026, 14:00 PT). New log entries go above this section.
