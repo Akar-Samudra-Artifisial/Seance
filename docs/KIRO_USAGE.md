@@ -42,7 +42,7 @@ The write-up is final and mirrored in the Devpost submission. Numbers counted on
 - `test-on-save`, `verify-after-task`, `kiro-usage-log` (this file is its output).
 
 ### Custom agents, skills and MCP
-- `seance-dev`, `seance-reviewer` (read-only), `seance-spec`; skills `irc-rfc2812`, `acp-runner`, `kiroween-submission`.
+- `seance-dev`, `seance-reviewer` (no write tools; read and shell only), `seance-spec`; skills `irc-rfc2812`, `acp-runner`, `kiroween-submission`.
 - MCP: Playwright for the pixel checks against the Figma frames, Context7 for library docs.
 
 ### Spec-driven vs vibe coding: what worked, what did not
@@ -50,7 +50,7 @@ The write-up is final and mirrored in the Devpost submission. Numbers counted on
 - Did not: assuming the tests were the world. Three production bugs were invisible to the fake Podman and to tests that only read the Dockerfile: the `/home/agent` tmpfs owned by root, Node 26 without corepack, and the node binary needing `libatomic.so.1`. Each was written back into the agent-sandbox spec as a requirement first (task 21.x), then fixed in code with a test that pins it, and `bootstrap.sh` now rebuilds the image when the sandbox context changes.
 
 ### What we would do next
-- A Kiro Crew App manifest so a team can declare its agents, channels and modes in one file.
+- Done since: Séance Crew (https://github.com/Akar-Samudra-Artifisial/Seance-Crew), a Kiro Crew app that steers Séance channels from Crew chat and a dashboard. Next for it: let a team declare its agents, channels and modes in one file.
 - irssi over TLS on the public server (today TCP 6667 listens on 127.0.0.1 only).
 - Persistent logs and an audit trail.
 
