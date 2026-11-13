@@ -394,6 +394,7 @@ Built for Kiroween 2026 (Resurrection category). Submitted before the 4 December
 | Kiro skills per agent | `agent-skills` | Done |
 | Rootless Podman sandbox per agent and channel | `agent-sandbox` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Done; running on EC2 (Node 26 + npm in the agent image, spike S12 closed) |
 | Accounts, budgets, redaction and the public start-up guard | `public-hardening` ([docs/DEPLOY.md](./docs/DEPLOY.md)) | Done |
+| Kiro API key for the podman sandbox (name-only forwarding, environment deny list, API-key-only deploy hosts) | `sandbox-api-key-auth` ([docs/SANDBOX.md](./docs/SANDBOX.md)) | Done |
 | Public deployment for judges (AWS, Caddy TLS, Podman) | `deploy-aws` ([docs/DEPLOY.md](./docs/DEPLOY.md), `infra/`, `deploy/`) | Done; live at https://35-172-120-185.sslip.io/ |
 | Demo video (under 3 minutes) and the Kiro write-up | — | Done; video https://youtu.be/dgStubeQRTY, write-up in docs/KIRO_USAGE.md |
 

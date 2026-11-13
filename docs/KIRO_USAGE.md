@@ -18,27 +18,51 @@ Running log of Kiro features used while building Séance. It is raw material for
 
 ## Write-up (Devpost submission)
 
-The write-up is final and mirrored in the Devpost submission. Numbers counted on 2026-11-10.
+The write-up is final and mirrored in the Devpost submission. Numbers counted on 2026-11-13.
 
 ### By the numbers
-- 14 specs in `.kiro/specs/`, 764 ticked tasks, 99 log entries in this file.
-- 151 fast-check properties in 81 test files; about 2,600 unit tests (web 958, ircd 701, runner 928) plus 49 functional and 12 pixel end-to-end tests.
+- 15 specs in `.kiro/specs/`, 848 ticked tasks, 110 log entries in this file.
+- 178 fast-check properties in 84 test files; about 2,800 unit tests (web 957, ircd 702, runner 1069, irc-protocol 69) plus 49 functional and 12 pixel end-to-end tests. API-key-only since 2026-11-13.
 - Live on AWS since 2026-11-09: <https://35-172-120-185.sslip.io/>.
 
 ### Two ways Séance uses Kiro
 - **Built with Kiro**: spec-driven in Kiro IDE, guarded by hooks and steering. Sections below.
-- **Runs on Kiro**: every IRC agent (`coder`, `reviewer`, `researcher`) is a `kiro-cli acp` session. IRC modes are the permission model (`+v` speaks, `+o` writes, `/kick` cancels and resets the worktree). Point to `apps/runner` and `spikes/acp/FINDINGS.md`.
+- **Runs on Kiro**: every IRC agent (`coder`, `reviewer`, `researcher`) is a `kiro-cli acp` session. IRC modes are the permission model (`+v` speaks, `+o` writes, `/kick` cancels and resets the worktree). The session model, cancel cooldown and permission enforcement point were proven in the ACP spike first (`spikes/acp/FINDINGS.md`), then built in `apps/runner`.
 
 ### Specs
-- Spec-first for every feature: list the 14 specs with one line each.
+- Spec-first for every feature. The 15 specs in `.kiro/specs/`:
+  - `ircd-core`: the RFC 2812 IRC server over TCP and WebSocket, enough for two irssi clients to register, join and chat.
+  - `ircd-review-fixes`: seven review findings on the core server (keep-alive, dropped relays, password comparison, `USER` validation, close semantics, limits).
+  - `ircd-agent-commands`: `AWAY`, `WHOIS` and `INVITE`, with the metadata and invite-resolver hooks that let virtual clients describe themselves.
+  - `ircd-agent-commands-fixes`: six review findings on those commands, including leaking invite records and over-trusted `WHOIS` output.
+  - `agent-runner`: the `@seance/runner` library that drives each Kiro agent as a `kiro-cli acp` session and maps IRC modes to permissions.
+  - `runner-services`: `ChanServ` and `NickServ` notices that report only facts the runner knows (a worktree exists, a session stopped, who can be invited).
+  - `agent-skills`: per-agent Kiro skills loaded on demand from `agents/`, never from a target repository.
+  - `agent-sandbox`: every agent process in a rootless Podman container, with network isolation proven by a probe before any invite.
+  - `sandbox-api-key-auth`: the sandbox authenticates with `KIRO_API_KEY` forwarded name-only, an environment deny list, and deploy support for API-key-only hosts.
+  - `public-hardening`: the nine security gaps closed before going public (auth before a nick, inviter accounts, prompt gating, a credit budget and kill switch, secret redaction).
+  - `deploy-aws`: one EC2 instance described by Terraform, reached only over Caddy HTTPS and SSM, with the agents in the Podman sandbox.
+  - `web-client-basic`: the keyboard-first 1995-style browser client that connects straight to the ircd WebSocket.
+  - `web-client-polish`: the client brought in line with the Figma mockup read over the Talk-to-Figma channel.
+  - `web-client-pixel-match`: `apps/web` made pixel-close to Figma frame `01 Main` at 1440x900 and usable from 360 px up.
+  - `web-client-extras`: dead toolbar and menu controls given behaviour or an explanation, and the WHOIS `tools:` line fixed.
 - Story: correctness properties in `design.md` became fast-check properties (example: `parse(serialize(m)) == m` in `ircd-core`).
 - Story: review findings turned into follow-up tasks inside the same spec (example: web-client-extras 10.20 to 10.23, silent WHOIS and the per-channel counter, each with the reason recorded in `tasks.md`).
 
+### Case study: moving the sandbox to a Kiro API key
+
+- Problem: the live app has to keep working for judges through January 29, 2027, but the podman sandbox only accepted a mounted kiro-cli login, which expires and needs an interactive browser login. A manual test showed that kiro-cli 3.2.1 runs ACP with only `KIRO_API_KEY` in its environment and still reports metering, so the credits counter keeps working.
+- Spec first: `sandbox-api-key-auth` started with seven requirements: forward the key by name only, never put it in argv or logs, mount the login dir only when it is set, and fail fast when neither credential exists. The design turned the argv rule into property P1, and it holds by construction: the argv builder only receives a boolean, never the key.
+- Review rounds became spec rounds. Each review finding (environment dumps, `sh -c` scripts, `/proc` globs, `eval`, pipe-to-shell, wrapper options, API-key-only deploy hosts) went into the same spec as a requirement, a design section and tasks, then was implemented and ticked. The spec grew from 7 to 15 requirements and 79 tasks, and the full root suite ran after every round.
+- The tests found real bugs each round: podman stderr echoing the key into launcher logs (P5), ops notices that removed the raw key but not its base64 form (a runner-level test), `KIRO_API_KEY=` with empty quotes read as a two-character key, and `bash -x` printing the key in the bootstrap check (P20 runs that check with fake `runuser` and `kiro-cli`).
+- The honest limit is written down too. The deny list matches text, so `python -c`, `node -e`, `awk` with `ENVIRON` and other encodings still reach the key, and `podman inspect` shows it to the host user. `docs/SANDBOX.md` says so: the deny list is best-effort, and the real control is a dedicated, low-limit, rotatable key.
+- Verified end to end: `scripts/demo-journey.py` passed 11 of 11 locally with only `KIRO_API_KEY` set (empty `HOME`, `kiro-cli whoami` reporting "Not logged in"). The live host was switched to key-only on 2026-11-13, and `tools/smoke-wss.mjs` got the agent's reply there for 0.04 credits.
+
 ### Steering
-- Always-on vs fileMatch: name the files and one concrete effect each (example: `irc-protocol.md` kept numerics RFC 2812 exact; `web-ui.md` kept the Win95/ghost design system; `security.md` kept agents inside the repo).
+- Always-on steering (`product.md`, `tech.md`, `structure.md`, `security.md`) applies to every turn; `security.md` kept agents inside the repository root and off the host network. fileMatch steering loads with the files it names: `irc-protocol.md` kept numerics RFC 2812 exact, `runner-acp.md` carried the ACP findings into the runner, `web-ui.md` kept the Win95/ghost design system, and `testing.md` kept fast-check properties named after their spec ID.
 
 ### Hooks
-- `guard-shell`: quote the 2026-11-08 entry (`Blocked by .kiro/hooks/guard-shell: path "/tmp" resolves outside the repository root`).
+- `guard-shell` (PreToolUse on shell tools) stops a command before it runs and reports exit code 2. On 2026-11-08 it blocked an agent's `ls /tmp` during cleanup: `Blocked by .kiro/hooks/guard-shell: path "/tmp" resolves outside the repository root (<repo>).`
 - `test-on-save`, `verify-after-task`, `kiro-usage-log` (this file is its output).
 
 ### Custom agents, skills and MCP
@@ -48,6 +72,9 @@ The write-up is final and mirrored in the Devpost submission. Numbers counted on
 ### Spec-driven vs vibe coding: what worked, what did not
 - Worked: spec-driven work paid off where correctness mattered. The IRC parser, the permission handler and the exorcism flow were right the first time they met a real client, because the correctness properties existed before the code (fast-check, e.g. `parse(serialize(m)) == m`). Review findings became follow-up tasks inside the same spec with the reason recorded (web-client-extras 10.20 to 10.23).
 - Did not: assuming the tests were the world. Three production bugs were invisible to the fake Podman and to tests that only read the Dockerfile: the `/home/agent` tmpfs owned by root, Node 26 without corepack, and the node binary needing `libatomic.so.1`. Each was written back into the agent-sandbox spec as a requirement first (task 21.x), then fixed in code with a test that pins it, and `bootstrap.sh` now rebuilds the image when the sandbox context changes.
+
+- Worked: keeping every review finding inside one spec. For `sandbox-api-key-auth`, the initial spec and four follow-ups (the five log entries dated 2026-11-13) each landed as requirements, correctness properties and ticked tasks, so the security reasoning (why the key is name-only, why the deny list fails closed, why it is still best-effort) sits next to the code.
+- Did not: our own `guard-shell` hook silently blocked shell edits whose text contained a bare `/` token, which cost several retries until the edits moved to file-edit tools.
 
 ### What we would do next
 - Done since: Séance Crew (https://github.com/Akar-Samudra-Artifisial/Seance-Crew), a Kiro Crew app that steers Séance channels from Crew chat and a dashboard. Next for it: let a team declare its agents, channels and modes in one file.
@@ -603,6 +630,31 @@ The write-up is final and mirrored in the Devpost submission. Numbers counted on
 - Kiro features: skill kiroween-submission (checklist)
 - Produced: write-up heading now "Devpost submission"; README status sentence says the project is submitted
 - Notes: wording only, no code, specs or `.kiro/` changes
+
+### 2026-11-13 — sandbox-api-key-auth: the podman sandbox authenticates with KIRO_API_KEY (tasks 1–6)
+- Kiro features: spec sandbox-api-key-auth (requirements-first, Requirements 1–7, design properties P1–P8, tasks 1–6), requirement-detailer subagent, steering (security, testing), PBT (`P1 key never in argv`)
+- Produced: name-only `-e KIRO_API_KEY` with the value only in the env of the agent `podman run` (`podman-args.ts`, `launcher.ts`), optional `SEANCE_SANDBOX_AUTH_DIR`, a startup error when neither credential is set and one warning when both are, docs (README, DESIGN.md, `docs/SANDBOX.md`, `deploy/seance.env.example`)
+- Notes: property P5 found that podman stderr echoing the environment would have put the key into launcher logs; every stderr line is now scrubbed with the key
+
+### 2026-11-13 — sandbox-api-key-auth review follow-up (tasks 7–14)
+- Kiro features: spec sandbox-api-key-auth (Requirements 8–12, tasks 7–14), PBT (P9–P15), hook guard-shell
+- Produced: the deny list refuses environment dumps and any mention of `KIRO_API_KEY` as protected-path, tool calls on `/proc/*/environ` are refused in every mode, a whitespace-only key counts as unset, `redactSpawnSpec` removed as dead code, the ircd sandbox integration test now expects the key as set, agent-sandbox D18 marked superseded
+- Notes: guard-shell silently blocked several heredoc edits (a bare `/` token reads as a path outside the repo); the review caught that some first-round config tests had never reached the file
+
+### 2026-11-13 — sandbox-api-key-auth follow-up 2: sh -c scripts, /proc globs, runner-level redaction (tasks 15–19)
+- Kiro features: spec sandbox-api-key-auth (Requirement 13, properties P16–P17, tasks 15–19), spec-task-execution subagent per task, PBT, integration test with the Fake_Agent
+- Produced: quote-aware `shellWords` and recursive checks of `sh -c` scripts (4 levels, deeper fails closed), `/proc` environ globs refused, `apps/ircd/test/runner/api-key-redaction.integration.test.ts`, ops notices routed through the shared redactor, exposure and limits in `docs/SANDBOX.md` and `docs/DEPLOY.md`, deploy-aws D7 marked superseded
+- Notes: the runner-level test found that ops notices removed the raw key but not its base64 form
+
+### 2026-11-13 — sandbox-api-key-auth final deny-list hardening (tasks 20–22)
+- Kiro features: spec sandbox-api-key-auth (Requirement 14, property P18, tasks 20–22), spec-task-execution subagent, PBT
+- Produced: `eval` arguments checked like a script, a shell reading its script from a pipe or here-string refused, per-wrapper option values skipped (`sudo -u root`, `exec -a`), globs in the `proc` segment refused, one best-effort line in `docs/SANDBOX.md`
+- Notes: the final root run caught two regressions (a `find -not -path` glob and download-and-run reported with the wrong reason); both were fixed in code, not by changing the old tests
+
+### 2026-11-13 — sandbox-api-key-auth: deploy support for API-key-only hosts (tasks 23–26)
+- Kiro features: spec sandbox-api-key-auth (Requirement 15, properties P19–P20, tasks 23–26), spec-task-execution subagent, PBT, shellcheck
+- Produced: `deploy/env-value.sh` (reads one variable without sourcing the env file), the bootstrap `kiro-cli whoami` check with the key passed through stdin, the Kiro login refresh timer enabled only when `SEANCE_SANDBOX_AUTH_DIR` is set, an `ExecStartPre` check instead of `ConditionDirectoryNotEmpty` in `seance-ircd.service`, the API-key-only path in `docs/DEPLOY.md` section 5, file tests in `sandbox-files.test.ts`
+- Notes: P19 found that an empty quoted `KIRO_API_KEY` was read as a key; P20 found that `bash -x` printed the key during the bootstrap check
 
 ## Roadmap
 

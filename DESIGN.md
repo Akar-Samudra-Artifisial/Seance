@@ -200,7 +200,7 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 ### `.kiro/` contents
 
 - `steering/` — always on: product, tech, structure, security; by file match: irc-protocol, runner-acp, web-ui, testing.
-- `specs/` — one folder per feature (requirements, design, tasks): `ircd-core`, `ircd-review-fixes`, `ircd-agent-commands`, `ircd-agent-commands-fixes`, `agent-runner`, `runner-services`, `agent-skills`, `agent-sandbox`, `public-hardening`, `web-client-basic`, `web-client-polish`, `web-client-pixel-match`, `web-client-extras`.
+- `specs/` — one folder per feature (requirements, design, tasks): `ircd-core`, `ircd-review-fixes`, `ircd-agent-commands`, `ircd-agent-commands-fixes`, `agent-runner`, `runner-services`, `agent-skills`, `agent-sandbox`, `public-hardening`, `web-client-basic`, `web-client-polish`, `web-client-pixel-match`, `web-client-extras`, `sandbox-api-key-auth`.
 - `hooks/` — `guard-shell` (`PreToolUse` deny-list: `rm -rf` outside build dirs, `git push --force`, `git reset --hard`, `curl | sh`, paths outside the repo, printing secrets), `test-on-save`, `verify-after-task`, `kiro-usage-log`.
 - `agents/` — the development agents `seance-dev`, `seance-reviewer`, `seance-spec`. The runtime agents `coder`, `reviewer`, `researcher` live in `agents/` at the repository root. There is no `chanserv` agent: ChanServ and NickServ lines are produced by runner code without a model call.
 - `skills/` — `irc-rfc2812`, `acp-runner`, `kiroween-submission`.
