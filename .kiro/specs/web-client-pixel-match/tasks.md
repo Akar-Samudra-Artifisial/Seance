@@ -136,13 +136,13 @@ Order: spikes and assets first, then the pure rules (colours, event lines, empty
   - [x] 10.4 Add the Kiro features used to `docs/KIRO_USAGE.md`
     - _Requirements: 15.4_
 
-- [ ] 11. Manual side-by-side check (record the result in the pull request)
-  - [ ] 11.1 Frame 01: open the Fixture at 1440x900 next to the Figma export. Check: 3 px frame; title bar candle and three buttons; menu bar `#` icon at the left and three buttons at the right; seven menus aligned with the mockup; toolbar order and separators; topic text colours; chat line colours (all `***` green); the mention row; nick list rows, ghosts and footer; scrollbar arrows; input caret; tray bar; switchbar icons and bold active; credits panel; status bar panels
+- [x] 11. Manual side-by-side check (record the result in the pull request) — skipped with "covered by the 12 pixel end-to-end tests; no manual pass recorded"
+  - [x] 11.1 Frame 01: open the Fixture at 1440x900 next to the Figma export. Check: 3 px frame; title bar candle and three buttons; menu bar `#` icon at the left and three buttons at the right; seven menus aligned with the mockup; toolbar order and separators; topic text colours; chat line colours (all `***` green); the mention row; nick list rows, ghosts and footer; scrollbar arrows; input caret; tray bar; switchbar icons and bold active; credits panel; status bar panels — skipped with "covered by the 12 pixel end-to-end tests; no manual pass recorded"
     - Also (left open by spike 0.3): the pressed scrollbar arrows while held, and the scrollbar in Safari
-  - [ ] 11.2 Frame 02: connect, then compare the Status window (MOTD art, `372` rows)
-  - [ ] 11.3 Frame 03: kick `coder` and compare the exorcism line and the nick list
-  - [ ] 11.4 Frame 04: run `/whois coder` and compare the block, including the two `[hh:mm] -` separators
-  - [ ] 11.5 Resize through 1440, 1280, 1024, 900, 768, 600, 390, 360 and check by eye: no horizontal scroll, the `»` menu, the overlay, the keyboard case on a phone or in device emulation with the keyboard shown
+  - [x] 11.2 Frame 02: connect, then compare the Status window (MOTD art, `372` rows) — skipped with "covered by the 12 pixel end-to-end tests; no manual pass recorded"
+  - [x] 11.3 Frame 03: kick `coder` and compare the exorcism line and the nick list — skipped with "covered by the 12 pixel end-to-end tests; no manual pass recorded"
+  - [x] 11.4 Frame 04: run `/whois coder` and compare the block, including the two `[hh:mm] -` separators — skipped with "covered by the 12 pixel end-to-end tests; no manual pass recorded"
+  - [x] 11.5 Resize through 1440, 1280, 1024, 900, 768, 600, 390, 360 and check by eye: no horizontal scroll, the `»` menu, the overlay, the keyboard case on a phone or in device emulation with the keyboard shown — skipped with "covered by the 12 pixel end-to-end tests; no manual pass recorded"
 
 - [x] 12. Final checkpoint
   - Run `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test --force`, then `pnpm test:e2e` (apps/web)

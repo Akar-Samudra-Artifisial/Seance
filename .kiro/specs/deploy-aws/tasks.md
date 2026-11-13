@@ -40,12 +40,14 @@ File-writing tasks first (Terraform, host files, CI, runbook), then the operator
   - Done 2026-11-09 by script over wss (commit 471e2a4): login, invite, `PONG` reply after `+v`, kick exorcises (`0.01 credits used`, `podman ps -a` empty), forged `X-Forwarded-For: 6.6.6.6` ignored (WHOIS shows the real client address), web client 200 with a valid certificate. Open: the same flow in a browser and the `/whois` budget line (not seen in WHOIS of an idle agent)
   - Done 2026-11-10 in a browser (commit cf9e727, account `bayu`): `/join #demo4`, `/invite coder`, `worktree ready`, `+v`, `<+coder> PONG`, `/whois coder` shows `budget: today 0.19 / 100.00 (UTC)` and `credits: #demo4 0.02 / total 0.19`, `/kick coder` exorcises (`0 files reverted · 0.02 credits used`, `0 agents`). The connect dialog needs `bayu:<secret>` in the password field; `/kick #demo4 coder` is not supported (`/kick <nick>` in the channel window)
 
-- [ ] 5. **Operator:** Budget alert check
+- [x] 5. **Operator:** Budget alert check
   - In the AWS Budgets console: `seance-monthly` exists with the three notifications for `budget_email`; Cost Explorer shows the `Project` tag as active (re-apply after a day if `aws_ce_cost_allocation_tag` failed); after a few days the actual cost matches the estimate in DEPLOY.md step 8
+  - Checked 2026-11-13: budget seance-monthly $40 with 3 notifications (actual >20, actual >40, forecast >40) to budget_email, Project tag Active, $3.21 month to date.
   - _Requirements: 3.1, 3.2, 3.3_
 
-- [ ] 6. **Operator:** Teardown after judging
-  - DEPLOY.md step 9: stop the ircd and the egress rule, `kiro-cli logout` as `seance`, remove `/home/seance/.local/share/kiro-cli`, `terraform destroy`, delete the local state
+- [ ] 6. **Operator:** Teardown after judging (after 29 Jan 2027)
+  - The live host is API-key-only: revoke the Kiro API key, delete the judge accounts (`IRCD_ACCOUNTS_FILE`), run `terraform destroy`, delete the local state.
+  - Already done on 2026-11-13: `kiro-cli logout` as `seance` and removal of the login directory `/home/seance/.local/share/kiro-cli` (the host switched to `KIRO_API_KEY`), so only the key revocation, the accounts, the destroy and the state deletion remain.
   - _Requirements: 5.3_
 
 - [x] 7. Kiro login refresh (criterion 5.5)
