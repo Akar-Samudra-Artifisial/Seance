@@ -10,6 +10,7 @@ import {
   DEFAULT_IDLE_TIMEOUT_S,
   HARDENING_DEFAULTS,
   idleMinutes,
+  sandboxAuthWarnings,
   validateRunnerPaths,
 } from "./config.js";
 import type { RunnerConfig } from "./config.js";
@@ -231,19 +232,18 @@ export function createRunner(opts: RunnerOptions): Runner {
     let launcher: PodmanLauncher | undefined;
     if (sandboxConfig.mode === "podman") {
       for (const name of sandboxConfig.ignored) {
-        logger.warn(
-          name === "KIRO_API_KEY"
-            ? "KIRO_API_KEY is set but never forwarded to the sandbox; the credential is SEANCE_SANDBOX_AUTH_DIR"
-            : "SEANCE_KIRO_BIN is ignored in podman mode; the command inside the image is SEANCE_SANDBOX_KIRO_BIN",
-          { variable: name },
-        );
+        logger.warn("SEANCE_KIRO_BIN is ignored in podman mode; the command inside the image is SEANCE_SANDBOX_KIRO_BIN", {
+          variable: name,
+        });
       }
+      for (const w of sandboxAuthWarnings(config)) logger.warn(w.message, w.fields);
       launcher = new PodmanLauncher({
         config: sandboxConfig,
         agentsDir: config.agentsDir,
         worktreeRoot: config.workspaces,
         targetRepo: config.targetRepo,
         logger,
+        ...(config.kiroApiKey !== undefined ? { apiKey: config.kiroApiKey } : {}),
         ...(opts.podmanExec !== undefined ? { exec: opts.podmanExec } : {}),
         ...(opts.podmanBaseEnv !== undefined ? { baseEnv: opts.podmanBaseEnv } : {}),
       });
@@ -312,8 +312,9 @@ export function createRunner(opts: RunnerOptions): Runner {
     });
 
     // Requirement 6.2: every token value in the mounted Kiro login is redacted from agent text.
-    const authSecrets = podman
-      ? await readAuthSecrets(sandboxConfig.authDir, (path, reason) => {
+    const authSecrets =
+      podman && sandboxConfig.authDir !== undefined
+        ? await readAuthSecrets(sandboxConfig.authDir, (path, reason) => {
           logger.warn("auth file skipped for redaction", { path, reason });
         })
       : [];
@@ -334,7 +335,9 @@ export function createRunner(opts: RunnerOptions): Runner {
       return nicks;
     };
     const notifyOps = (channel: string, text: string): void => {
-      opNotice(host, logger, humanOpNicks, channel, text);
+      // sandbox-api-key-auth Requirement 13.9: notices can carry agent error text, so they get the
+      // same raw, encoded and fragment redaction as agent output.
+      opNotice(host, logger, humanOpNicks, channel, redactor.redact(text));
     };
     // runner-services: ChanServ / NickServ notices, each sent where its fact is observed.
     const services = createServices({ host, logger });

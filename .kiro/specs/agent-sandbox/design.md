@@ -83,7 +83,7 @@ Any failure before `session/new` returns raises a `SandboxError`; the invite pip
 | D7 | Container identity: name `seance-<nick>-<hash>-<rand>` and three labels; stop/remove by name; sweep by label at start and shutdown; `--timeout` as a backstop. | Killing the `podman run` client is not enough (SIGKILL leaves the container). Names make removal precise, labels make a crash recoverable, the timeout ends orphans even when the runner never returns. |
 | D8 | Preflight at `start()` plus cheap re-checks before every start; no fallback to host processes, ever. | Fail closed (brief). A podman removed after boot must not turn into a host spawn. |
 | D9 | Mounts use `--mount type=bind,...`, not `-v`; paths with `,` `"` NUL CR LF are refused. | `--mount` is a CSV list, so a comma in a path would inject options. `-v` would hide that behind colon parsing. |
-| D10 | Values never travel in argv: `-e NAME` only. | Keeps values out of `ps` and logs. `KIRO_API_KEY` is not forwarded at all (D18). |
+| D10 | Values never travel in argv: `-e NAME` only. | Keeps values out of `ps` and logs. `KIRO_API_KEY` is not forwarded at all (D18). **Superseded by `sandbox-api-key-auth` (Requirements 1 to 4):** `KIRO_API_KEY` may be forwarded name-only (`-e KIRO_API_KEY`, value only in the env of the agent `podman run`); `SEANCE_SANDBOX_AUTH_DIR` is optional when the key is set. |
 | D11 | `--http-proxy=false`, `--no-hosts`, `--log-driver=none`, `--pull=never`. | Podman forwards host proxy variables by default; `/etc/hosts` leaks host names; the default log driver would store ACP traffic on disk; a pull at start is a supply-chain and latency risk. |
 | D12 | Podman 5 or newer, Linux, rootless only. | Pasta is the default network from 5.0; `keep-id:uid=,gid=` needs 4.3 or newer. |
 | D13 | Headless harness is refused in podman mode. | One process per prompt with no stable cwd; not worth a second sandbox path. |
@@ -91,7 +91,7 @@ Any failure before `session/new` returns raises a `SandboxError`; the invite pip
 | D15 | A changed `.git` file is reported through the existing guard result: `guardBeforePrompt` returns `{ ok: false, paths: [".git"] }` after it restored the file and reset the worktree. | The Session already turns a failed guard into a dropped prompt and an ops notice, so no new notification path is added. |
 | D16 | Host-only steps (running the spike scripts, the real-Podman suite, loading the nftables template, the VPS kick check) are operator steps listed in the Notes of `tasks.md`, not coding tasks. Spike S12 is task 0.4, marked "run on EC2", and no task depends on it. | They need a Linux host with Podman 5 and, for the nftables check, a cloud VM; the repository ships the scripts, the template and the tests. |
 | D17 | Host-side commit after each `end_turn` of a `+o` agent in podman mode (Open Point 1, decision 1). `Session` gets an optional async `afterTurn` hook that runs between the end of `session/prompt` and `turn-ended`; `TurnCommitter` checks the mode and calls `WorktreeManager.commitTurn`, which uses the hardened git of D4 with hooks and signing off. | The agent keeps no git metadata (D3), yet Journey A's "coder commits" still works. Running inside the turn keeps the next prompt out until the commit is done, and only the runner's own git, with config it controls, touches the repository. Option C (a commit command for Human_Ops) stays a later spec. |
-| D18 | The Kiro credential is only the read-only Auth_Dir mount (decision 2). `SEANCE_SANDBOX_AUTH_DIR` is required in podman mode; `KIRO_API_KEY` is never forwarded and never put in the `podman` process environment. | An environment variable is visible to every process in the container and to `podman inspect`; a staged copy in tmpfs is not. The agent can still read the staged files, which `docs/SANDBOX.md` names as the residual exfiltration risk. |
+| D18 | The Kiro credential is only the read-only Auth_Dir mount (decision 2). `SEANCE_SANDBOX_AUTH_DIR` is required in podman mode; `KIRO_API_KEY` is never forwarded and never put in the `podman` process environment. | An environment variable is visible to every process in the container and to `podman inspect`; a staged copy in tmpfs is not. The agent can still read the staged files, which `docs/SANDBOX.md` names as the residual exfiltration risk. **Superseded by `sandbox-api-key-auth` (Requirements 1 to 4):** `KIRO_API_KEY` may be forwarded name-only (`-e KIRO_API_KEY`, value only in the env of the agent `podman run`); `SEANCE_SANDBOX_AUTH_DIR` is optional when the key is set. |
 | D19 | Egress default deny on the host for the runner's user: DNS to the resolver, TCP 443 to an address set built from `sandbox/egress-allow.txt`, loopback for the runner's own services; `169.254.0.0/16` and the VPC CIDR dropped first (decision 3). In a public deployment the Probe also tries `SEANCE_SANDBOX_EGRESS_PROBES` (default `1.1.1.1:443`). | nftables filters addresses, so names are resolved by `seance-egress-refresh` on a timer. The Probe turns a missing default-deny rule into a boot failure on the public host without making podman mode unusable on a developer's Linux box. |
 | D20 | `SEANCE_SANDBOX_IMAGE` must be `name@sha256:<digest>`; the image is built from `sandbox/Dockerfile`, whose `FROM` is pinned by digest (decision 5). | A tag can move; a digest cannot. `podman image inspect --format '{{.Digest}}'` gives the digest of a locally built image. |
 | D23 | Node 26 and npm come into `sandbox/Dockerfile` by `COPY --from` a `node:26-bookworm-slim` stage pinned by the test image's digest; only `node` and the npm files (with `npx`) are copied, then the setuid strip runs (Node 25 and later images ship no corepack, so there is none to copy; task 21.3); npm is set offline with its cache in the tmpfs `$HOME` (Requirement 16, task 21). | `npm test` must run in the sandbox (demo blocker 2026-11-10). The same digest is already pulled by `deploy/bootstrap.sh`, a copy installs nothing from the network, and both images are bookworm, so the binary finds the same libraries. |
@@ -108,7 +108,7 @@ export interface PodmanSandboxConfig {
   readonly mode: "podman";
   readonly podmanBin: string;
   readonly image: string;       // name@sha256:<64 hex> (D20)
-  readonly authDir: string;     // required (D18)
+  readonly authDir: string;     // required (D18)  // superseded by sandbox-api-key-auth: string | undefined, optional with KIRO_API_KEY
   readonly memory: string;      // e.g. "2g"
   readonly cpus: string;        // e.g. "2"
   readonly pids: number;
@@ -251,7 +251,7 @@ podman run -i --rm --name=seance-coder-1a2b3c4d-9f8e7d6c
   <image>@sha256:<digest> acp --agent coder
 ```
 
-For a private session the first mount ends in `relabel=private` instead (D21). `KIRO_API_KEY` never appears (D18).
+For a private session the first mount ends in `relabel=private` instead (D21). `KIRO_API_KEY` never appears (D18). **Superseded by `sandbox-api-key-auth` (Requirements 1 to 4):** `KIRO_API_KEY` may be forwarded name-only (`-e KIRO_API_KEY`, value only in the env of the agent `podman run`); `SEANCE_SANDBOX_AUTH_DIR` is optional when the key is set.
 
 Note: the option spellings in the `--mount`, `--tmpfs` and `--network` lines are the initial values of `flags.ts`. In a Podman `--mount` list the read-only option may need to be written `ro=true`. Spike S12 fixes the spelling against the installed Podman, and only `flags.ts` and `docs/SANDBOX.md` change. Constant environment values (`HOME`, `TMPDIR`) are literal `-e NAME=value` pairs; they are not host values.
 
@@ -301,7 +301,7 @@ For any input (including paths with spaces, `=`, `:` and a leading `-`), the mul
 
 ### Property 3: Environment
 
-Every `-e` element is `NAME` with `NAME` in the allowed set, or one of the two constant pairs; `KIRO_API_KEY` is never one of them, even when the input asks to forward it (it throws). For a random secret `KIRO_API_KEY` in the base environment, the secret does not occur in any argv element, in the `podman` process environment, in the `SandboxError` messages produced from that input, or in the notice text.
+Every `-e` element is `NAME` with `NAME` in the allowed set, or one of the two constant pairs; `KIRO_API_KEY` is never one of them, even when the input asks to forward it (it throws). For a random secret `KIRO_API_KEY` in the base environment, the secret does not occur in any argv element, in the `podman` process environment, in the `SandboxError` messages produced from that input, or in the notice text. **Superseded by `sandbox-api-key-auth` (Requirements 1 to 4):** `KIRO_API_KEY` may be forwarded name-only (`-e KIRO_API_KEY`, value only in the env of the agent `podman run`); `SEANCE_SANDBOX_AUTH_DIR` is optional when the key is set.
 
 **Validates: Requirements 6.1, 6.2, 6.4**
 

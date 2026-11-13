@@ -71,6 +71,8 @@ export type LauncherOptions = {
   readonly baseEnv?: EnvLike;
   /** 8 hex characters; injectable for tests. */
   readonly random?: () => string;
+  /** KIRO_API_KEY; goes only into the env of the agent `podman run`, never into argv. Empty counts as unset. */
+  readonly apiKey?: string;
 };
 
 /** Never forwarded into a container, even from test extras (Requirement 6.3, 6.4). */
@@ -115,6 +117,7 @@ export class PodmanLauncher {
   readonly #exec: PodmanExec;
   readonly #random: () => string;
   readonly #workspacesLabel: string;
+  readonly #apiKey: string | undefined;
   /** Names this run created and has not removed yet (Requirement 10.7). */
   readonly #created = new Set<string>();
   /** Names whose removal failed; retried by `sweep` (Requirement 10.3). */
@@ -124,6 +127,7 @@ export class PodmanLauncher {
     this.#o = o;
     this.#exec = o.exec ?? execPodman;
     this.#random = o.random ?? ((): string => randomBytes(4).toString("hex"));
+    this.#apiKey = o.apiKey === undefined || o.apiKey === "" ? undefined : o.apiKey;
     this.#workspacesLabel = sha256(o.worktreeRoot).slice(0, 16);
   }
 
@@ -149,6 +153,11 @@ export class PodmanLauncher {
     return env;
   }
 
+  /** One stderr line for a log or SandboxError detail, with the key removed (Requirement 2.3). */
+  #scrub(stderr: string): string {
+    return scrubDetail(lastLine(stderr), [this.#apiKey]);
+  }
+
   async #podman(args: readonly string[], extra: EnvLike = {}): Promise<ExecResult> {
     const result = await this.#exec.run(this.#o.config.podmanBin, args, this.podmanEnv(extra));
     if (result.code === -1 && /ENOENT|not found|EACCES/i.test(result.stderr)) {
@@ -163,7 +172,7 @@ export class PodmanLauncher {
   async #checkVersion(): Promise<void> {
     const r = await this.#podman(["--version"]);
     if (r.code !== 0) {
-      throw new SandboxError("podman-missing", `podman not found: "podman --version" failed with exit code ${r.code}`, scrubDetail(lastLine(r.stderr)));
+      throw new SandboxError("podman-missing", `podman not found: "podman --version" failed with exit code ${r.code}`, this.#scrub(r.stderr));
     }
     const major = parsePodmanMajor(r.stdout);
     if (major === undefined || major < 5) {
@@ -201,14 +210,17 @@ export class PodmanLauncher {
       );
     }
     await this.#checkImage();
-    let authOk = false;
-    try {
-      authOk = (await stat(this.#o.config.authDir)).isDirectory();
-    } catch {
-      authOk = false;
-    }
-    if (!authOk) {
-      throw new SandboxError("auth-missing", "SEANCE_SANDBOX_AUTH_DIR is not an existing directory; point it at the Kiro login state");
+    const authDir = this.#o.config.authDir;
+    if (authDir !== undefined) {
+      let authOk = false;
+      try {
+        authOk = (await stat(authDir)).isDirectory();
+      } catch {
+        authOk = false;
+      }
+      if (!authOk) {
+        throw new SandboxError("auth-missing", "SEANCE_SANDBOX_AUTH_DIR is not an existing directory; point it at the Kiro login state");
+      }
     }
     await this.#probe();
   }
@@ -241,7 +253,7 @@ export class PodmanLauncher {
               : r.code === F.PROBE_EXIT.noNetcat
                 ? "the image has no nc for seance-probe"
                 : `seance-probe exited with code ${r.code}`;
-      throw new SandboxError("probe-failed", `network isolation check failed: ${which}`, scrubDetail(lastLine(r.stderr)));
+      throw new SandboxError("probe-failed", `network isolation check failed: ${which}`, this.#scrub(r.stderr));
     } finally {
       await new Promise<void>((resolve) => {
         server.close(() => {
@@ -268,7 +280,7 @@ export class PodmanLauncher {
       sessionCwd: o.sessionCwd,
       worktreeRoot: this.#o.worktreeRoot,
       agentsDir: this.#o.agentsDir,
-      authDir: this.#o.config.authDir,
+      ...(this.#o.config.authDir !== undefined ? { authDir: this.#o.config.authDir } : {}),
       ...(this.#o.targetRepo !== undefined ? { targetRepo: this.#o.targetRepo } : {}),
     });
     const privateRoot = `${this.#o.worktreeRoot}/_private`;
@@ -291,9 +303,13 @@ export class PodmanLauncher {
       labels: { workspaces: this.#workspacesLabel, agent: nick },
       kiroAgent: o.kiroAgent,
       forwardEnv: [...new Set(forwardEnv)],
+      forwardApiKey: this.#apiKey !== undefined,
     });
     this.#created.add(containerName);
-    return { command: this.#o.config.podmanBin, args, cwd: this.#o.agentsDir, env: this.podmanEnv(extra), containerName };
+    // Only this spec carries the key; every other podman call uses podmanEnv() without it.
+    const env = this.podmanEnv(extra);
+    if (this.#apiKey !== undefined) env["KIRO_API_KEY"] = this.#apiKey;
+    return { command: this.#o.config.podmanBin, args, cwd: this.#o.agentsDir, env, containerName };
   }
 
   /**
@@ -310,8 +326,8 @@ export class PodmanLauncher {
     const rm = await this.#podman(["rm", "-f", "--ignore", name]);
     if (rm.code !== 0) {
       this.#retry.add(name);
-      this.#o.logger.error("container removal failed", { container: name, code: rm.code, stderr: scrubDetail(lastLine(rm.stderr)) });
-      throw new SandboxError("remove-failed", `container ${name} could not be removed; it is retried at the next sweep`, scrubDetail(lastLine(rm.stderr)));
+      this.#o.logger.error("container removal failed", { container: name, code: rm.code, stderr: this.#scrub(rm.stderr) });
+      throw new SandboxError("remove-failed", `container ${name} could not be removed; it is retried at the next sweep`, this.#scrub(rm.stderr));
     }
     this.#created.delete(name);
     this.#retry.delete(name);
@@ -347,7 +363,7 @@ export class PodmanLauncher {
             this.#retry.delete(name);
           }
         } else {
-          this.#o.logger.error("sandbox sweep removal failed", { code: rm.code, stderr: scrubDetail(lastLine(rm.stderr)) });
+          this.#o.logger.error("sandbox sweep removal failed", { code: rm.code, stderr: this.#scrub(rm.stderr) });
         }
       }
     } catch (err) {

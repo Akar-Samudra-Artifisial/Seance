@@ -190,6 +190,7 @@ We write our own IRC server in TypeScript (a subset of RFC 2812) listening on TC
 - **Primary:** ACP — `kiro-cli acp --agent <name>`; one process per agent, one session per channel.
 - **Fallback:** `kiro-cli chat --agent <name> --no-interactive "<prompt>"` (env `KIRO_API_KEY`).
 - Both sit behind an `AgentHarness` interface.
+- **Credential in the podman sandbox:** a read-only mounted login (`SEANCE_SANDBOX_AUTH_DIR`), `KIRO_API_KEY`, or both; one is required at startup. The key goes into the container name-only (`podman run -e KIRO_API_KEY`) and its value travels only in the environment of that one `podman run` process, so it never appears in argv or `ps`. No other podman call gets it. When both are set the login wins (Kiro's own precedence) and the runner logs one warning.
 
 ### Kiro Crew
 

@@ -115,14 +115,8 @@ describe("value rules (1.3)", () => {
 });
 
 describe("credentials (1.4, decision 2)", () => {
-  it("requires SEANCE_SANDBOX_AUTH_DIR, even with KIRO_API_KEY set", () => {
-    const err = errorOf({ SEANCE_SANDBOX_AUTH_DIR: undefined, KIRO_API_KEY: "secret-key-value" });
-    expect(err.variable).toBe("SEANCE_SANDBOX_AUTH_DIR");
-    expect(err.message).not.toContain("secret-key-value");
-  });
-
-  it("marks KIRO_API_KEY as ignored (logged once by the runner) and SEANCE_KIRO_BIN too (1.7)", () => {
-    expect(podman({ KIRO_API_KEY: "k", SEANCE_KIRO_BIN: "/opt/kiro" }).ignored).toEqual(["SEANCE_KIRO_BIN", "KIRO_API_KEY"]);
+  it("marks SEANCE_KIRO_BIN as ignored, but not KIRO_API_KEY, which is forwarded (1.7)", () => {
+    expect(podman({ KIRO_API_KEY: "k", SEANCE_KIRO_BIN: "/opt/kiro" }).ignored).toEqual(["SEANCE_KIRO_BIN"]);
   });
 });
 

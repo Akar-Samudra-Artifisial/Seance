@@ -66,7 +66,7 @@ Put Séance on the internet for the Kiroween 2026 judges: one EC2 instance in AW
 
 #### Acceptance Criteria
 
-1. `KIRO_API_KEY` SHALL NOT be used. THE Operator SHALL log in once over SSM as `seance` with `kiro-cli login --use-device-flow`, using the personal Kiro account that holds the Kiroween credits.
+1. `KIRO_API_KEY` SHALL NOT be used. THE Operator SHALL log in once over SSM as `seance` with `kiro-cli login --use-device-flow`, using the personal Kiro account that holds the Kiroween credits. **Superseded by `sandbox-api-key-auth` (Requirements 1, 4 and 10):** `KIRO_API_KEY` may be set in the runner environment file instead of, or with, the Kiro login; it is forwarded name-only into each agent container, and the login wins when both are set.
 2. THE token directory SHALL become `SEANCE_SANDBOX_AUTH_DIR`, owned by `seance` with mode 0700.
 3. `docs/DEPLOY.md` SHALL document the login exactly, and the teardown SHALL include `kiro-cli logout` and removal of the token directory.
 4. THE credit caps of public-hardening SHALL stay on with conservative defaults for a public demo on a 4,000-credit budget, documented with their reasons.

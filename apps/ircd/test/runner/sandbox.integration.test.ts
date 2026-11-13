@@ -121,15 +121,23 @@ describe("agent sandbox with real rootless Podman", () => {
   );
 
   it.skipIf(!available)(
-    title("hides host secrets and KIRO_API_KEY, has no git metadata, cannot reach the metadata endpoint"),
+    title("hides host secrets, forwards KIRO_API_KEY as set, has no git metadata, cannot reach the metadata endpoint"),
     async () => {
       process.env["SEANCE_SECRET_CANARY"] = "canary-value";
       process.env["KIRO_API_KEY"] = "kiro-canary";
       try {
-        const { op } = await scene([{ probe: "env:SEANCE_SECRET_CANARY,KIRO_API_KEY" }, { probe: "git" }, { probe: "connect:169.254.169.254:80" }]);
+        // The key goes through the runner config, as in production; the process.env copy above
+        // shows that the host environment itself is still not passed on.
+        const { op } = await scene([{ probe: "env:SEANCE_SECRET_CANARY,KIRO_API_KEY" }, { probe: "git" }, { probe: "connect:169.254.169.254:80" }], {
+          KIRO_API_KEY: "kiro-canary",
+        });
         await grant(op, "+v");
         op.send("PRIVMSG #sbx :coder: env");
-        expect(await reply(op, "env:SEANCE_SECRET_CANARY,KIRO_API_KEY")).toContain("SEANCE_SECRET_CANARY=<unset> KIRO_API_KEY=<unset>");
+        // sandbox-api-key-auth: the key reaches kiro-cli inside the container by name, other host
+        // variables do not. The probe prints only a set or unset marker, never the value.
+        const envLine = await reply(op, "env:SEANCE_SECRET_CANARY,KIRO_API_KEY");
+        expect(envLine).toContain("SEANCE_SECRET_CANARY=<unset> KIRO_API_KEY=<set>");
+        expect(envLine).not.toContain("kiro-canary");
         expect(await reply(op, "git")).toContain("=> failed");
         expect(await reply(op, "connect:169.254.169.254:80")).toContain("=> unreachable");
       } finally {

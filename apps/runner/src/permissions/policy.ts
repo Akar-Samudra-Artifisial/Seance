@@ -3,7 +3,7 @@
  * Path canonicalisation (the only I/O) lives in `canonicalise.ts`.
  */
 import { posix } from "node:path";
-import { isAuthPath, matchDenyList } from "./deny-list.js";
+import { isAuthPath, isEnvironPath, matchDenyList } from "./deny-list.js";
 
 export type PolicyMode = "op" | "voice" | "none";
 export type ToolClass = "read" | "write" | "shell" | "unclassified";
@@ -98,6 +98,8 @@ function evaluate(input: PolicyInput): PermissionResult {
   // 2b. public-hardening Requirement 6.3: the Kiro login is never a tool target, not even for reads.
   for (const p of paths) {
     if (isAuthPath(p.raw) || (p.resolved !== undefined && isAuthPath(p.resolved))) return reject("protected-path");
+    // sandbox-api-key-auth Requirement 8.3: the process environment holds KIRO_API_KEY.
+    if (isEnvironPath(p.raw) || (p.resolved !== undefined && isEnvironPath(p.resolved))) return reject("protected-path");
   }
 
   // 3. confinement, regardless of mode

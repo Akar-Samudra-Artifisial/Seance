@@ -23,6 +23,7 @@ const INPUT: PodmanRunInput = {
   labels: { workspaces: "0123456789abcdef", agent: "coder" },
   kiroAgent: "coder",
   forwardEnv: ["LANG", "TERM"],
+  forwardApiKey: false,
 };
 
 describe("buildPodmanRunArgs golden argv (4.1, 5.1, 5.7, 6.1)", () => {

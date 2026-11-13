@@ -1,0 +1,359 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "7.1 Add `readApiKey(env)` in `apps/runner/src/config.ts`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537556710
+      }
+    ],
+    "7.2 Write property test for whitespace-only keys": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537563280
+      }
+    ],
+    "7.3 Write property test for control characters and the 12.5 examples": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537572997
+      }
+    ],
+    "7. Whitespace-only key handling": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537573045
+      }
+    ],
+    "8.1 Add `referencesKeyReader` and `isEnvironPath` to `apps/runner/src/permissions/deny-list.ts`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537580439
+      }
+    ],
+    "8.2 Reject Environ_Paths in `apps/runner/src/permissions/policy.ts`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537588263
+      }
+    ],
+    "8.3 Write property tests and examples for the deny list": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537595700
+      }
+    ],
+    "8.4 Write property test for Environ_Path rejection in `decide`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537624486
+      }
+    ],
+    "8. Key reader and Environ_Path protection": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537624564
+      }
+    ],
+    "9.1 Write redactor property tests": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537632082
+      }
+    ],
+    "10.1 Delete `redactSpawnSpec` from `apps/runner/src/sandbox/launcher.ts`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537639067
+      }
+    ],
+    "10.2 Remove its tests and unused imports": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537647140
+      }
+    ],
+    "10. Remove `redactSpawnSpec`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537647207
+      }
+    ],
+    "11.1 Update `apps/ircd/test/runner/sandbox.integration.test.ts` and the probe": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537655186
+      }
+    ],
+    "11. Update the sandbox integration test": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537655212
+      }
+    ],
+    "12.1 Update `docs/DEPLOY.md` section 5, `docs/SANDBOX.md`, `README.md` and `deploy/seance.env.example`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537662283
+      }
+    ],
+    "12. Documentation follow-up": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537662345
+      }
+    ],
+    "13.1 Annotate `.kiro/specs/agent-sandbox/design.md`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537670623
+      }
+    ],
+    "13.2 Annotate `.kiro/specs/agent-sandbox/requirements.md`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537677514
+      }
+    ],
+    "13. Supersede notes in the agent-sandbox spec": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537677586
+      }
+    ],
+    "14. Final checkpoint - Run typecheck and tests at the repository root": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794537708119
+      }
+    ],
+    "15.1 Add `shellWords` and recursive key-reader detection in `apps/runner/src/permissions/deny-list.ts`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538109678
+      },
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538276988
+      }
+    ],
+    "15.2 Add the `/proc` environ glob check in `referencesKeyReader` and `isEnvironPath`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538287765
+      },
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538375860
+      }
+    ],
+    "15.3 Write property tests P16 and P17 and the examples in `apps/runner/test/key-reader.test.ts`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538383845
+      },
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538467702
+      }
+    ],
+    "15. Deny-list gap closure": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538467766
+      }
+    ],
+    "16.1 Add an ircd integration test in `apps/ircd/test/runner` using `startIntegration` and the Fake_Agent": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538501820
+      },
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538888621
+      }
+    ],
+    "16. Runner-level redaction test": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538888737
+      }
+    ],
+    "9.2 Verify the shared redactor on every output path": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538895654
+      }
+    ],
+    "9. Secret_Redactor coverage": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538895698
+      }
+    ],
+    "17.1 Update `docs/SANDBOX.md` and `docs/DEPLOY.md`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794538903501
+      },
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539007421
+      }
+    ],
+    "17. Exposure documentation": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539007457
+      }
+    ],
+    "18.1 Annotate `.kiro/specs/deploy-aws/design.md` and `.kiro/specs/deploy-aws/requirements.md`": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539008462
+      },
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539092758
+      }
+    ],
+    "18. Supersede notes in the deploy-aws spec": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539092809
+      }
+    ],
+    "19. Final checkpoint - Run typecheck and tests at the repository root": [
+      {
+        "executionId": "95cb46b5-458a-4dcf-b586-8ee0703ef5b3",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539269748
+      }
+    ],
+    "20.1 Add separator-aware splitting, stdin-fed shell rejection and `eval` recursion in `apps/runner/src/permissions/deny-list.ts`": [
+      {
+        "executionId": "db3c6989-a322-46ae-9748-4d83e003fb0a",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539787264
+      },
+      {
+        "executionId": "db3c6989-a322-46ae-9748-4d83e003fb0a",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539865833
+      }
+    ],
+    "20.2 Skip per-wrapper option values with `WRAPPER_OPTIONS_WITH_ARG` in `apps/runner/src/permissions/deny-list.ts`": [
+      {
+        "executionId": "db3c6989-a322-46ae-9748-4d83e003fb0a",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539866999
+      },
+      {
+        "executionId": "db3c6989-a322-46ae-9748-4d83e003fb0a",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539950429
+      }
+    ],
+    "20.3 Add the Proc_Glob segment check to `referencesKeyReader` and `isEnvironPath` in `apps/runner/src/permissions/deny-list.ts`": [
+      {
+        "executionId": "db3c6989-a322-46ae-9748-4d83e003fb0a",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794539951474
+      },
+      {
+        "executionId": "db3c6989-a322-46ae-9748-4d83e003fb0a",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794540061815
+      }
+    ],
+    "20.4 Write the tests in `apps/runner/test/key-reader.test.ts`": [
+      {
+        "executionId": "db3c6989-a322-46ae-9748-4d83e003fb0a",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794540062778
+      },
+      {
+        "executionId": "3272b34d-8f69-48e1-b2cd-4c6138a78e46",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794540457164
+      }
+    ],
+    "20. Final deny-list hardening": [
+      {
+        "executionId": "3272b34d-8f69-48e1-b2cd-4c6138a78e46",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794540457206
+      }
+    ],
+    "21.1 Add one line to `docs/SANDBOX.md`": [
+      {
+        "executionId": "3272b34d-8f69-48e1-b2cd-4c6138a78e46",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794540458280
+      },
+      {
+        "executionId": "3272b34d-8f69-48e1-b2cd-4c6138a78e46",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794540558682
+      }
+    ],
+    "21. Documentation": [
+      {
+        "executionId": "3272b34d-8f69-48e1-b2cd-4c6138a78e46",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794540558753
+      }
+    ],
+    "22. Final checkpoint - Run typecheck and tests at the repository root": [
+      {
+        "executionId": "3272b34d-8f69-48e1-b2cd-4c6138a78e46",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794540815177
+      },
+      {
+        "executionId": "3272b34d-8f69-48e1-b2cd-4c6138a78e46",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794541059016
+      }
+    ]
+  }
+}

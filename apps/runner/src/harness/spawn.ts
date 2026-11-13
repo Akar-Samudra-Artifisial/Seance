@@ -13,8 +13,9 @@ export type SpawnSpec = {
 
 /**
  * Podman mode (agent-sandbox design "Spawn and harness"): a thin call to the launcher. The command
- * is the podman binary, the image runs `acp --agent <name>`, and `KIRO_API_KEY` is never placed in
- * the environment (design D18).
+ * is the podman binary and the image runs `acp --agent <name>`. When set, `KIRO_API_KEY` is forwarded
+ * name-only (`-e KIRO_API_KEY`); its value is in the podman process environment, never in argv
+ * (sandbox-api-key-auth).
  */
 export function buildSandboxSpawnSpec(
   launcher: Pick<PodmanLauncher, "spec">,

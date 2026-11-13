@@ -44,6 +44,7 @@ const validInput: fc.Arbitrary<PodmanRunInput> = fc
       labels: { workspaces: "fedcba9876543210", agent: r.nick },
       kiroAgent: r.kiroAgent,
       forwardEnv: r.forwardEnv,
+      forwardApiKey: false,
     };
   });
 

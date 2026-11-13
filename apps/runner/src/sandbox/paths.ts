@@ -15,7 +15,8 @@ export type MountPaths = {
   readonly sessionCwd: string;
   readonly worktreeRoot: string;
   readonly agentsDir: string;
-  readonly authDir: string;
+  /** Absent when the credential is KIRO_API_KEY only (no login directory is mounted). */
+  readonly authDir?: string;
   /** SEANCE_TARGET_REPO; must not be reachable through the session mount. */
   readonly targetRepo?: string;
 };
@@ -33,8 +34,10 @@ export function assertMountPaths(p: MountPaths): void {
   if (p.sessionCwd === p.worktreeRoot) fail("the session directory is the workspaces root itself");
   if (!isWithin(p.sessionCwd, p.worktreeRoot)) fail("the session directory is outside the workspaces root");
   if (overlaps(p.sessionCwd, p.agentsDir)) fail("the session directory overlaps the agents directory");
-  if (overlaps(p.sessionCwd, p.authDir)) fail("the session directory overlaps the auth directory");
-  if (overlaps(p.authDir, p.agentsDir)) fail("the auth directory overlaps the agents directory");
+  if (p.authDir !== undefined) {
+    if (overlaps(p.sessionCwd, p.authDir)) fail("the session directory overlaps the auth directory");
+    if (overlaps(p.authDir, p.agentsDir)) fail("the auth directory overlaps the agents directory");
+  }
   if (p.targetRepo !== undefined && isWithin(p.targetRepo, p.sessionCwd)) {
     fail("the session directory contains the target repository");
   }

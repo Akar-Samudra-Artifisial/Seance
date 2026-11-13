@@ -69,7 +69,13 @@ Send each judge their nick and secret, and the URL, out of band. The guest passw
 
 ## 5. Kiro login
 
-There is no `KIRO_API_KEY` on this host. The operator logs in once, as the `seance` user, with the **personal Kiro account that holds the Kiroween credits**. The token directory `/home/seance/.local/share/kiro-cli` becomes `SEANCE_SANDBOX_AUTH_DIR` (mounted read-only into each agent container).
+The default credential is a Kiro login: the operator logs in once, as the `seance` user, with the **Kiro account that holds the Kiroween credits**. The token directory `/home/seance/.local/share/kiro-cli` becomes `SEANCE_SANDBOX_AUTH_DIR` (mounted read-only into each agent container).
+
+Alternative without an interactive login: set `KIRO_API_KEY` in `/etc/seance/seance.env` instead of (or as well as) `SEANCE_SANDBOX_AUTH_DIR`. The runner forwards it name-only into each agent container (never in argv). If both are set, the login takes precedence. For a public deployment use a dedicated, low-limit, rotatable key ([SANDBOX.md](./SANDBOX.md#a-dedicated-api-key-for-public-deployments)): it is readable inside the agent containers.
+
+The key is also visible to the `seance` user and to root through `podman inspect` and `/proc/<pid>/environ`, and to a prompt-injected agent despite the deny-list (see [SANDBOX.md](./SANDBOX.md#a-dedicated-api-key-for-public-deployments)). The dedicated, low-limit, rotatable key is the main mitigation.
+
+To rotate the key: create a new key for the same dedicated account, replace the `KIRO_API_KEY=` line in `/etc/seance/seance.env`, run `sudo systemctl restart seance-ircd.service` (the runner reads the key only at start), check that an agent still answers, then revoke the old key. Revoke the last key after January 29, 2027.
 
 The agents' egress rule lets the `seance` user reach only the agents' allow-list, so stop it for the login (no agent runs yet):
 

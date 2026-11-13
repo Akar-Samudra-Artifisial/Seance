@@ -193,6 +193,7 @@ export function matchDenyList(command: string, worktree: string): DenyMatch | un
   // Downloader plus shell anywhere in one command: covers `curl … | sh`, `sh -c "$(curl …)"`,
   // `bash <(curl …)`. Broader than the pipe alone on purpose (fail closed).
   if (sawDownloader && sawShell) return { reason: "deny-list" };
+  if (referencesKeyReader(command)) return { reason: "protected-path" };
   return undefined;
 }
 
@@ -216,4 +217,215 @@ export function isAuthPath(resolved: string): boolean {
     const m = marker.toLowerCase();
     return p === m || p.startsWith(`${m}/`) || p.includes(`/${m.replace(/^\//, "")}/`) || p.endsWith(`/${m.replace(/^\//, "")}`);
   });
+}
+
+/** sandbox-api-key-auth Requirement 8: wrappers skipped before the command word, with their options. */
+const KEY_READER_WRAPPERS: ReadonlySet<string> = new Set(["command", "exec", "sudo", "xargs", "nohup", "time", "builtin"]);
+/** Wrapper options that take a separate argument word. */
+const WRAPPER_OPTIONS_WITH_ARG: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  [
+    "sudo",
+    new Set([
+      "-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T",
+      "--user", "--group", "--close-from", "--chdir", "--host", "--prompt",
+      "--role", "--type", "--other-user", "--command-timeout",
+    ]),
+  ],
+  ["exec", new Set(["-a"])],
+  [
+    "xargs",
+    new Set([
+      "-I", "-L", "-n", "-P", "-s", "-d", "-E", "-a",
+      "--max-args", "--max-procs", "--delimiter", "--arg-file", "--max-lines", "--replace", "--eof",
+    ]),
+  ],
+  ["time", new Set(["-f", "-o", "--format", "--output"])],
+]);
+
+/** Options of the env command that take a separate argument. */
+const ENV_OPTIONS_WITH_ARG: ReadonlySet<string> = new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"]);
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/** Index of the first word after the options and assignments of an env command; rest.length when none. */
+function envCommandOperand(rest: readonly string[]): number {
+  let j = 0;
+  while (j < rest.length) {
+    const w = rest[j] ?? "";
+    if (w === "--") return j + 1;
+    if (ENV_OPTIONS_WITH_ARG.has(w)) j += 2;
+    else if (w.startsWith("-") || ASSIGNMENT.test(w)) j += 1;
+    else return j;
+  }
+  return j;
+}
+
+/** Shells whose -c script is checked again for key readers (Requirement 13). */
+const SCRIPT_SHELLS: ReadonlySet<string> = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish"]);
+/** How many levels of sh -c "sh -c ..." are looked into; deeper nesting is refused. */
+const MAX_SCRIPT_DEPTH = 4;
+/** A short option group that contains c (-c, -lc, -ec). */
+const SHORT_C_OPTION = /^-[A-Za-z]*c[A-Za-z]*$/;
+
+/** Quote-aware word split of one simple command; quotes and escaping backslashes are removed. */
+function shellWords(part: string): readonly string[] {
+  const words: string[] = [];
+  let current = "";
+  let present = false;
+  let quote: "'" | '"' | undefined;
+  for (let i = 0; i < part.length; i += 1) {
+    const ch = part[i] ?? "";
+    if (quote === "'") {
+      if (ch === "'") quote = undefined;
+      else current += ch;
+    } else if (quote === '"') {
+      if (ch === '"') quote = undefined;
+      else if (ch === "\\" && i + 1 < part.length) {
+        i += 1;
+        current += part[i] ?? "";
+      } else current += ch;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+      present = true;
+    } else if (ch === "\\") {
+      if (i + 1 < part.length) {
+        i += 1;
+        current += part[i] ?? "";
+        present = true;
+      }
+    } else if (/\s/.test(ch)) {
+      if (present || current !== "") words.push(current);
+      current = "";
+      present = false;
+    } else {
+      current += ch;
+      present = true;
+    }
+  }
+  if (present || current !== "") words.push(current);
+  return words;
+}
+
+/** True when one simple command, quotes removed, prints the environment of the shell. */
+function isKeyReaderWords(words: readonly string[], depth: number, piped = false): boolean {
+  let i = 0;
+  // Leading NAME=value assignments, then wrappers with their options; restart after each wrapper.
+  for (;;) {
+    while (i < words.length && ASSIGNMENT.test(words[i] ?? "")) i += 1;
+    if (i < words.length && KEY_READER_WRAPPERS.has(baseName(words[i] ?? ""))) {
+      const withArg = WRAPPER_OPTIONS_WITH_ARG.get(baseName(words[i] ?? ""));
+      i += 1;
+      while (i < words.length && (words[i] ?? "").startsWith("-")) {
+        const opt = words[i] ?? "";
+        i += 1;
+        if (opt === "--") break;
+        if (!opt.includes("=") && withArg?.has(opt)) i += 1;
+      }
+      continue;
+    }
+    break;
+  }
+  const word = words[i];
+  if (word === undefined) return false;
+  const rest = words.slice(i + 1);
+  switch (baseName(word)) {
+    case "printenv":
+      return true;
+    case "export":
+    case "declare":
+    case "typeset":
+      // Without an operand these list variables (export -p, declare -x); export FOO=1 is harmless.
+      return rest.every((w) => w.startsWith("-"));
+    case "set":
+      return rest.length === 0;
+    case "env": {
+      // With a command operand env runs that command; without one it prints the environment.
+      const j = envCommandOperand(rest);
+      return j >= rest.length || isKeyReaderWords(rest.slice(j), depth, piped);
+    }
+    case "eval":
+      if (depth >= MAX_SCRIPT_DEPTH) return true; // fail closed
+      return referencesKeyReader(rest.join(" "), depth + 1);
+    default: {
+      if (!SCRIPT_SHELLS.has(baseName(word))) return false;
+      const c = rest.findIndex((w) => SHORT_C_OPTION.test(w));
+      if (c < 0) {
+        // No -c: a script file operand is not inspected; otherwise the shell reads its script from stdin.
+        const operand = rest.find((w) => !w.startsWith("-") && !w.startsWith("+"));
+        return operand === undefined ? piped : false;
+      }
+      const script = rest[c + 1];
+      if (script === undefined) return false;
+      if (depth >= MAX_SCRIPT_DEPTH) return true; // fail closed
+      return referencesKeyReader(script, depth + 1);
+    }
+  }
+}
+
+/** Requirement 13.3, 13.4: a path segment that is a glob able to match `environ` (`envi*`, `env?ron`, `*`). */
+function hasEnvironGlob(text: string): boolean {
+  for (const token of text.split(REFERENCE_SPLIT)) {
+    for (const segment of token.split(PATH_SPLIT)) {
+      if (GLOB_CHARS.test(segment) && globMatches(segment, "environ")) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Requirement 14.7, 14.8: true when some segment is `proc` (or a glob able to match it: `pr?c`,
+ * `p*`, `[p]roc`) and a later segment is `environ` (or a glob able to match it). Pure; compares
+ * lower-cased. Needs no literal `/proc`, so `/pr?c/self/environ` is caught.
+ */
+function segmentsReachEnviron(segments: readonly string[], absolute: boolean): boolean {
+  // Only an absolute path can start at the proc mount; relative globs such as a leading `*` segment never do.
+  if (!absolute) return false;
+  const matches = (seg: string, name: string): boolean =>
+    seg === name || (GLOB_CHARS.test(seg) && globMatches(seg, name));
+  const parts = segments.filter((s) => s.length > 0).map((s) => s.toLowerCase());
+  const [first, ...rest] = parts;
+  if (first === undefined || !matches(first, "proc")) return false;
+  return rest.some((seg) => matches(seg, "environ"));
+}
+
+/**
+ * sandbox-api-key-auth Requirement 8.1, 8.2, 8.4: true when a shell command reads the process
+ * environment, where KIRO_API_KEY lives. Covers env or printenv without a command, export -p,
+ * declare -x, a bare set, any /proc/.../environ file, and the name KIRO_API_KEY itself.
+ * Requirements 13.1, 13.2: the script inside sh -c and friends is checked up to MAX_SCRIPT_DEPTH
+ * levels; deeper nesting is refused. A textual floor like referencesAuthPath: names built at run
+ * time, interpreters such as python -c or node -e, and other encodings are not recognised.
+ * Requirement 14.7: a token whose segments reach `environ` after a `proc` segment, either of them a
+ * glob (such as `/pr?c/self/environ`), is refused without needing a literal `/proc`.
+ */
+export function referencesKeyReader(command: string, depth = 0): boolean {
+  const plain = command.replace(/["'\\]/g, "").toLowerCase();
+  if (plain.includes("kiro_api_key")) return true;
+  if (plain.includes("/proc") && (plain.includes("environ") || hasEnvironGlob(plain))) return true;
+  for (const token of plain.split(REFERENCE_SPLIT)) {
+    if (segmentsReachEnviron(token.split(PATH_SPLIT), token.startsWith("/"))) return true;
+  }
+  // Odd indexes are separators. A part is "piped" when it reads a pipe or a here-string/document.
+  const pieces = command.split(/([;&|<>()`{}\n]+)/);
+  for (let k = 0; k < pieces.length; k += 2) {
+    const piped = (pieces[k - 1] ?? "").includes("|") || (pieces[k + 1] ?? "").startsWith("<<");
+    if (isKeyReaderWords(shellWords(pieces[k] ?? ""), depth, piped)) return true;
+  }
+  return false;
+}
+
+/**
+ * Requirement 8.3, 13.3, 13.4: any environ file under a proc directory (/proc/self/environ,
+ * /proc/1/task/2/environ), including a last segment that is a glob able to match `environ`
+ * (/proc/self/envi*, /proc/1/*).
+ * Requirement 14.8: the proc and environ segments may themselves be globs
+ * (/pr?c/self/environ, /[p]roc/1/environ).
+ */
+export function isEnvironPath(path: string): boolean {
+  const p = path.replace(/\\/g, "/").toLowerCase();
+  if (/(^|\/)proc\/(.+\/)?environ(\/|$)/.test(p)) return true;
+  const segments = p.split("/").filter((s) => s.length > 0);
+  if (segmentsReachEnviron(segments, p.startsWith("/"))) return true;
+  const last = segments[segments.length - 1];
+  if (last === undefined || segments.indexOf("proc") >= segments.length - 1) return false;
+  return segments.indexOf("proc") >= 0 && GLOB_CHARS.test(last) && globMatches(last, "environ");
 }

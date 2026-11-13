@@ -24,6 +24,11 @@ export interface PodmanRunInput {
   readonly kiroAgent: string;
   /** Variable names forwarded by name (`-e NAME`); values never travel in argv. */
   readonly forwardEnv: readonly string[];
+  /**
+   * True when KIRO_API_KEY is forwarded as the name-only `-e KIRO_API_KEY`. The value is never an
+   * input here: podman reads it from its own environment, so it cannot reach argv.
+   */
+  readonly forwardApiKey: boolean;
 }
 
 /** Requirement 4.5: a Kiro agent name that can never be read as a flag. */
@@ -104,12 +109,13 @@ export function buildPodmanRunArgs(i: PodmanRunInput): readonly string[] {
   checkPath("the session directory", i.sessionCwd);
   checkPath("the agents directory", i.agentsDir);
   checkPath("the workspaces root", i.worktreeRoot);
-  checkPath("the auth directory", i.config.authDir);
+  const authDir = i.config.authDir;
+  if (authDir !== undefined) checkPath("the auth directory", authDir);
   assertMountPaths({
     sessionCwd: i.sessionCwd,
     worktreeRoot: i.worktreeRoot,
     agentsDir: i.agentsDir,
-    authDir: i.config.authDir,
+    ...(authDir !== undefined ? { authDir } : {}),
   });
   if (!isSandboxKiroBin(i.config.kiroBin)) fail("the kiro-cli command must be a bare name or an image path outside the noexec mounts");
   if (!KIRO_AGENT_PATTERN.test(i.kiroAgent)) fail(`kiroAgent ${JSON.stringify(i.kiroAgent)} is not allowed in podman mode`);
@@ -163,7 +169,7 @@ export function buildPodmanRunArgs(i: PodmanRunInput): readonly string[] {
     `--tmpfs=${F.TMPFS_HOME}`,
     `--mount=${bindMount(i.sessionCwd, i.sessionCwd, false, sessionRelabel)}`,
     `--mount=${bindMount(i.agentsDir, i.agentsDir, true, F.MOUNT_RELABEL_SHARED)}`,
-    `--mount=${bindMount(i.config.authDir, F.AUTH_MOUNT_POINT, true, F.MOUNT_RELABEL_SHARED)}`,
+    ...(authDir !== undefined ? [`--mount=${bindMount(authDir, F.AUTH_MOUNT_POINT, true, F.MOUNT_RELABEL_SHARED)}`] : []),
     "-e",
     `HOME=${F.CONTAINER_HOME}`,
     "-e",
@@ -172,6 +178,8 @@ export function buildPodmanRunArgs(i: PodmanRunInput): readonly string[] {
     "-e",
     `SEANCE_KIRO_BIN=${i.config.kiroBin}`,
     ...i.forwardEnv.flatMap((name) => ["-e", name]),
+    // Name only: podman copies the value from its own environment (set by the launcher).
+    ...(i.forwardApiKey ? ["-e", "KIRO_API_KEY"] : []),
     i.config.image,
     "acp",
     "--agent",

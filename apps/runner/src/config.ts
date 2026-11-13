@@ -18,8 +18,11 @@ export interface PodmanSandboxConfig {
   readonly podmanBin: string;
   /** `name@sha256:<64 hex>` (Requirement 1.8, design D20). */
   readonly image: string;
-  /** Kiro login state, mounted read-only; required (design D18). Realpath after `validateRunnerPaths`. */
-  readonly authDir: string;
+  /**
+   * Kiro login state, mounted read-only; optional when KIRO_API_KEY is set, required otherwise.
+   * Realpath after `validateRunnerPaths`.
+   */
+  readonly authDir: string | undefined;
   readonly memory: string;
   readonly cpus: string;
   readonly pids: number;
@@ -34,7 +37,7 @@ export interface PodmanSandboxConfig {
    */
   readonly blockedCidrs: readonly string[];
   /** Variables that were set but are ignored in podman mode; the runner logs each once. */
-  readonly ignored: readonly ("SEANCE_KIRO_BIN" | "KIRO_API_KEY")[];
+  readonly ignored: readonly "SEANCE_KIRO_BIN"[];
 }
 
 export type SandboxConfig = { readonly mode: "none" } | PodmanSandboxConfig;
@@ -239,6 +242,15 @@ function parseBlockedCidrs(env: EnvSource): readonly string[] {
   return entries;
 }
 
+/**
+ * KIRO_API_KEY, or undefined when unset, empty or whitespace only (sandbox-api-key-auth
+ * Requirement 9). Any other value is kept exactly, surrounding whitespace included.
+ */
+function readApiKey(env: EnvSource): string | undefined {
+  const raw = readString(env, "KIRO_API_KEY");
+  return raw === undefined || raw.trim() === "" ? undefined : raw;
+}
+
 /** Requirement 1: the podman variables; only read when SEANCE_SANDBOX=podman. */
 function parseSandbox(env: EnvSource, harness: HarnessKind): SandboxConfig {
   const raw = env["SEANCE_SANDBOX"];
@@ -265,14 +277,20 @@ function parseSandbox(env: EnvSource, harness: HarnessKind): SandboxConfig {
     );
   }
 
-  const authDir = readString(env, "SEANCE_SANDBOX_AUTH_DIR");
-  if (authDir === undefined || authDir.trim() === "") {
+  const authRaw = readString(env, "SEANCE_SANDBOX_AUTH_DIR");
+  const authDir = authRaw === undefined || authRaw.trim() === "" ? undefined : authRaw;
+  const rawKey = readString(env, "KIRO_API_KEY");
+  if (rawKey !== undefined && /[\0\r\n]/.test(rawKey)) {
+    // Never include the value.
+    throw new ConfigError("KIRO_API_KEY", "KIRO_API_KEY contains a NUL, CR or LF character");
+  }
+  if (authDir === undefined && readApiKey(env) === undefined) {
     throw new ConfigError(
       "SEANCE_SANDBOX_AUTH_DIR",
-      "SEANCE_SANDBOX_AUTH_DIR is required in podman mode: the Kiro login state is mounted read-only and KIRO_API_KEY is never forwarded",
+      "podman mode needs a Kiro credential: set SEANCE_SANDBOX_AUTH_DIR (login state, mounted read-only) or KIRO_API_KEY (forwarded by name); one of them is required",
     );
   }
-  assertMountSafe("SEANCE_SANDBOX_AUTH_DIR", authDir);
+  if (authDir !== undefined) assertMountSafe("SEANCE_SANDBOX_AUTH_DIR", authDir);
 
   const memory = readString(env, "SEANCE_SANDBOX_MEMORY") ?? "2g";
   if (!MEMORY.test(memory)) {
@@ -291,9 +309,8 @@ function parseSandbox(env: EnvSource, harness: HarnessKind): SandboxConfig {
     );
   }
 
-  const ignored: ("SEANCE_KIRO_BIN" | "KIRO_API_KEY")[] = [];
+  const ignored: "SEANCE_KIRO_BIN"[] = [];
   if (readString(env, "SEANCE_KIRO_BIN") !== undefined) ignored.push("SEANCE_KIRO_BIN");
-  if (readString(env, "KIRO_API_KEY") !== undefined) ignored.push("KIRO_API_KEY");
 
   return {
     mode: "podman",
@@ -339,7 +356,7 @@ export function loadRunnerConfig(env: EnvSource, cwd: string = process.cwd()): R
     sandbox,
     harness,
     kiroBin,
-    kiroApiKey: readString(env, "KIRO_API_KEY"),
+    kiroApiKey: readApiKey(env),
     targetRepo,
     workspaces,
     agentsDir,
@@ -354,6 +371,24 @@ export function loadRunnerConfig(env: EnvSource, cwd: string = process.cwd()): R
     inviters: parseInviters(env),
     ...parseHardening(env),
   };
+}
+
+/**
+ * Startup warnings about the credential setup. With both the login directory and the key set, Kiro
+ * prefers the login, so the key is only a fallback. Pure; never includes the key value.
+ */
+export function sandboxAuthWarnings(
+  config: RunnerConfig,
+): readonly { readonly message: string; readonly fields: { readonly variables: readonly string[] } }[] {
+  const key = config.kiroApiKey;
+  if (config.sandbox.mode !== "podman" || config.sandbox.authDir === undefined || key === undefined || key === "") return [];
+  return [
+    {
+      message:
+        "KIRO_API_KEY and SEANCE_SANDBOX_AUTH_DIR are both set; the login in SEANCE_SANDBOX_AUTH_DIR takes precedence over KIRO_API_KEY inside the sandbox",
+      fields: { variables: ["KIRO_API_KEY", "SEANCE_SANDBOX_AUTH_DIR"] },
+    },
+  ];
 }
 
 /** public-hardening defaults (Requirements 5 and 9); applied by the runner when a field is absent. */
@@ -468,15 +503,17 @@ export async function validateRunnerPaths(config: RunnerConfig): Promise<RunnerC
   let sandbox = config.sandbox;
   if (sandbox.mode === "podman") {
     // Requirement 1.4, 3.2 (d): the auth dir is an existing directory; mount sources are realpaths.
-    if (!(await isDirectory(sandbox.authDir))) {
-      throw new ConfigError(
-        "SEANCE_SANDBOX_AUTH_DIR",
-        `SEANCE_SANDBOX_AUTH_DIR is not an existing directory (got ${describe(sandbox.authDir)})`,
-      );
+    if (sandbox.authDir !== undefined) {
+      if (!(await isDirectory(sandbox.authDir))) {
+        throw new ConfigError(
+          "SEANCE_SANDBOX_AUTH_DIR",
+          `SEANCE_SANDBOX_AUTH_DIR is not an existing directory (got ${describe(sandbox.authDir)})`,
+        );
+      }
+      const authDir = await realpath(sandbox.authDir);
+      assertMountSafe("SEANCE_SANDBOX_AUTH_DIR", authDir);
+      sandbox = { ...sandbox, authDir };
     }
-    const authDir = await realpath(sandbox.authDir);
-    assertMountSafe("SEANCE_SANDBOX_AUTH_DIR", authDir);
-    sandbox = { ...sandbox, authDir };
   }
   let workspaces: string;
   try {

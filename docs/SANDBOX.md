@@ -29,6 +29,27 @@ The sandbox is one layer. The permission rules (`+o` to write, paths confined to
 
 **Residual credential risk.** The login state in `SEANCE_SANDBOX_AUTH_DIR` is copied into the container's memory-backed `$HOME`, so `kiro-cli` can use and refresh it. A prompt-injected agent can read that copy and send it to any host the egress rule allows (the Kiro endpoints and package registries accept uploads). Use a dedicated, low-privilege login for the public server, keep its spend limited, and rotate it after the event.
 
+**The API key is readable too.** With `KIRO_API_KEY` set, the key is in the environment of `kiro-cli` inside the container, so a prompt-injected agent can read it the same way. The runner redacts it from agent output, but that does not stop a shell. Use a dedicated key that is used nowhere else, has a usage limit configured, and is revoked after January 29, 2027.
+
+**What the runner does about it, and its limit.** Shell commands that print the environment are refused as `protected-path`: env or printenv without a command, `printenv KIRO_API_KEY`, `export -p`, `declare -x`, a bare set, any `/proc/.../environ` file, and any command that names `KIRO_API_KEY`. `env FOO=1 git status` (env with a command) still runs, and the deny-list checks that command. The deny-list also reads the script of `sh -c` and `bash -c` (and zsh, dash, ksh, mksh, ash, fish), including through `env` and wrappers such as `sudo`, up to 4 nested levels. Deeper nesting is refused. `eval` arguments are checked like a script. A shell that reads its script from a pipe or here-string (`echo env | sh`, `bash <<< env`) is refused. Wrapper option values are skipped (`sudo -u root env`). Globs in the `proc` segment (`/pr?c/self/environ`) are refused. `/proc` globs that can match `environ` (`envi*`, `env?ron`, `*`) are refused, for shell commands and for tool paths. Tool calls on a `/proc/*/environ` path are refused in every mode, reads included. Agent output loses the key in raw, base64, base64url and hex form, and every 8-character fragment of those, like the login tokens. Both checks match text only: an agent with a shell can still reach the key by means they do not match (a script, a constructed name, another encoding). That is why the key itself must be cheap to lose. The deny list is best-effort; the dedicated, low-limit key is the real control.
+
+What the text deny-list cannot stop:
+
+- Interpreters that read the environment: `python -c`, `node -e`, `perl -e`, `ruby -e`, `awk` with `ENVIRON`.
+- Names built at run time, by string concatenation or command substitution.
+- Encodings the redactor does not know. It covers raw, base64, base64url and hex only. rot13, URL encoding, or splitting the key with other separators gets through.
+
+**Host-side exposure.** The key is in the environment of the agent `podman run` process and of the container. `podman inspect` of a running agent container, and the host's `/proc/<pid>/environ` of the podman process, show it to the `seance` user and to root. Anyone with that access already controls the runner. Keep shell access to the host limited.
+
+A dedicated, low-limit, rotatable key is the main mitigation. The deny-list and the redaction are a floor, not a fence.
+
+### A dedicated API key for public deployments
+
+- **Dedicated:** create the key for a demo account that is used for nothing else. Never put a personal or company key, or login, on a public host.
+- **Low limit:** set a usage limit at or below the credits you accept to lose. The runner's credits counter and `SEANCE_DAILY_CREDIT_CAP` bound normal use; the account limit bounds a leaked key.
+- **Rotatable:** keep it only in the runner's environment file (mode 0600), so a rotation is one line and a restart ([DEPLOY.md](./DEPLOY.md), section 5). Rotate after any sign of misuse.
+- **Revoked at the end:** revoke it after January 29, 2027.
+
 **Token redaction (public-hardening, Requirement 6).** At start (podman mode) the runner reads the files in `SEANCE_SANDBOX_AUTH_DIR` (at most 4 levels deep, 1 MiB per file, 8 MiB in total, symlinks not followed) and collects every token-shaped value: JSON string values of 16 or more token characters with a digit or mixed case, and in other files (the SQLite store) runs of 24 or more such characters. URLs, dates and prose are not collected, so ordinary agent output is not touched. Every text an agent sends to IRC then loses each of those values in raw, base64, base64url and hex form, and every run covered by an 8-character window of one of them. A value split over two consecutive messages of one channel is still caught: the continuation is redacted. Tool calls whose paths touch the login (`/run/seance/auth`, `.local/share/kiro-cli`, `.aws/sso`, `.aws/credentials`) are refused for every mode and every tool class, reads included, and shell commands that name those paths are refused as `protected-path`.
 
 ### The Kiro login can be stolen by a +o agent
@@ -67,7 +88,8 @@ macOS and Windows are not supported in podman mode. Develop with `none`; run `po
 |---|---|---|
 | `SEANCE_SANDBOX` | `none` | `none` or `podman` |
 | `SEANCE_SANDBOX_IMAGE` | none, required | `<name>@sha256:<64 hex>`. Never pulled. No comma, quote, NUL, CR, LF |
-| `SEANCE_SANDBOX_AUTH_DIR` | none, required | Existing directory with the Kiro login state (on Linux, `~/.local/share/kiro-cli`). Mounted read-only |
+| `SEANCE_SANDBOX_AUTH_DIR` | unset | Existing directory with the Kiro login state (on Linux, `~/.local/share/kiro-cli`). Mounted read-only, only when set. Optional when `KIRO_API_KEY` is set, required otherwise |
+| `KIRO_API_KEY` | unset | Kiro API key. Forwarded name-only (`-e KIRO_API_KEY`); the value is only in the environment of the agent `podman run` process, never in argv. No NUL, CR or LF |
 | `SEANCE_PODMAN_BIN` | `podman` | Path or name of the Podman binary |
 | `SEANCE_SANDBOX_MEMORY` | `2g` | `^[1-9][0-9]*[kmg]$`. Memory and swap limit |
 | `SEANCE_SANDBOX_CPUS` | `2` | Decimal greater than 0, at most 64 |
@@ -79,7 +101,7 @@ macOS and Windows are not supported in podman mode. Develop with `none`; run `po
 | `SEANCE_SANDBOX_BLOCKED_CIDRS` | unset; required with `IRCD_PUBLIC=1` | 1 to 8 IPv4 CIDRs your host rule blocks (the VPC, other private ranges), same values as `@VPC_CIDR@`. The probe tries the first address after the network address of each on port 443 and fails when it connects. Best effort, see "Verify at every start" |
 | `IRCD_PUBLIC` | unset | `1` marks a public deployment |
 
-`KIRO_API_KEY` is never forwarded in podman mode; when it is set, the runner logs a warning once. `SEANCE_HARNESS=headless` is refused in podman mode.
+Podman mode needs at least one credential: `SEANCE_SANDBOX_AUTH_DIR`, `KIRO_API_KEY`, or both. With neither, the runner stops at startup with an error naming both. With both, the auth directory is still mounted and the key is still forwarded, but **the login takes precedence over `KIRO_API_KEY`** (Kiro's own rule), so the runner logs one warning. `SEANCE_HARNESS=headless` is refused in podman mode.
 
 ## What runs
 
@@ -115,7 +137,7 @@ Mounts, and only these:
 | the channel worktree (`workspaces/<channel>`) | same path | read-write | `:z` (shared: every agent of the channel mounts it) |
 | a private session directory (`workspaces/_private/<nick>`) | same path | read-write | `:Z` (private: one container mounts it) |
 | `SEANCE_AGENTS_DIR` | same path | read-only | `:z` |
-| `SEANCE_SANDBOX_AUTH_DIR` | `/run/seance/auth` | read-only | `:z` |
+| `SEANCE_SANDBOX_AUTH_DIR` (only when set) | `/run/seance/auth` | read-only | `:z` |
 
 Why not `:Z` everywhere: a `:Z` label is private to one container, so the second agent of a channel, or any other container reading the agents or auth directory, would be denied. On a host without SELinux, Podman ignores the option.
 
@@ -123,7 +145,7 @@ The agents directory is mounted because Kiro looks up `--agent <name>` in its wo
 
 Both tmpfs mounts (`/tmp` and `/home/agent`) are `noexec,nosuid,nodev`, so nothing an agent downloads or writes there can be run from there. Everything the container starts lives in the read-only image: `kiro-cli`, `seance-entry` and `seance-probe` are in `/usr/local/bin`. Tools that execute programs from `$HOME` (`npx` and `uvx` caches, for example) do not work in the sandbox by design; run them with `SEANCE_SANDBOX=none` or bake what you need into the image.
 
-Environment: `HOME=/home/agent`, `TMPDIR=/tmp`, `SEANCE_KIRO_BIN` (the validated command, not a secret), `LANG`, `LC_*`, `TERM`, forwarded by name so values never show up in `ps`. The host `PATH`, `HOME`, `TMPDIR` and `KIRO_API_KEY` are not forwarded. Proxy variables are not forwarded (`--http-proxy=false`). The `podman` process itself gets the allow-listed environment plus `XDG_RUNTIME_DIR`, never `KIRO_API_KEY`.
+Environment: `HOME=/home/agent`, `TMPDIR=/tmp`, `SEANCE_KIRO_BIN` (the validated command, not a secret), `LANG`, `LC_*`, `TERM`, forwarded by name so values never show up in `ps`. When set, `KIRO_API_KEY` is forwarded the same way (`-e KIRO_API_KEY`, name only). The host `PATH`, `HOME` and `TMPDIR` are not forwarded. Proxy variables are not forwarded (`--http-proxy=false`). The `podman` process itself gets the allow-listed environment plus `XDG_RUNTIME_DIR`; only the agent `podman run` also gets `KIRO_API_KEY`, and no other podman call (version, info, image, probe, stop, rm, ps) does.
 
 ACP stays newline-delimited JSON-RPC on stdio, carried by `podman run -i`.
 
