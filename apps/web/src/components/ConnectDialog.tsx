@@ -20,6 +20,7 @@ export function ConnectDialog(): ReactNode {
   const reconnect = useClientStore((s) => s.reconnect);
   const phase = useClientStore((s) => s.client.phase);
   const connectError = useClientStore((s) => s.client.connectError);
+  const cancelConnect = useClientStore((s) => s.cancelConnect);
   const nickError = useClientStore((s) => s.ui.nickError);
   const serverUrlError = useClientStore((s) => s.ui.serverUrlError);
   const storedNick = useClientStore((s) => s.ui.storedNick);
@@ -75,6 +76,7 @@ export function ConnectDialog(): ReactNode {
     connect({ nick, serverUrl, password: password === "" ? undefined : password });
   };
   const close = (): void => {
+    cancelConnect();
     setDismissed(true);
   };
   // Window chrome, Esc, the Tab trap and initial focus come from the shared Dialog; the caption X and

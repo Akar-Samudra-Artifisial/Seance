@@ -107,7 +107,8 @@ describe("channel list actions", () => {
     env.store.getState().refreshChannelList();
     expect(env.store.getState().client.list?.rows).toEqual([]);
     expect(env.store.getState().client.list?.status).toBe("loading");
-    expect(env.timers.filter((t) => t.ms === 15_000 && t.cleared)).toHaveLength(1);
+    // timers[0] is the connect timeout, already cleared by 001; the list timers come after it.
+    expect(env.timers.slice(1).filter((t) => t.ms === 15_000 && t.cleared)).toHaveLength(1);
   });
 
   it("joinFromList sends JOIN and closes the dialog", () => {

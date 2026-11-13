@@ -21,8 +21,8 @@ Running log of Kiro features used while building Séance. It is raw material for
 The write-up is final and mirrored in the Devpost submission. Numbers counted on 2026-11-13.
 
 ### By the numbers
-- 15 specs in `.kiro/specs/`, 848 ticked tasks, 110 log entries in this file.
-- 178 fast-check properties in 84 test files; about 2,800 unit tests (web 957, ircd 702, runner 1069, irc-protocol 69) plus 49 functional and 12 pixel end-to-end tests. API-key-only since 2026-11-13.
+- 15 specs in `.kiro/specs/`, 848 ticked tasks, 111 log entries in this file.
+- 178 fast-check properties in 84 test files; about 2,800 unit tests (web 981, ircd 702, runner 1069, irc-protocol 69) plus 49 functional and 12 pixel end-to-end tests. API-key-only since 2026-11-13.
 - Live on AWS since 2026-11-09: <https://35-172-120-185.sslip.io/>.
 
 ### Two ways Séance uses Kiro
@@ -655,6 +655,11 @@ The write-up is final and mirrored in the Devpost submission. Numbers counted on
 - Kiro features: spec sandbox-api-key-auth (Requirement 15, properties P19–P20, tasks 23–26), spec-task-execution subagent, PBT, shellcheck
 - Produced: `deploy/env-value.sh` (reads one variable without sourcing the env file), the bootstrap `kiro-cli whoami` check with the key passed through stdin, the Kiro login refresh timer enabled only when `SEANCE_SANDBOX_AUTH_DIR` is set, an `ExecStartPre` check instead of `ConditionDirectoryNotEmpty` in `seance-ircd.service`, the API-key-only path in `docs/DEPLOY.md` section 5, file tests in `sandbox-files.test.ts`
 - Notes: P19 found that an empty quoted `KIRO_API_KEY` was read as a key; P20 found that `bash -x` printed the key during the bootstrap check
+
+### 2026-11-13 — Two web-client fixes found by a browser test of the live host
+- Kiro features: steering (web-ui; testing: failing test first, fake timers), PBT (P21), subagent (file edits the guard-shell hook blocked)
+- Produced: (a) commit 6b978d9 "keep the /ws path when saving the server URL": the old client stored only the origin, so a returning visitor hit `wss://<host>/` (502 from Caddy) instead of `wss://<host>/ws`; the stored URL now keeps its path (credentials, query and fragment still refused), an origin-only value whose origin matches the default migrates to the default URL, and P21 checks that write then read round-trips any valid URL with a path. (b) a 15 s connect timeout in `apps/web/src/store/client-store.ts`: a WebSocket upgrade that is never answered now ends with "No answer from <url> after 15 s" instead of a dialog stuck on "Connecting…", and Cancel (also the caption X and Esc) closes the pending socket through the new `cancelConnect`; tests with fake timers in `connect-timeout.test.ts` and a ConnectDialog test.
+- Notes: the existing messages stay (464 shows the server's "Password incorrect", an early close still shows the "Could not reach …" hint); the browser reports a dead server and a failed handshake both as close code 1006, so the client cannot tell them apart.
 
 ## Roadmap
 

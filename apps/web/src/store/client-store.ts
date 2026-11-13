@@ -115,6 +115,8 @@ export interface ClientStore {
   /** Answer the Paste_Confirmation: accept sends at most the first 5 lines, decline drops the paste. */
   confirmPaste(accept: boolean): void;
   quit(): void;
+  /** Abort a pending connect (connecting or registering): close the socket without QUIT and go back to disconnected, no error. Otherwise a no-op. */
+  cancelConnect(): void;
   /** Close the socket and clear timers; call when the owner unmounts. */
   dispose(): void;
   /** Toggle the mention sound (off by default). Call it from a user gesture: enabling unlocks audio. */
@@ -165,6 +167,8 @@ export const LIST_TIMEOUT_MS = 15_000;
 const LAG_PREFIX = "seance-lag-";
 const CLOSE_TOO_BIG = 1009;
 const CLOSE_NORMAL = 1000;
+/** Socket open plus registration must finish within this long, or the connect attempt fails. */
+const CONNECT_TIMEOUT_MS = 15_000;
 const QUIT_REASON = "Leaving";
 const ACTION_RE = /^\x01ACTION ?([^\x01]*)\x01?$/;
 
@@ -466,7 +470,14 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
     };
 
     /** Detach and close the current socket without reacting to its events. */
+    let connectTimer: unknown = null;
+    const clearConnectTimer = (): void => {
+      if (connectTimer === null) return;
+      deps.clearTimeout(connectTimer);
+      connectTimer = null;
+    };
     const release = (code: number, reason: string): void => {
+      clearConnectTimer();
       clearQueue("connection closed");
       stopLag();
       stopSilent();
@@ -513,6 +524,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
 
     const onRejected = (msg: IrcMessage, code: "in-use" | "erroneous" | "password"): void => {
       const text = msg.params[msg.params.length - 1] ?? msg.command;
+      clearConnectTimer();
       setPhase({ type: "reject" });
       setConnectError(code, text);
       release(CLOSE_NORMAL, "registration rejected");
@@ -533,6 +545,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         return;
       }
       const phase = msg.command === "001" ? stepConnection(before.phase, { type: "welcome" }) : before.phase;
+      if (phase === "registered") clearConnectTimer();
       update(() => ({ ...result.state, phase }));
       if (phase === "registered") silentTriggers(msg);
       // The reducer ended a silent WHOIS (318 or an error): its timeout is no longer needed.
@@ -631,6 +644,7 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
 
     const onClose = (s: WebSocketLike, code: number): void => {
       if (socket !== s) return;
+      clearConnectTimer();
       closeListUi();
       update(failList);
       socket = null;
@@ -681,6 +695,14 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         return;
       }
       socket = s;
+      connectTimer = deps.setTimeout(() => {
+        const phase = get().client.phase;
+        if (socket !== s || (phase !== "connecting" && phase !== "registering")) return;
+        connectTimer = null;
+        release(CLOSE_NORMAL, "connect timeout");
+        setPhase({ type: "socket-closed" });
+        setConnectError("socket", `No answer from ${url} after ${CONNECT_TIMEOUT_MS / 1000} s`);
+      }, CONNECT_TIMEOUT_MS);
       s.onopen = () => {
         onOpen(s);
       };
@@ -975,6 +997,12 @@ export function createClientStore(deps: StoreDeps): StoreApi<ClientStore> {
         closeAfterQuit(true);
       },
 
+      cancelConnect() {
+        const phase = get().client.phase;
+        if (phase !== "connecting" && phase !== "registering") return;
+        release(CLOSE_NORMAL, "connect cancelled");
+        update((c) => ({ ...c, phase: "disconnected" }));
+      },
       dispose() {
         stopListTimer();
         if (pasteTimer !== null) {

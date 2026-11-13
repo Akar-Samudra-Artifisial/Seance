@@ -16,8 +16,11 @@ class FakeSocket implements WebSocketLike {
   onmessage: ((e: { readonly data: unknown }) => void) | null = null;
   onerror: (() => void) | null = null;
   onclose: ((e: SocketCloseInfo) => void) | null = null;
+  closes = 0;
   send(): void {}
-  close(): void {}
+  close(): void {
+    this.closes += 1;
+  }
 }
 
 function setup(stored: Record<string, string> = {}) {
@@ -50,6 +53,16 @@ function setup(stored: Record<string, string> = {}) {
 }
 
 describe("ConnectDialog", () => {
+  it("Cancel while connecting closes the pending socket", () => {
+    const { store, sockets } = setup();
+    fireEvent.change(screen.getByLabelText("Nick"), { target: { value: "alice" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    expect(store.getState().client.phase).toBe("connecting");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(sockets[0]?.closes).toBe(1);
+    expect(store.getState().client.phase).toBe("disconnected");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   it("is a labelled modal dialog", () => {
     setup();
     const dialog = screen.getByRole("dialog", { name: "Connect to Séance" });
