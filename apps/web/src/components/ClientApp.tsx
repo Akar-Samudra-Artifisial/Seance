@@ -104,7 +104,7 @@ export function ClientApp(props: ClientAppProps): ReactNode {
   const [store] = useState(() =>
     createClientStore({
       createSocket: createBrowserSocket,
-      storage: createBrowserStorage(props.allowedOrigins),
+      storage: createBrowserStorage(props.allowedOrigins, props.defaultUrl),
       now: () => Date.now(),
       setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
       clearTimeout: (handle) => {

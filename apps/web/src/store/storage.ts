@@ -36,10 +36,31 @@ export interface ClientStorage {
   write(prefs: { readonly nick: string; readonly serverUrl: string }): void;
 }
 
+/** True when the URL has no path beyond `/`. */
+function hasNoPath(url: string): boolean {
+  try {
+    return new URL(url).pathname === "/";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `defaultServerUrl` migrates older visitors: before the path was persisted, only the origin was
+ * stored, so a stored value without a path whose origin equals the default URL's origin is replaced
+ * by the default URL (for example `wss://host` becomes `wss://host/ws`).
+ */
 export function createClientStorage(
   backend: KeyValueBackend | null,
   allowedOrigins: readonly string[],
+  defaultServerUrl?: string,
 ): ClientStorage {
+  const defaultChecked = defaultServerUrl === undefined ? null : validateServerUrl(defaultServerUrl, allowedOrigins);
+  const migrate = (checked: { readonly url: string; readonly origin: string }): string => {
+    if (defaultChecked === null || !defaultChecked.ok) return checked.url;
+    if (hasNoPath(checked.url) && checked.origin === defaultChecked.origin) return defaultChecked.url;
+    return checked.url;
+  };
   return {
     readTheme() {
       if (backend === null) return null;
@@ -69,26 +90,27 @@ export function createClientStorage(
       }
       const nick = rawNick !== null && isValidNick(rawNick) ? rawNick : null;
       const checked = rawUrl === null ? null : validateServerUrl(rawUrl, allowedOrigins);
-      return { nick, serverUrl: checked !== null && checked.ok ? checked.url : null };
+      return { nick, serverUrl: checked !== null && checked.ok ? migrate(checked) : null };
     },
     write(prefs) {
       if (backend === null) throw new Error("localStorage is not available");
       backend.setItem(NICK_KEY, prefs.nick);
-      // Persist the origin only: a path, query or credentials never reach localStorage.
+      // The validated URL is stored with its path (the server listens on /ws, not on /). Credentials,
+      // a query and a fragment are refused by validateServerUrl and never reach localStorage.
       const checked = validateServerUrl(prefs.serverUrl, allowedOrigins);
       if (!checked.ok) throw new Error(`refusing to store server URL: ${checked.error}`);
-      backend.setItem(SERVER_URL_KEY, checked.origin);
+      backend.setItem(SERVER_URL_KEY, checked.url);
     },
   };
 }
 
 /** Browser adapter over `localStorage`; falls back to no backend when access is denied. */
-export function createBrowserStorage(allowedOrigins: readonly string[]): ClientStorage {
+export function createBrowserStorage(allowedOrigins: readonly string[], defaultServerUrl?: string): ClientStorage {
   let backend: KeyValueBackend | null = null;
   try {
     backend = globalThis.localStorage;
   } catch {
     backend = null;
   }
-  return createClientStorage(backend, allowedOrigins);
+  return createClientStorage(backend, allowedOrigins, defaultServerUrl);
 }
