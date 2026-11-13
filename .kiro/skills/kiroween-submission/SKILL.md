@@ -9,8 +9,8 @@ Category: **Resurrection** (bringing IRC back as an agent control plane). Bonus 
 
 ## Deadlines (Pacific Time)
 
-- [ ] **Request Kiro credits before 1 Dec 2026, 12:00 PT.**
-- [ ] **Submit on Devpost before 4 Dec 2026, 14:00 PT.** Aim for 3 Dec as buffer (M4 ends 3 Dec).
+- [x] **Request Kiro credits before 1 Dec 2026, 12:00 PT.** Requested and approved (2026-11-13).
+- [x] **Submit on Devpost before 4 Dec 2026, 14:00 PT.** Aim for 3 Dec as buffer (M4 ends 3 Dec). Submitted 2026-11-13; still editable until the deadline.
 
 ## Repository
 
