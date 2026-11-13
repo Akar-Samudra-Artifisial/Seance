@@ -108,7 +108,7 @@ Security rule: the key value never appears in any podman argument vector (visibl
 2. THE Sandbox_Docs SHALL describe `SEANCE_SANDBOX_AUTH_DIR` as optional when `KIRO_API_KEY` is set and required otherwise.
 3. THE Sandbox_Docs SHALL state that a login takes precedence over `KIRO_API_KEY` when both are present.
 4. THE Sandbox_Docs SHALL contain no statement that `KIRO_API_KEY` is never forwarded in podman mode.
-5. THE Sandbox_Docs SHALL state that the Api_Key is readable inside the Agent_Container and recommend a dedicated key that is used nowhere else, has a usage limit configured, and is revoked after January 29, 2027.
+5. THE Sandbox_Docs SHALL state that the Api_Key is readable inside the Agent_Container and recommend a dedicated key that is used nowhere else, is bounded by Séance's own credit caps, and is revoked after January 29, 2027.
 6. THE Sandbox_Docs SHALL list `KIRO_API_KEY` in `deploy/seance.env.example` as a placeholder without a real value.
 7. THE `DESIGN.md` harness section SHALL describe the podman-mode key handling: name-only forwarding, the value in the podman process environment, and login precedence.
 
@@ -142,7 +142,7 @@ Security rule: the key value never appears in any podman argument vector (visibl
 6. THE Secret_Redactor SHALL remove every Key_Variants form of the Api_Key, and every 8-character fragment of each variant, from agent output text.
 7. WHILE the Api_Key is shorter than 8 characters, THE Secret_Redactor SHALL remove only whole occurrences of it and SHALL NOT remove fragments of it.
 8. THE Runner SHALL pass the same Secret_Redactor instance that holds the Api_Key to every agent output path (channel text, AWAY text, whois text and tool notices), so that no path redacts only the raw key.
-9. THE Sandbox_Docs SHALL state that the Deny_List and the Secret_Redactor match text only, so an agent can still read the Api_Key by means they do not match (for example a script or an unlisted encoding), which is why a dedicated key with a usage limit is required (Requirement 11).
+9. THE Sandbox_Docs SHALL state that the Deny_List and the Secret_Redactor match text only, so an agent can still read the Api_Key by means they do not match (for example a script or an unlisted encoding), which is why a dedicated key bounded by Séance's own credit caps is required (Requirement 11).
 
 ### Requirement 9: Treat a whitespace-only key as unset
 
@@ -172,14 +172,14 @@ Security rule: the key value never appears in any podman argument vector (visibl
 7. THE file `.kiro/specs/agent-sandbox/requirements.md` SHALL mark criterion 4 of the configuration requirement (the line stating that `KIRO_API_KEY` does not count as a credential source in podman mode) as superseded by `sandbox-api-key-auth` Requirements 1 and 4, keeping the original text visible.
 8. WHEN `pnpm typecheck` and `pnpm test` run at the repository root after these changes, THE Runner packages and `apps/ircd` SHALL pass both with exit code 0, and `apps/web/next-env.d.ts` SHALL remain unmodified.
 
-### Requirement 11: Recommend a dedicated, low-limit, rotatable key for public deployments
+### Requirement 11: Recommend a dedicated, revocable key, bounded by Séance's credit caps, for public deployments
 
 **User Story:** As an operator of a public deployment, I want clear guidance on the key to use, so that a leaked key costs little and can be replaced fast.
 
 #### Acceptance Criteria
 
 1. THE Sandbox_Docs SHALL recommend that a public deployment use a Kiro API key created only for the Séance host, used nowhere else.
-2. THE Sandbox_Docs SHALL recommend a usage limit set at or below the credit amount the operator accepts to lose, on that key, and SHALL state that the credits counter and the limit together bound the cost of a leak.
+2. THE Sandbox_Docs SHALL state that Kiro API keys have no per-key spend limit and that the cost is bounded by the Séance credit caps (`SEANCE_DAILY_CREDIT_CAP=100`, `SEANCE_CHANNEL_CREDIT_CAP=30`), and SHALL state that those caps count spend made through Séance and do not limit a leaked key used elsewhere. (Recorded follow-up of 2026-11-13: this replaces the earlier criterion that recommended a usage limit on the key, which Kiro does not offer.)
 3. THE Sandbox_Docs SHALL describe how to rotate the key: create the new key, replace `KIRO_API_KEY` in `/etc/seance/seance.env`, restart the Runner, and revoke the old key; and SHALL recommend rotating it after any suspected exposure and revoking it after January 29, 2027.
 4. THE Sandbox_Docs SHALL state that a personal account login should not be used on a public host when a dedicated key is available.
 5. THE Sandbox_Docs SHALL state that the Api_Key is readable by the agent inside the Agent_Container (Requirement 8, criterion 9) and that the egress allow-list limits where a leaked value could be sent.
@@ -225,7 +225,7 @@ The terms below extend the Glossary for this requirement.
 10. WHEN the Runner-level test of criterion 9 runs, THE Secret_Redactor SHALL ensure that no IRC line sent by the Runner on any path listed in criterion 9 contains the raw Api_Key or its base64 form, and the test SHALL fail if any such line does.
 11. THE `docs/SANDBOX.md` and `docs/DEPLOY.md` files SHALL state that `podman inspect` of a running Agent_Container and the host file `/proc/<pid>/environ` of the podman process expose the Api_Key to the `seance` user and to root.
 12. THE `docs/SANDBOX.md` and `docs/DEPLOY.md` files SHALL list the remaining text-deny-list limits: `python -c`, `node -e`, `awk` with `ENVIRON`, `perl`, other encodings of the Api_Key, and variable or file names built at run time by string concatenation or command substitution.
-13. THE `docs/SANDBOX.md` and `docs/DEPLOY.md` files SHALL state that a dedicated, low-limit, rotatable key (Requirement 11) is the main mitigation.
+13. THE `docs/SANDBOX.md` and `docs/DEPLOY.md` files SHALL state that a dedicated, revocable key bounded by Séance's credit caps (Requirement 11) is the main mitigation.
 14. THE file `.kiro/specs/deploy-aws/design.md` SHALL mark decision D7 (the statement "No `KIRO_API_KEY` on the host") as superseded by `sandbox-api-key-auth`, keeping the original text visible.
 15. THE file `.kiro/specs/deploy-aws/requirements.md` SHALL mark criterion 1 of the Kiro login requirement (the line beginning "`KIRO_API_KEY` SHALL NOT be used", line 69) as superseded by `sandbox-api-key-auth` Requirements 1, 4 and 10, keeping the original text visible.
 16. WHEN `pnpm typecheck` and `pnpm test` run at the repository root with the Requirement 13 changes applied, THE `apps/runner` and `apps/ircd` projects SHALL pass both with exit code 0.
@@ -254,7 +254,7 @@ The terms below extend the Glossary for this requirement. In `apps/runner/src/pe
 7. IF a shell command contains a path with a Proc_Glob followed by a later segment that matches `environ`, THEN THE Deny_List SHALL reject the command with the reason `protected-path`, including `/pr?c/self/environ`, `/p*/self/environ` and `/[p]roc/1/environ`.
 8. WHEN `isEnvironPath` receives `/pr?c/self/environ`, `/p*/self/environ`, `/[p]roc/1/environ` or any tool path of that shape, THE `isEnvironPath` function SHALL return true, so that `decide` rejects it as an Environ_Path under Requirement 8, criterion 3.
 9. THE test file `apps/runner/test/key-reader.test.ts` SHALL list every denied example of criteria 1 to 8 (`eval env`, `eval "printenv HOME"`, `eval 'sh -c env'`, `echo env | sh`, `printf 'env' | bash`, `bash <<< env`, `cat x | bash -s`, `sudo -u root env`, `exec -a x env`, `xargs -I {} printenv`, `time -o out.txt printenv`, `sudo --user=root printenv`, `/pr?c/self/environ`, `/p*/self/environ`, `/[p]roc/1/environ`) in its DENIED examples and SHALL assert that `matchDenyList` rejects each with the reason `protected-path`. THE same file SHALL list `sh script.sh`, `bash -c "git status"` and `git log | sort` in its allowed examples, SHALL assert that `isEnvironPath` returns true for the three Proc_Glob paths, and SHALL assert that an `eval` chain nested deeper than 4 levels is rejected.
-10. THE file `docs/SANDBOX.md` SHALL state in one line that the deny list is best-effort and that the dedicated low-limit key (Requirement 11) is the real control.
+10. THE file `docs/SANDBOX.md` SHALL state in one line that the deny list is best-effort and that the dedicated key bounded by Séance's credit caps (Requirement 11) is the real control.
 11. WHEN `pnpm typecheck` and `pnpm test` run at the repository root with the Requirement 14 changes applied, THE `apps/runner` and `apps/ircd` projects SHALL pass both with exit code 0, and THE Requirement 14 changes SHALL NOT modify `apps/web/next-env.d.ts`.
 
 ### Requirement 15: API-key-only deploy hosts

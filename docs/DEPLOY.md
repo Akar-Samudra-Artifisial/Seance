@@ -82,9 +82,9 @@ Alternative without an interactive login: set `KIRO_API_KEY=` in `/etc/seance/se
 - The ircd unit checks the login directory only when `SEANCE_SANDBOX_AUTH_DIR` is set, so it does not wait for a login.
 - To switch a host from a login to the key, unset `SEANCE_SANDBOX_AUTH_DIR`, set `KIRO_API_KEY=` and run `sudo /opt/seance/deploy/bootstrap.sh` again. That disables the refresh timer. Teardown (step 9) still disables the timer first.
 
-You can also set both `KIRO_API_KEY` and `SEANCE_SANDBOX_AUTH_DIR`. The runner forwards it name-only into each agent container (never in argv). If both are set, the login takes precedence. For a public deployment use a dedicated, low-limit, rotatable key ([SANDBOX.md](./SANDBOX.md#a-dedicated-api-key-for-public-deployments)): it is readable inside the agent containers.
+You can also set both `KIRO_API_KEY` and `SEANCE_SANDBOX_AUTH_DIR`. The runner forwards it name-only into each agent container (never in argv). If both are set, the login takes precedence. For a public deployment use a dedicated, revocable key, bounded by Séance's own credit caps (`SEANCE_DAILY_CREDIT_CAP=100`, `SEANCE_CHANNEL_CREDIT_CAP=30`); see [SANDBOX.md](./SANDBOX.md#a-dedicated-api-key-for-public-deployments). The key is readable inside the agent containers.
 
-The key is also visible to the `seance` user and to root through `podman inspect` and `/proc/<pid>/environ`, and to a prompt-injected agent despite the deny-list (see [SANDBOX.md](./SANDBOX.md#a-dedicated-api-key-for-public-deployments)). The dedicated, low-limit, rotatable key is the main mitigation.
+The key is also visible to the `seance` user and to root through `podman inspect` and `/proc/<pid>/environ`, and to a prompt-injected agent despite the deny-list (see [SANDBOX.md](./SANDBOX.md#a-dedicated-api-key-for-public-deployments)). The main mitigation is a dedicated, revocable key, bounded by Séance's own credit caps; Kiro API keys have no per-key spend limit.
 
 To rotate the key: create a new key for the same dedicated account, replace the `KIRO_API_KEY=` line in `/etc/seance/seance.env`, run `sudo systemctl restart seance-ircd.service` (the runner reads the key only at start), check that an agent still answers, then revoke the old key. Revoke the last key after January 29, 2027.
 
@@ -107,7 +107,7 @@ sudo systemctl start seance-kiro-refresh.timer
 
 `bootstrap.sh` sets the directory to `seance`, mode 0700, and refuses to start the ircd while `kiro-cli whoami` fails as `seance`, while `/etc/seance/accounts` has no account, or while `SEANCE_INVITERS` still holds the placeholder. After the login, `seance-kiro-refresh.timer` keeps the token fresh: 20 minutes after each run it forces a refresh on a copy of the login and installs the copy only when the refresh worked (`deploy/seance-kiro-refresh.sh`, installed as `/usr/local/sbin/seance-kiro-refresh`, run by the unit as the `seance` user, not root; why on a copy is in [SANDBOX.md](./SANDBOX.md)). `bootstrap.sh` and `update.sh` enable the timer together with the agents. Check it with `journalctl -u seance-kiro-refresh` (a good run logs `refreshed, login expires ...`; a failed one logs `refresh FAILED, login kept`). If the host was off, or the timer stopped, for more than an hour, the token has expired for good: log in again (repeat this step, stopping the ircd first).
 
-**Risk, stated plainly** ([SANDBOX.md](./SANDBOX.md)): the login is readable inside every agent container, and a prompt-injected `+o` agent can send it out. The credit caps below bound the spend; the Kiro account is logged out right after judging (step 9).
+**Risk, stated plainly** ([SANDBOX.md](./SANDBOX.md)): the Kiro credential (the login, or the API key on a key-only host) is readable inside every agent container, and a prompt-injected `+o` agent can send it out. Kiro API keys have no per-key spend limit; the Séance credit caps below bound the spend made through Séance, and the credential is revoked right after judging (step 9).
 
 ## 6. Smoke test from a browser
 

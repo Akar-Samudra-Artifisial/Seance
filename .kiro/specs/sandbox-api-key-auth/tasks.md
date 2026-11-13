@@ -110,7 +110,7 @@ Add `KIRO_API_KEY` as a second credential path in podman mode. The key is forwar
   - [x] 5.1 Update the Sandbox_Docs
     - `README.md` (runner table and Secrets), `DESIGN.md` (harness section near line 190), `docs/SANDBOX.md`, `deploy/seance.env.example`
     - Describe name-only forwarding with the value in the podman process env, `SEANCE_SANDBOX_AUTH_DIR` optional with a key and required otherwise, and login precedence over the key
-    - State the key is readable inside the Agent_Container; recommend a dedicated key with a usage limit, revoked after January 29, 2027
+    - State the key is readable inside the Agent_Container; recommend a dedicated key bounded by Séance's own credit caps, revoked after January 29, 2027
     - Remove any statement that `KIRO_API_KEY` is never forwarded in podman mode (verify with a search)
     - Add `KIRO_API_KEY=` with a placeholder only to `deploy/seance.env.example`
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7_
@@ -205,7 +205,7 @@ Add `KIRO_API_KEY` as a second credential path in podman mode. The key is forwar
 - [x] 12. Documentation follow-up
   - [x] 12.1 Update `docs/DEPLOY.md` section 5, `docs/SANDBOX.md`, `README.md` and `deploy/seance.env.example`
     - Remove "the host has no `KIRO_API_KEY`"; state the login is the default and `KIRO_API_KEY` is the documented alternative
-    - Add the dedicated-key guidance: used nowhere else, low usage limit at or below the acceptable loss, credits counter plus limit bound the cost of a leak, rotation steps, revoke after January 29, 2027, no personal login on a public host
+    - Add the dedicated-key guidance: used nowhere else, bounded by Séance's own credit caps (Kiro API keys have no per-key spend limit; the caps do not limit a leaked key used elsewhere), rotation steps, revoke after January 29, 2027, no personal login on a public host
     - In `docs/SANDBOX.md`: the key is readable inside the container, the egress allow-list note, and the text-only limit of the Deny_List and Secret_Redactor
     - One line each in `README.md` and `deploy/seance.env.example` pointing to `docs/SANDBOX.md`
     - Verify with a search that no "never forwarded" or "no `KIRO_API_KEY`" statement remains
@@ -262,7 +262,7 @@ Add `KIRO_API_KEY` as a second credential path in podman mode. The key is forwar
   - [x] 17.1 Update `docs/SANDBOX.md` and `docs/DEPLOY.md`
     - State that `podman inspect` of a running Agent_Container and the host `/proc/<pid>/environ` of the podman process expose the key to the `seance` user and root
     - List the remaining text-deny-list limits: `python -c`, `node -e`, `awk` with `ENVIRON`, `perl`, other encodings, and names built at run time by concatenation or command substitution
-    - State that a dedicated, low-limit, rotatable key is the main mitigation
+    - State that a dedicated, revocable key bounded by Séance's own credit caps is the main mitigation
     - _Requirements: 13.11, 13.12, 13.13_
 
 - [x] 18. Supersede notes in the deploy-aws spec
@@ -308,7 +308,7 @@ Add `KIRO_API_KEY` as a second credential path in podman mode. The key is forwar
 
 - [x] 21. Documentation
   - [x] 21.1 Add one line to `docs/SANDBOX.md`
-    - State that the deny list is best-effort and that the dedicated low-limit key is the real control
+    - State that the deny list is best-effort and that the dedicated key bounded by Séance's own credit caps is the real control
     - _Requirements: 14.10_
 
 - [x] 22. Final checkpoint - Run typecheck and tests at the repository root
@@ -381,6 +381,7 @@ Add `KIRO_API_KEY` as a second credential path in podman mode. The key is forwar
 - Each task references specific requirements for traceability
 - Property tests validate the universal correctness properties from the design; examples cover specific cases
 - Never log, echo or commit a real key; tests use generated placeholder values
+- Recorded follow-up (2026-11-13, docs only): Kiro API keys have no per-key spend limit. The docs, requirements 6.5, 8.9, 11 and 13, and the design now say a dedicated, revocable key, bounded by Séance's own credit caps (`SEANCE_DAILY_CREDIT_CAP=100`, `SEANCE_CHANNEL_CREDIT_CAP=30`), instead of a low-limit key. The caps count spend made through Séance and do not limit a leaked key used elsewhere
 
 ## Task Dependency Graph
 
