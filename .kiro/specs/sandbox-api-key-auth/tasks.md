@@ -318,6 +318,62 @@ Add `KIRO_API_KEY` as a second credential path in podman mode. The key is forwar
   - Both commands must exit with code 0; ask the user if questions arise.
   - _Requirements: 14.11_
 
+- [x] 23. Deploy helpers and scripts for API-key-only hosts
+  - [x] 23.1 Create `deploy/env-value.sh` with `env_value` and `sync_refresh_timer`
+    - POSIX `sh`; `env_value NAME FILE` reads line by line with `IFS= read -r`, keeps the value of the last line starting with `NAME=`, strips one pair of surrounding `"` or `'`, prints nothing for a blank value, returns 0 for a missing or unreadable file; no `source`, `eval` or expansion of file content
+    - `sync_refresh_timer` (uses `log` and `ENV_FILE` of the caller): enable `seance-kiro-refresh.timer` with `systemctl enable --now` when `SEANCE_SANDBOX_AUTH_DIR` is non-blank, otherwise log one line and run `systemctl disable --now seance-kiro-refresh.timer || true`
+    - Keep the file clean under `shellcheck --severity=style deploy/*.sh`
+    - _Requirements: 15.4, 15.5, 15.9, 15.10, 15.12, 15.28_
+  - [x] 23.2 Change `deploy/bootstrap.sh`: credential gate and conditional timer
+    - Source `deploy/env-value.sh`; add `kiro_credential_ok` called by `ready_for_agents`: with a Host_Key, `printf '%s\n' "$key" | as_seance sh -c 'IFS= read -r KIRO_API_KEY || exit 1; export KIRO_API_KEY; exec kiro-cli whoami' >/dev/null 2>&1`; without one, `as_seance kiro-cli whoami`
+    - Key stays out of every argv, stdout, stderr, the bootstrap log and any trace; `key` is a non-exported local; no `set -x`, `bash -x` or `xtrace`
+    - Failure NEXT STEP: without a key it names both the `kiro-cli login --use-device-flow` login and `KIRO_API_KEY`; with a key it names `KIRO_API_KEY` and `/etc/seance/seance.env` without the value
+    - Replace both direct `seance-kiro-refresh.timer` enables with `sync_refresh_timer`; split the combined `systemctl enable --now` line into `seance-sandbox-nft.service seance-egress-refresh.timer` and then `sync_refresh_timer`
+    - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9, 15.10, 15.12_
+  - [x] 23.3 Change `deploy/update.sh`: conditional timer
+    - Add `ENV_FILE=/etc/seance/seance.env`, source `deploy/env-value.sh`, and replace the `systemctl enable --now seance-kiro-refresh.timer` in the `AGENTS_WERE_ACTIVE` branch with `sync_refresh_timer`
+    - _Requirements: 15.11, 15.12_
+  - [x] 23.4 Make `deploy/seance-kiro-refresh.sh` exit early without an Auth_Dir and update the service unit
+    - Before the user check and before any file access: if `SEANCE_SANDBOX_AUTH_DIR` is unset or blank, read it from `${SEANCE_ENV_FILE:-/etc/seance/seance.env}` with an inline copy of `env_value` (identical text to `deploy/env-value.sh`, no `local`, no `[[ ]]`); if still blank, log exactly one `seance-kiro-refresh:` line and `exit 0` without touching `mktemp`, `flock` or any login file
+    - Add `EnvironmentFile=-/etc/seance/seance.env` to `deploy/systemd/seance-kiro-refresh.service`; no `Environment=` line with `KIRO_API_KEY`
+    - _Requirements: 15.12, 15.13, 15.14, 15.15_
+  - [x] 23.5 Change `deploy/systemd/seance-ircd.service`
+    - Remove `ConditionDirectoryNotEmpty=`; add an `ExecStartPre=/bin/sh -c 'case "$$SEANCE_SANDBOX_AUTH_DIR" in *[![:space:]]*) [ -n "$$(ls -A -- "$$SEANCE_SANDBOX_AUTH_DIR" 2>/dev/null)" ] ;; esac'` before `ExecStart`
+    - Add a comment that `bootstrap.sh` and the Runner at start (Requirement 4, criterion 1) check the credential
+    - _Requirements: 15.16, 15.17, 15.18_
+  - [x] 23.6 Confirm `env-value.sh` reaches the host and update `deploy/seance.env.example`
+    - Check the install steps in `bootstrap.sh` (`install_units`, near L427-435) and `update.sh` (near L74-76): both scripts run from `/opt/seance/deploy` and source `env-value.sh` from the checked-out repo, so no extra copy is needed; add one only if a step copies scripts elsewhere
+    - In `deploy/seance.env.example` keep `SEANCE_SANDBOX_AUTH_DIR` uncommented and change its comment: optional when `KIRO_API_KEY` is set, enables the login refresh timer, delete or blank it for a key-only host; keep `KIRO_API_KEY` as a commented placeholder
+    - _Requirements: 15.12, 15.22_
+- [x] 24. Tests and lint for the deploy changes
+  - [x] 24.1 Update and extend `apps/runner/test/sandbox-files.test.ts`
+    - Static: `bootstrap.sh` passes the key via `IFS= read -r KIRO_API_KEY` and `exec kiro-cli whoami`; no line combines `KIRO_API_KEY=` plus an expansion with `sudo`, `su`, `runuser` or `env`; no `set -x`, `bash -x` or `xtrace`; both scripts call `sync_refresh_timer`, contain `systemctl disable --now seance-kiro-refresh.timer`, and enable the timer only inside the guarded branch; rewrite the existing assertions on the number and position of the timer enable lines (around L287-L300) to the new structure; the ircd unit has no `ConditionDirectoryNotEmpty=` and has the `ExecStartPre=` and comment; the refresh service has no `KIRO_API_KEY` in an `Environment=` line; `docs/DEPLOY.md` section 5 and `deploy/seance.env.example` hold the statements of 15.19, 15.20, 15.22
+    - Executable: the refresh script with `SEANCE_SANDBOX_AUTH_DIR` unset and blank, `HOME` in an empty temp dir, `SEANCE_ENV_FILE` pointing at a missing file: exit 0, one `seance-kiro-refresh:` line, temp `HOME` unchanged; the `ExecStartPre` string (with `$$` turned into `$`) with an unset variable, a blank one, an empty directory and a directory with an entry gives 0, 0, non-zero, 0
+    - Assert the inline `env_value` text in `seance-kiro-refresh.sh` is identical to the one in `deploy/env-value.sh`
+    - _Requirements: 15.15, 15.16, 15.17, 15.18, 15.23, 15.25, 15.26, 15.27_
+  - [x] 24.2 Write the Property 19 test (`env_value`) in `apps/runner/test/sandbox-files.test.ts`
+    - **Property 19: env_value reads the last uncommented assignment, quotes stripped, blank is unset**
+    - fast-check, at least 100 runs, `sh` child process on a temp file; generated lines include comments, blanks, other names and bare, double-quoted and single-quoted values with `$`, backticks, `;` and spaces; assert last value wins, blank gives empty output, nothing is executed, exit 0
+    - **Validates: Requirements 15.4, 15.5, 15.12**
+  - [x] 24.3 Write the Property 20 test (credential gate keeps the key out of argv, output and trace) in `apps/runner/test/sandbox-files.test.ts`
+    - **Property 20: The credential check keeps the key out of argv, output and trace**
+    - fast-check, at least 100 runs; extract `env_value`, `kiro_credential_ok` and a stubbed `as_seance` (fake `runuser` dropping arguments up to `--`) with fake `kiro-cli`, `sudo`, `runuser` and `systemctl` on `PATH` recording argv; run the child with `bash -x` and capture stdout and stderr; assert the key is absent from every recorded argv and from the captured output, and the fake `kiro-cli` sees `KIRO_API_KEY` exactly, including leading and trailing spaces; no real `kiro-cli` and no systemd
+    - **Validates: Requirements 15.1, 15.2, 15.3, 15.6, 15.24**
+  - [x] 24.4 Run `shellcheck --severity=style deploy/*.sh`
+    - Run it if `shellcheck` is installed and fix findings in the changed scripts; if it is not installed, report that it was not run and that the CI step remains the check
+    - _Requirements: 15.28, 15.29_
+- [x] 25. Documentation
+  - [x] 25.1 Add the API-key path to `docs/DEPLOY.md` section 5
+    - Set `KIRO_API_KEY` in `/etc/seance/seance.env`, leave `SEANCE_SANDBOX_AUTH_DIR` unset, run no `kiro-cli login`, expect no `seance-kiro-refresh.timer`, and the ircd starts
+    - State that `bootstrap.sh` checks the key with `kiro-cli whoami` as `seance` and that the key does not appear in the argv of that check
+    - State that switching from a login to the key means unsetting `SEANCE_SANDBOX_AUTH_DIR` and running `sudo /opt/seance/deploy/bootstrap.sh` again, which disables the refresh timer, and that teardown (section 9) still disables the timer first
+    - _Requirements: 15.19, 15.20, 15.21_
+- [x] 26. Final checkpoint - Run typecheck and tests at the repository root
+  - Run `pnpm typecheck` at the repository root and fix any errors
+  - Run `pnpm test` at the repository root and fix any failures; use fakes only
+  - Confirm `apps/web/next-env.d.ts` is untouched (revert any change a build made to it)
+  - Both commands must exit with code 0; ask the user if questions arise.
+  - _Requirements: 15.30_
 ## Notes
 
 - All test sub-tasks are required in this follow-up, including property tests
@@ -331,10 +387,12 @@ Add `KIRO_API_KEY` as a second credential path in podman mode. The key is forwar
 ```json
 {
   "waves": [
-    { "id": 0, "tasks": ["20.1", "21.1"] },
-    { "id": 1, "tasks": ["20.2"] },
-    { "id": 2, "tasks": ["20.3"] },
-    { "id": 3, "tasks": ["20.4"] }
+    { "id": 0, "tasks": ["23.1", "23.4", "23.5", "23.6", "25.1"] },
+    { "id": 1, "tasks": ["23.2", "23.3"] },
+    { "id": 2, "tasks": ["24.1"] },
+    { "id": 3, "tasks": ["24.2"] },
+    { "id": 4, "tasks": ["24.3"] },
+    { "id": 5, "tasks": ["24.4"] }
   ]
 }
 ```

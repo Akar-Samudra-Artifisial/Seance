@@ -69,15 +69,26 @@ Send each judge their nick and secret, and the URL, out of band. The guest passw
 
 ## 5. Kiro login
 
+There are two ways to give the agents a credential: a Kiro login (the default) or an API key. An API-key-only host skips the login steps below.
+
 The default credential is a Kiro login: the operator logs in once, as the `seance` user, with the **Kiro account that holds the Kiroween credits**. The token directory `/home/seance/.local/share/kiro-cli` becomes `SEANCE_SANDBOX_AUTH_DIR` (mounted read-only into each agent container).
 
-Alternative without an interactive login: set `KIRO_API_KEY` in `/etc/seance/seance.env` instead of (or as well as) `SEANCE_SANDBOX_AUTH_DIR`. The runner forwards it name-only into each agent container (never in argv). If both are set, the login takes precedence. For a public deployment use a dedicated, low-limit, rotatable key ([SANDBOX.md](./SANDBOX.md#a-dedicated-api-key-for-public-deployments)): it is readable inside the agent containers.
+### API-key-only host
+
+Alternative without an interactive login: set `KIRO_API_KEY=` in `/etc/seance/seance.env`, and remove, comment out or blank `SEANCE_SANDBOX_AUTH_DIR` there. Then skip the `kiro-cli login` steps and the command block below, and run `sudo /opt/seance/deploy/bootstrap.sh`.
+
+- `bootstrap.sh` checks the key with `kiro-cli whoami` as `seance`. The key goes in through stdin, never on a command line, so it is not in the argv of that check. The ircd starts only if the output says "Authenticated with API key".
+- The Kiro login refresh timer stays disabled. `bootstrap.sh` and `update.sh` enable `seance-kiro-refresh.timer` only when `SEANCE_SANDBOX_AUTH_DIR` is set. If the timer runs anyway, `seance-kiro-refresh` exits 0 with one log line.
+- The ircd unit checks the login directory only when `SEANCE_SANDBOX_AUTH_DIR` is set, so it does not wait for a login.
+- To switch a host from a login to the key, unset `SEANCE_SANDBOX_AUTH_DIR`, set `KIRO_API_KEY=` and run `sudo /opt/seance/deploy/bootstrap.sh` again. That disables the refresh timer. Teardown (step 9) still disables the timer first.
+
+You can also set both `KIRO_API_KEY` and `SEANCE_SANDBOX_AUTH_DIR`. The runner forwards it name-only into each agent container (never in argv). If both are set, the login takes precedence. For a public deployment use a dedicated, low-limit, rotatable key ([SANDBOX.md](./SANDBOX.md#a-dedicated-api-key-for-public-deployments)): it is readable inside the agent containers.
 
 The key is also visible to the `seance` user and to root through `podman inspect` and `/proc/<pid>/environ`, and to a prompt-injected agent despite the deny-list (see [SANDBOX.md](./SANDBOX.md#a-dedicated-api-key-for-public-deployments)). The dedicated, low-limit, rotatable key is the main mitigation.
 
 To rotate the key: create a new key for the same dedicated account, replace the `KIRO_API_KEY=` line in `/etc/seance/seance.env`, run `sudo systemctl restart seance-ircd.service` (the runner reads the key only at start), check that an agent still answers, then revoke the old key. Revoke the last key after January 29, 2027.
 
-The agents' egress rule lets the `seance` user reach only the agents' allow-list, so stop it for the login (no agent runs yet):
+Login path only (an API-key-only host skips this block). The agents' egress rule lets the `seance` user reach only the agents' allow-list, so stop it for the login (no agent runs yet):
 
 ```sh
 sudo systemctl stop seance-kiro-refresh.timer      # a re-login must not race a refresh
@@ -192,12 +203,12 @@ The ircd trusts `X-Forwarded-For` only from `IRCD_TRUSTED_PROXIES=127.0.0.1,::1`
 | Path | Owner, mode | Content |
 | --- | --- | --- |
 | `/opt/seance` | seance | the repository at the deployed commit, built by `seance` (git runs as root with `safe.directory`) |
-| `/etc/seance/seance.env` | root, 0600 | ircd and runner environment (server password) |
+| `/etc/seance/seance.env` | root, 0600 | ircd and runner environment (server password, and `KIRO_API_KEY` on an API-key-only host) |
 | `/etc/seance/web.env` | root, 0644 | `NEXT_PUBLIC_IRCD_WS_URL` |
 | `/etc/seance/accounts` | seance, 0600 | judge accounts (scrypt hashes) |
 | `/etc/seance/deploy.conf` | root, 0600 | repository URL, commit, hostname, volume id, VPC CIDR |
-| `/home/seance/.local/share/kiro-cli` | seance, 0700 | the Kiro login (`SEANCE_SANDBOX_AUTH_DIR`) |
-| `/usr/local/sbin/seance-kiro-refresh` | root, 0755 | the login refresh script, run as `seance` by `seance-kiro-refresh.timer` (20 minutes after each run) |
+| `/home/seance/.local/share/kiro-cli` | seance, 0700 | the Kiro login (`SEANCE_SANDBOX_AUTH_DIR`); login path only, absent on an API-key-only host |
+| `/usr/local/sbin/seance-kiro-refresh` | root, 0755 | the login refresh script, run as `seance` by `seance-kiro-refresh.timer` (20 minutes after each run); login path only, the timer stays disabled on an API-key-only host |
 | `/srv/seance/workspaces` | seance | channel worktrees, `.seance-credits.json`, `.seance-paused` |
 | `/srv/seance/target` | seance | the demo target repository |
 | `/etc/nftables.d/seance-sandbox.nft` | root | the agents' egress rule |

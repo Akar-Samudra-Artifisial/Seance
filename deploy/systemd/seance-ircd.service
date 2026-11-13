@@ -9,9 +9,6 @@ Wants=network-online.target
 Requires=seance-sandbox-nft.service
 # The workspaces volume (XFS, project quota) must be mounted, or worktrees would land on the root disk.
 RequiresMountsFor=/srv/seance/workspaces
-# No agent without a Kiro login. bootstrap.sh enables this unit only after `kiro-cli whoami`
-# succeeds as seance; this condition is a second, cheap check at every start.
-ConditionDirectoryNotEmpty=/home/seance/.local/share/kiro-cli
 
 [Service]
 Type=simple
@@ -19,6 +16,12 @@ User=seance
 Group=seance
 WorkingDirectory=/opt/seance
 EnvironmentFile=/etc/seance/seance.env
+# Credential check (spec sandbox-api-key-auth, Requirement 15). bootstrap.sh and the Runner at
+# start (Requirement 4, criterion 1) check the credential; this is a second, cheap check at every
+# start. A KIRO_API_KEY-only host needs no login directory: with SEANCE_SANDBOX_AUTH_DIR unset or
+# blank (from the EnvironmentFile) this passes. When it is set, the directory must have entries.
+# systemd needs $$ for a shell $.
+ExecStartPre=/bin/sh -c 'case "$$SEANCE_SANDBOX_AUTH_DIR" in *[![:space:]]*) [ -n "$$(ls -A -- "$$SEANCE_SANDBOX_AUTH_DIR" 2>/dev/null)" ] || { echo "SEANCE_SANDBOX_AUTH_DIR is set but the directory is missing or empty" >&2; exit 1; } ;; esac'
 ExecStart=/usr/local/bin/node /opt/seance/apps/ircd/dist/index.js
 Restart=on-failure
 RestartSec=5

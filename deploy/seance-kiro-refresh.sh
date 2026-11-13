@@ -25,6 +25,10 @@ umask 077
 PATH=/usr/local/bin:/usr/bin:/bin
 export PATH
 
+# The unit loads /etc/seance/seance.env (EnvironmentFile), which may hold KIRO_API_KEY. No child of
+# this script (python3, cp, kiro-cli) may receive it: drop it now. kiro-cli also runs under env -i.
+unset KIRO_API_KEY
+
 # The same names as deploy/bootstrap.sh.
 SEANCE_USER=${SEANCE_USER:-seance}
 SEANCE_HOME=${SEANCE_HOME:-/home/seance}
@@ -145,6 +149,42 @@ except (sqlite3.Error, ValueError, KeyError, AttributeError, TypeError) as err:
     sys.exit(4)
 PY
 }
+
+# BEGIN env_value (inline copy of deploy/env-value.sh; this script is installed alone to
+# /usr/local/sbin, so it cannot source that file. Keep the function body identical.)
+env_value() {
+  ev_name=$1
+  ev_file=$2
+  ev_val=
+  if [ -r "$ev_file" ]; then
+    while IFS= read -r ev_line || [ -n "$ev_line" ]; do
+      case $ev_line in
+        "$ev_name="*) ev_val=${ev_line#"$ev_name="} ;;
+      esac
+    done < "$ev_file"
+  fi
+  case $ev_val in
+    \"*\") ev_val=${ev_val#\"}; ev_val=${ev_val%\"} ;;
+    \'*\') ev_val=${ev_val#\'}; ev_val=${ev_val%\'} ;;
+  esac
+  case $ev_val in
+    *[![:space:]]*) printf '%s\n' "$ev_val" ;;
+  esac
+  return 0
+}
+# END env_value
+
+# No login directory configured (an API-key-only host): nothing to refresh. Runs before the user
+# check and before any file access, and touches no mktemp, flock or login file.
+auth_dir_conf=${SEANCE_SANDBOX_AUTH_DIR:-}
+case $auth_dir_conf in
+  *[![:space:]]*) ;;
+  *) auth_dir_conf=$(env_value SEANCE_SANDBOX_AUTH_DIR "${SEANCE_ENV_FILE:-/etc/seance/seance.env}") ;;
+esac
+if [ -z "$auth_dir_conf" ]; then
+  log "no SEANCE_SANDBOX_AUTH_DIR: nothing to refresh"
+  exit 0
+fi
 
 [ "$(id -un)" = "$SEANCE_USER" ] || fail "must run as $SEANCE_USER, not $(id -un) (the unit sets User=$SEANCE_USER)"
 live_db=$AUTH_DIR/$DB_NAME

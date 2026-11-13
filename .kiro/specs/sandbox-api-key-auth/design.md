@@ -193,6 +193,66 @@ const WRAPPER_OPTIONS_WITH_ARG: Map<string, Set<string>> = new Map([
 
 **Tests and docs (14.9 to 14.11).** `apps/runner/test/key-reader.test.ts` lists every denied example of criteria 1 to 8 in DENIED, the allowed `sh script.sh`, `bash -c "git status"` and `git log | sort`, `isEnvironPath` assertions for the three Proc_Glob paths, and a rejected `eval` chain nested deeper than 4. `docs/SANDBOX.md` gets one line: the deny list is best-effort and the dedicated low-limit key is the real control. `apps/web/next-env.d.ts` is not touched.
 
+### API-key-only deploy hosts (Requirement 15)
+
+Today `bootstrap.sh` assumes a Kiro login: `ready_for_agents` (L444-480) runs `as_seance kiro-cli whoami`, which has no `KIRO_API_KEY` because `as_seance` starts with `env -i`; `main` (L482-510) enables `seance-kiro-refresh.timer` in two places (L501 and in the combined `enable --now` at L505); `update.sh` (L79-83) enables the timer when the agents were running; `seance-ircd.service` carries `ConditionDirectoryNotEmpty=/home/seance/.local/share/kiro-cli`, which silently skips the unit on a key-only host (no login directory); `seance-kiro-refresh.sh` fails when there is no login database. Research: none external. The kiro-cli behavior (`KIRO_API_KEY=<key> kiro-cli whoami` exits 0 with no login) is recorded in Requirement 15.6.
+
+```mermaid
+flowchart TD
+  F[/etc/seance/seance.env/] -->|env_value, no source| K{Host_Key set?}
+  K -->|yes| W1["printf key | as_seance sh -c 'read; export; exec kiro-cli whoami'"]
+  K -->|no| W2[as_seance kiro-cli whoami]
+  W1 --> R{exit 0?}
+  W2 --> R
+  R -->|no| N[blocked: NEXT STEP names login and KIRO_API_KEY]
+  R -->|yes| D{Host_Auth_Dir set?}
+  D -->|yes| T1[systemctl enable --now refresh timer]
+  D -->|no| T2["systemctl disable --now refresh timer || true"]
+```
+
+Decisions:
+
+- **D-A: one helper, `env_value NAME FILE`, in POSIX `sh`.** It lives in a new file `deploy/env-value.sh`, sourced by `bootstrap.sh` and `update.sh` (both run from `/opt/seance/deploy`; `# shellcheck source=` directives keep CI green). The refresh script is installed alone to `/usr/local/sbin`, so it carries an inline copy of the same function; a test extracts both texts and asserts they are identical, so they cannot drift. The function reads the file line by line with `IFS= read -r`, keeps the value of the last line that starts with `NAME=` (a commented line cannot match the prefix), strips one pair of surrounding `"` or `'`, prints nothing when the result has no non-whitespace character (blank is unset, Requirement 9), and returns 0 when the file is missing or unreadable. No `source`, no `eval`, no `grep` with the name in a regex, nothing from the file is ever expanded. The same file also defines `sync_refresh_timer` (D-C), which uses `log` and `ENV_FILE` of the caller; `update.sh` gains `ENV_FILE=/etc/seance/seance.env`. Known limit: a line with leading whitespace before the name is ignored (systemd would accept it); the rendered file never has one.
+- **D-B: the key reaches `kiro-cli whoami` through stdin, not argv or the root shell environment.** The gate becomes a function `kiro_credential_ok` called by `ready_for_agents`:
+
+  ```bash
+  kiro_credential_ok() {
+    local key
+    key=$(env_value KIRO_API_KEY "$ENV_FILE")
+    if [ -z "$key" ]; then
+      as_seance kiro-cli whoami >/dev/null 2>&1
+      return
+    fi
+    # printf is a builtin: the key is in no argv. The child reads it from stdin into its own
+    # environment and execs kiro-cli, so only the kiro-cli process holds it. The trailing newline
+    # is required: read returns non-zero at EOF without one.
+    printf '%s\n' "$key" |
+      as_seance sh -c 'IFS= read -r KIRO_API_KEY || exit 1; export KIRO_API_KEY; exec kiro-cli whoami' >/dev/null 2>&1
+  }
+  ```
+
+  `as_seance` is `( cd ... && runuser -u seance -- env -i ... "$@" )`; its stdin is inherited, `env -i` clears root's variables and the child shell script text is a constant, so `sudo`, `runuser`, `env` and `sh` see no key. `IFS=` and `-r` keep leading and trailing spaces and backslashes exactly as the Runner would see them. Output and errors of `whoami` go to `/dev/null` (whoami prints the account name), so the log `/var/log/seance-bootstrap.log` and the terminal get only the fixed lines below; this also covers a CLI that would echo its environment. The script never enables `set -x` (a test asserts it), and `key` is a local, never exported. When the check fails with a key set, the NEXT STEP text names `KIRO_API_KEY` and `/etc/seance/seance.env` and never the value; with no key it names both options (the device-flow login commands as today, or setting `KIRO_API_KEY`). If both a login and a key exist, `whoami` uses whichever kiro-cli prefers (the login), which matches the Runner's precedence rule.
+- **D-C: the refresh timer follows `SEANCE_SANDBOX_AUTH_DIR`.** `sync_refresh_timer` (in `deploy/env-value.sh`): if `env_value SEANCE_SANDBOX_AUTH_DIR "$ENV_FILE"` is non-empty, `systemctl enable --now seance-kiro-refresh.timer`; otherwise it logs one line ("no SEANCE_SANDBOX_AUTH_DIR: the Kiro login refresh timer stays off") and runs `systemctl disable --now seance-kiro-refresh.timer || true` (the `|| true` covers a timer that is not installed or not enabled). In `bootstrap.sh`, L501 becomes `sync_refresh_timer`, and the L505 line is split: `systemctl enable --now seance-sandbox-nft.service seance-egress-refresh.timer`, then `sync_refresh_timer`. In `update.sh` the single `systemctl enable --now seance-kiro-refresh.timer` inside the `AGENTS_WERE_ACTIVE` branch becomes `sync_refresh_timer`. The units and the script keep being installed on every host (cheap, and switching later needs no reinstall). Switching a host from a login to the key: unset `SEANCE_SANDBOX_AUTH_DIR`, run `bootstrap.sh` again; the teardown of `docs/DEPLOY.md` section 9 already disables the timer first.
+- **D-D: `seance-kiro-refresh.sh` exits early without an Auth_Dir.** Before the user check and before any file access: if `SEANCE_SANDBOX_AUTH_DIR` is unset or blank in the process environment, read it from `${SEANCE_ENV_FILE:-/etc/seance/seance.env}` with the inline `env_value`; if still blank, `log "no SEANCE_SANDBOX_AUTH_DIR: nothing to refresh"` and `exit 0` (exactly one line starting `seance-kiro-refresh:`; nothing under `HOME` is created, because the early exit runs before `mktemp`, `flock` and the `.refresh.lock` open). The file is `0600` root, so as `seance` it is not readable: `env_value` returns nothing for an unreadable file. To keep login hosts working, `seance-kiro-refresh.service` gains `EnvironmentFile=-/etc/seance/seance.env`, which systemd reads as root; the refresh script already runs `kiro-cli whoami` under `env -i`, so a `KIRO_API_KEY` in its environment never reaches a child. The unit has no `Environment=` line with `KIRO_API_KEY` (Requirement 15.15). An unreadable file on a manual run therefore means "unset": the safe side (the login is untouched). The existing `AUTH_DIR=${AUTH_DIR:-...}` default stays for tests and manual runs that pass `AUTH_DIR`.
+- **D-E: the ircd unit checks the login directory only when one is configured.** `ConditionDirectoryNotEmpty=` is removed (it also skipped key-only hosts silently). `EnvironmentFile=/etc/seance/seance.env` is already present and applies to `ExecStartPre`, which runs as `User=seance`. Add, after `ExecStart`'s siblings and before `ExecStart`:
+
+  ```ini
+  # bootstrap.sh and the Runner at start (Requirement 4, criterion 1) check the credential. This is a
+  # second, cheap check for a login host: with SEANCE_SANDBOX_AUTH_DIR set, the directory must not be empty.
+  ExecStartPre=/bin/sh -c 'case "$$SEANCE_SANDBOX_AUTH_DIR" in *[![:space:]]*) [ -n "$$(ls -A -- "$$SEANCE_SANDBOX_AUTH_DIR" 2>/dev/null)" ] ;; esac'
+  ```
+
+  `$$` is systemd's escape for a literal `$`; without it systemd would substitute the variable itself and split words. A `case` with no matching branch returns 0, so an unset or blank variable exits 0, a set directory with entries exits 0, a set but empty or missing directory exits non-zero and the unit fails (Restart=on-failure retries every 5 s, as for any start failure). Because systemd cannot branch on the env file contents, this shell is the only branch.
+- **D-F: `seance.env.example` keeps `SEANCE_SANDBOX_AUTH_DIR` uncommented.** Login is the default path in `docs/DEPLOY.md` and the rendered file must start in a working state for it; commenting it would make a fresh host fail Requirement 4.1 until the operator edits it. The comment changes to: optional when `KIRO_API_KEY` is set; it also enables the login refresh timer; for a key-only host delete or blank the line and set `KIRO_API_KEY`. The `KIRO_API_KEY` placeholder stays commented (Requirement 6.6, 15.22). No existing test reads `seance.env.example` (searched `apps/**/*.ts`), so only the new assertions apply.
+- **`docs/DEPLOY.md` section 5** gets the key-only path, the "`bootstrap.sh` checks the key with `kiro-cli whoami` as `seance`, key not in argv" sentence, and the switch-from-login steps (Requirements 15.19 to 15.21).
+
+Test notes (`apps/runner/test/sandbox-files.test.ts`; the dev Mac cannot run systemd, so nothing here starts a unit; shell tests run `sh`/`bash` with fake commands on `PATH` in a temp dir, like the existing SQLite helper test):
+
+- **Static (text of the files):** `bootstrap.sh` passes the key through the environment of the `kiro-cli` process (`IFS= read -r KIRO_API_KEY`, `exec kiro-cli whoami`), no line puts `KIRO_API_KEY=` followed by an expansion on a line that also has `sudo`, `su`, `runuser` or `env`, and the file has no `set -x`, `bash -x` or `xtrace` (15.23). Both scripts call `sync_refresh_timer` (or contain the guarded enable) and contain `systemctl disable --now seance-kiro-refresh.timer`; no `systemctl enable ... seance-kiro-refresh.timer` appears outside a branch guarded by the `SEANCE_SANDBOX_AUTH_DIR` check (15.25). The existing assertions at `sandbox-files.test.ts` L287-L300 (two `systemctl enable ... seance-kiro-refresh.timer` lines after `main() {`, `elif ready_for_agents; then` followed by an `enable --now ... seance-kiro-refresh.timer`, `update.sh` guarded `systemctl enable --now seance-kiro-refresh.timer`) are rewritten to the new structure: one guarded enable inside `sync_refresh_timer`, a call to it in `main()` after both start paths, and a call to it in the `AGENTS_WERE_ACTIVE` branch of `update.sh`. The ircd unit has no `ConditionDirectoryNotEmpty=` and has the `ExecStartPre=` line (15.16, 15.17, 15.18, 15.27). The refresh unit has no `Environment=` line containing `KIRO_API_KEY` (15.15). `docs/DEPLOY.md` section 5 and `deploy/seance.env.example` contain the statements of 15.19, 15.20, 15.22.
+- **Executable:** (1) `env_value` (Property 19) with `sh` on a temp file; (2) the credential check (Property 20): the test extracts `env_value` and `kiro_credential_ok` plus `as_seance` stubbed by a fake `runuser` that drops its first arguments up to `--` and runs the rest, with fake `kiro-cli` writing its argv and `KIRO_API_KEY` to a file; the child is run with `bash -x` to prove the trace is clean (the function runs under `{ bash -x; } 2>&1` capture, `set -x` allowed in the test only); (3) the refresh script run with `SEANCE_SANDBOX_AUTH_DIR` unset and blank, `HOME` pointing at an empty temp dir, `SEANCE_ENV_FILE` pointing at a non-existent path: exit 0, one `seance-kiro-refresh:` line, directory still empty (15.26); (4) the `ExecStartPre` shell string, extracted from the unit and with `$$` turned into `$`, run with an unset variable, a blank one, an empty directory and a directory with an entry: exit 0, 0, non-zero, 0; (5) the two `env_value` texts are identical.
+- **shellcheck:** CI already runs `shellcheck --severity=style deploy/*.sh`, which will include `deploy/env-value.sh`. Run it locally if installed; otherwise report it as not run (15.28, 15.29). Note `local key` and `local` in a `#!/usr/bin/env bash` script are fine; the refresh script is `#!/bin/sh`, so its inline `env_value` uses no `local` and no `[[ ]]`.
+- `pnpm typecheck` and `pnpm test` pass and `apps/web/next-env.d.ts` stays unmodified (15.30); per the repo memory, run `pnpm` verification through `execute_bash`, not turbo-backgrounded.
+
 ### `apps/runner/src/harness/spawn.ts`
 
 Comment update only: the key is no longer "never placed in the environment" in podman mode; it is in the podman process env, not in argv.
@@ -348,6 +408,18 @@ Removed. It tested `redactSpawnSpec`, which is deleted (Requirements 2.4, 7.7, 1
 *For any* generated stdin-fed shell, either `<producer> | <wrapper><shell> <opts>` (producer from `echo`, `printf`, `cat`; optional wrapper; shell from `sh|bash|zsh|dash|ksh|mksh|ash|fish`; opts from none, `-s`, `-i`, `-l`) or `<shell> <<< <word>`, `matchDenyList` returns `{ reason: "protected-path" }`. *For any* `eval` form around a Key_Reader_Command (nesting up to 4, and any `eval` chain deeper than 4 around any command), and *for any* wrapper from Requirement 14.5 followed by one of its option-with-value forms and then a Key_Reader_Command, it returns `{ reason: "protected-path" }`. *For any* shell invoked with a Script_File_Operand and no pipe (`<shell> script.sh`), it returns `undefined`.
 **Validates: Requirements 14.1, 14.2, 14.3, 14.4, 14.5, 14.6**
 
+### Property 19: env_value reads the last uncommented assignment, quotes stripped, blank is unset
+
+*For any* env file made of generated lines (comments, blank lines, assignments of other names, and zero or more assignments `NAME=<value>` with the value bare, double-quoted or single-quoted, containing any printable characters including `$`, backticks, `;` and spaces but no newline or NUL), `env_value NAME FILE` prints the value of the last `NAME=` line with one pair of surrounding quotes removed, prints nothing when no such line exists or when the value is empty or whitespace-only, never executes any part of the file, and always exits 0.
+
+**Validates: Requirements 15.4, 15.5, 15.12**
+
+### Property 20: The credential check keeps the key out of argv, output and trace
+
+*For any* generated key (non-blank, no NUL, CR or LF, may contain `$`, quotes, spaces and multi-byte UTF-8) in a fake env file, running the credential-check function with fake `runuser`, `kiro-cli` and `systemctl` on `PATH` records an argv for every fake command that does not contain the key, produces stdout and stderr (also with `bash -x` forced on the child) that do not contain the key, and the fake `kiro-cli` sees `KIRO_API_KEY` equal to the key exactly (including leading and trailing spaces) in its environment.
+
+**Validates: Requirements 15.1, 15.2, 15.3, 15.6**
+
 ## Error Handling
 
 - Neither credential in podman mode: `ConfigError` at startup (Requirement 4.1). The Runner does not start.
@@ -362,6 +434,7 @@ Removed. It tested `redactSpawnSpec`, which is deleted (Requirements 2.4, 7.7, 1
 - Deny-list internal failure: `decide` already catches and rejects (`unclassified`), so a bug in `referencesKeyReader` fails closed.
 - Shell `-c` nesting deeper than 4: rejected with `protected-path` (fail closed, Requirement 13.2). An unterminated quote ends at the end of its command part, so malformed input cannot hide a reader.
 - Integration test without podman: skips itself, as today.
+- Key-only host (Requirement 15): a failed `kiro-cli whoami` blocks the ircd and prints a NEXT STEP without the key value; an unreadable or missing env file counts as "no key" and "no Auth_Dir" (the safe side); a failed `systemctl disable --now` of a missing timer is ignored (`|| true`); `ExecStartPre` fails the ircd start only when `SEANCE_SANDBOX_AUTH_DIR` is set and the directory is empty or missing.
 
 ## Testing Strategy
 
@@ -384,4 +457,5 @@ Files:
 - Spec-note checks (10.5 to 10.7) and the docs (6, 11) are smoke checks by review: `grep` the Sandbox_Docs and `docs/DEPLOY.md` for "never forwarded" and "no `KIRO_API_KEY`", and check that D18 and the superseded criteria remain visible with the supersede note.
 - PBT does not apply to the documentation, the integration test or the spec notes; they use examples and review. Fast-check generators for P11 use template, wrapper and quoting arbitraries so every generated command is a true reader by construction (no oracle that re-implements the matcher).
 - Documentation (Requirement 6) is a smoke check by review; a `grep` for "never forwarded" in the Sandbox_Docs confirms 6.4.
+- `apps/runner/test/sandbox-files.test.ts` (Requirement 15): P19 and P20 as fast-check properties (at least 100 runs, `sh` or `bash` child processes with fakes, no systemd, no real `kiro-cli`), plus the static and example tests listed in the "API-key-only deploy hosts" section. PBT applies only to the shell helper and the credential check; unit file contents, docs and timer wiring are static or example tests.
 - Final gate: `pnpm typecheck` and `pnpm test` at the repository root pass, and `apps/web/next-env.d.ts` is unmodified (7.9).

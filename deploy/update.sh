@@ -14,6 +14,7 @@ set -euo pipefail
 REPO_DIR=/opt/seance
 STATE_DIR=/var/lib/seance
 DEPLOY_CONF=/etc/seance/deploy.conf
+ENV_FILE=/etc/seance/seance.env
 WEB_ENV_FILE=/etc/seance/web.env
 SEANCE_USER=seance
 SEANCE_HOME=/home/seance
@@ -22,6 +23,10 @@ HEALTH_TRIES=30
 
 log() { printf '[update %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[update] ERROR: %s\n' "$*" >&2; exit 1; }
+
+# env_value and sync_refresh_timer (shared with bootstrap.sh).
+# shellcheck source=deploy/env-value.sh
+. "$(dirname "${BASH_SOURCE[0]}")/env-value.sh"
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo $0 <sha>)"
 NEW_REF=${1:-}
@@ -79,8 +84,9 @@ deploy() {
   if [ "$AGENTS_WERE_ACTIVE" -eq 1 ]; then
     systemctl start seance-sandbox-nft.service
     systemctl start seance-ircd.service
-    # Older installs get the Kiro login refresh the first time they are updated with agents enabled.
-    systemctl enable --now seance-kiro-refresh.timer
+    # Older installs get the Kiro login refresh the first time they are updated with agents enabled,
+    # but only when a login directory is configured (API-key-only hosts keep the timer off).
+    sync_refresh_timer
   fi
   echo "$ref" > "$STATE_DIR/built-ref"
 }

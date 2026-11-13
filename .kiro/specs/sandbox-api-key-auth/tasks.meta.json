@@ -354,6 +354,171 @@
         "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
         "timestamp": 1794541059016
       }
+    ],
+    "23.1 Create `deploy/env-value.sh` with `env_value` and `sync_refresh_timer`": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543190468
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543305638
+      }
+    ],
+    "23.2 Change `deploy/bootstrap.sh`: credential gate and conditional timer": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543305738
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543463620
+      }
+    ],
+    "23.3 Change `deploy/update.sh`: conditional timer": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543464691
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543526545
+      }
+    ],
+    "23.4 Make `deploy/seance-kiro-refresh.sh` exit early without an Auth_Dir and update the service unit": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543527553
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543843229
+      }
+    ],
+    "23.5 Change `deploy/systemd/seance-ircd.service`": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543842213
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543905724
+      }
+    ],
+    "23.6 Confirm `env-value.sh` reaches the host and update `deploy/seance.env.example`": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543904724
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543970515
+      }
+    ],
+    "23. Deploy helpers and scripts for API-key-only hosts": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543970609
+      }
+    ],
+    "24.1 Update and extend `apps/runner/test/sandbox-files.test.ts`": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794543971408
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544158819
+      }
+    ],
+    "24.2 Write the Property 19 test (`env_value`) in `apps/runner/test/sandbox-files.test.ts`": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544159702
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544431120
+      }
+    ],
+    "24.3 Write the Property 20 test (credential gate keeps the key out of argv, output and trace) in `apps/runner/test/sandbox-files.test.ts`": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544432094
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544768199
+      }
+    ],
+    "24.4 Run `shellcheck --severity=style deploy/*.sh`": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544768494
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544818234
+      }
+    ],
+    "24. Tests and lint for the deploy changes": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544818318
+      }
+    ],
+    "25.1 Add the API-key path to `docs/DEPLOY.md` section 5": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544819252
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544876678
+      }
+    ],
+    "26. Final checkpoint - Run typecheck and tests at the repository root": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544875652
+      },
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544964918
+      }
+    ],
+    "25. Documentation": [
+      {
+        "executionId": "e9ba1aff-85cd-4c9e-baab-e7a5dbcfa453",
+        "chatSessionId": "sess_03de070b-f5e9-41c7-8575-8daf4de45603",
+        "timestamp": 1794544876709
+      }
     ]
   }
 }

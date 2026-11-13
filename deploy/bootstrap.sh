@@ -40,6 +40,10 @@ WS_PROJECT_NAME=seance_ws
 log() { printf '[bootstrap %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[bootstrap] ERROR: %s\n' "$*" >&2; exit 1; }
 
+# env_value and sync_refresh_timer (shared with update.sh).
+# shellcheck source=deploy/env-value.sh
+. "$(dirname "${BASH_SOURCE[0]}")/env-value.sh"
+
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo $0)"
 
 # ---- configuration: from cloud-init on the first run, from deploy.conf afterwards ------------
@@ -440,7 +444,31 @@ install_units() {
   systemctl reload-or-restart caddy.service
 }
 
-# ---- 11. the gate: agents only with a working Kiro login, an account and SEANCE_INVITERS ------
+# ---- 11. the gate: agents only with working Kiro credentials, an account and SEANCE_INVITERS --
+# True when kiro-cli whoami succeeds for seance. With KIRO_API_KEY in the env file the key goes in
+# through stdin (never argv, never root's environment); all output is discarded, and the script
+# never enables xtrace. Sets KIRO_KEY_SET=1 when a key is configured.
+KIRO_KEY_SET=0
+kiro_credential_ok() {
+  local key rc=0
+  KIRO_KEY_SET=0
+  # The group's stderr goes to /dev/null so that a caller's `bash -x` cannot trace the key
+  # (an xtrace line such as `printf '%s\n' <key>` is written to the group's stderr).
+  {
+    key=$(env_value KIRO_API_KEY "$ENV_FILE")
+    if [ -n "$key" ]; then
+      KIRO_KEY_SET=1
+      printf '%s\n' "$key" |
+        as_seance sh -c 'IFS= read -r KIRO_API_KEY || exit 1; export KIRO_API_KEY; exec kiro-cli whoami' \
+        >/dev/null 2>&1 || rc=1
+    else
+      as_seance kiro-cli whoami >/dev/null 2>&1 || rc=1
+    fi
+  } 2>/dev/null
+  unset key
+  return "$rc"
+}
+
 ready_for_agents() {
   local blocked=0
   if [ -d "$AUTH_DIR" ]; then
@@ -449,16 +477,26 @@ ready_for_agents() {
     chmod 0700 "$AUTH_DIR"
   fi
   # The egress rule is stopped at this point (or was never loaded), so whoami can reach Kiro.
-  if ! as_seance kiro-cli whoami >/dev/null 2>&1; then
+  if ! kiro_credential_ok; then
     blocked=1
-    cat <<EOF
+    if [ "$KIRO_KEY_SET" = 1 ]; then
+      cat <<EOF
 
-NEXT STEP: log in to Kiro once as $SEANCE_USER (docs/DEPLOY.md, "Kiro login"):
-  sudo systemctl stop seance-ircd.service seance-sandbox-nft.service
-  sudo -iu $SEANCE_USER kiro-cli login --use-device-flow
-  sudo -iu $SEANCE_USER kiro-cli whoami
+NEXT STEP: kiro-cli rejected the KIRO_API_KEY in $ENV_FILE. Put a valid key on that line (docs/DEPLOY.md),
+then run this script again (it loads the egress rule and starts the ircd).
+EOF
+    else
+      cat <<EOF
+
+NEXT STEP: give Kiro credentials, either option (docs/DEPLOY.md, "Kiro login"):
+  1. log in once as $SEANCE_USER:
+       sudo systemctl stop seance-ircd.service seance-sandbox-nft.service
+       sudo -iu $SEANCE_USER kiro-cli login --use-device-flow
+       sudo -iu $SEANCE_USER kiro-cli whoami
+  2. or set KIRO_API_KEY=<key> in $ENV_FILE (root-only file).
 Then run this script again (it loads the egress rule and starts the ircd).
 EOF
+    fi
   fi
   if ! grep -qv '^[[:space:]]*\(#\|$\)' "$ACCOUNTS_FILE"; then
     blocked=1
@@ -498,11 +536,12 @@ main() {
   fi
   if systemctl is-active --quiet seance-sandbox-nft.service; then
     # Nothing needed the network and the agents are running: leave them alone.
-    systemctl enable --now seance-kiro-refresh.timer
+    sync_refresh_timer
     log "done: https://$SEANCE_PUBLIC_HOSTNAME/ (agents running, unchanged)"
   elif ready_for_agents; then
     log "starting the egress rule and the ircd"
-    systemctl enable --now seance-sandbox-nft.service seance-egress-refresh.timer seance-kiro-refresh.timer
+    systemctl enable --now seance-sandbox-nft.service seance-egress-refresh.timer
+    sync_refresh_timer
     systemctl enable seance-ircd.service
     systemctl restart seance-ircd.service
     log "done: https://$SEANCE_PUBLIC_HOSTNAME/ (agents enabled)"

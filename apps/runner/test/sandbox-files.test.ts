@@ -1,7 +1,8 @@
 // agent-sandbox task 8.5 (Requirements 1.8, 3.3, 7.3, 7.6, 7.7, 12.8): the shipped image, probe and
 // network files agree with the runner and keep their safety properties.
-import { execFile } from "node:child_process";
-import { accessSync, constants, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFile, spawnSync } from "node:child_process";
+import fc from "fast-check";
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -285,11 +286,140 @@ describe("Kiro login refresh (deploy-aws)", () => {
     expect(units).toContain("seance-kiro-refresh.timer");
     expect(units).toMatch(/install -m 0755 -o root -g root "\$REPO_DIR\/deploy\/seance-kiro-refresh\.sh" \/usr\/local\/sbin\/seance-kiro-refresh/);
     expect(units).not.toMatch(/enable[^\n]*seance-kiro-refresh/);
-    const enables = bootstrap.split("\n").filter((l) => /systemctl enable[^\n]*seance-kiro-refresh\.timer/.test(l));
-    expect(enables).toHaveLength(2); // agents already running, and agents being started
-    const gate = bootstrap.indexOf("main() {");
-    for (const line of enables) expect(bootstrap.indexOf(line)).toBeGreaterThan(gate);
-    expect(bootstrap.slice(bootstrap.indexOf("elif ready_for_agents; then"))).toMatch(/enable --now [^\n]*seance-kiro-refresh\.timer/);
+    // The timer is enabled only through sync_refresh_timer (deploy/env-value.sh), never directly.
+    expect(bootstrap.split("\n").filter((l) => /systemctl [^\n]*seance-kiro-refresh\.timer/.test(l))).toEqual([]);
+    expect(units).not.toContain("sync_refresh_timer");
+    const calls = bootstrap.split("\n").filter((l) => /^\s*sync_refresh_timer$/.test(l));
+    expect(calls).toHaveLength(2); // agents already running, and after the split nft/egress enable
+    const main = bootstrap.slice(bootstrap.indexOf("main() {"));
+    const running = main.indexOf("if systemctl is-active --quiet seance-sandbox-nft.service; then");
+    const starting = main.indexOf("elif ready_for_agents; then");
+    const nft = main.indexOf("enable --now seance-sandbox-nft.service seance-egress-refresh.timer");
+    expect(main.slice(nft).split("\n")[0]).not.toContain("seance-kiro-refresh");
+    const first = main.indexOf("sync_refresh_timer");
+    const second = main.indexOf("sync_refresh_timer", first + 1);
+    expect(first).toBeGreaterThan(running);
+    expect(first).toBeLessThan(starting);
+    expect(second).toBeGreaterThan(nft);
+    expect(main.slice(second + 1)).not.toMatch(/^\s*sync_refresh_timer$/m);
+  });
+
+  it("sync_refresh_timer enables the timer with --now only for a non-blank SEANCE_SANDBOX_AUTH_DIR, else disables it", () => {
+    const text = read("deploy/env-value.sh");
+    const fn = text.slice(text.indexOf("sync_refresh_timer() {"));
+    expect(fn).toMatch(/if \[ -n "\$\(env_value SEANCE_SANDBOX_AUTH_DIR "\$ENV_FILE"\)" \]; then\s+systemctl enable --now seance-kiro-refresh\.timer\s+else/);
+    expect(fn).toContain("systemctl disable --now seance-kiro-refresh.timer || true");
+    expect(text.match(/systemctl enable/g)).toHaveLength(1);
+  });
+
+  it("bootstrap.sh and update.sh source env-value.sh and call sync_refresh_timer", () => {
+    for (const file of ["deploy/bootstrap.sh", "deploy/update.sh"]) {
+      const text = read(file);
+      expect(text, file).toContain("env-value.sh");
+      expect(text, file).toMatch(/^\s*sync_refresh_timer$/m);
+    }
+  });
+
+  it("bootstrap.sh passes the key through stdin only and never traces", () => {
+    const text = read("deploy/bootstrap.sh");
+    const lines = text.split("\n").filter((l) => !l.trimStart().startsWith("#"));
+    expect(text).toContain("IFS= read -r KIRO_API_KEY");
+    expect(text).toContain("exec kiro-cli whoami");
+    // No assignment of KIRO_API_KEY from an expansion on a command line.
+    for (const l of lines) expect(l, l).not.toMatch(/KIRO_API_KEY=\S*\$/);
+    // The key variable appears only in the env_value read, the printf pipe and the cleanup.
+    // The key is never an argument, except to the printf that feeds the pipe (and the -n test).
+    for (const l of lines.filter((x) => /"\$key"/.test(x) && !/\[ -n "\$key" \]/.test(x))) {
+      expect(l, l).toMatch(/printf '%s\\n' "\$key" \|\s*$/);
+    }
+    for (const l of lines) expect(l, l).not.toMatch(/\b(?:sudo|su|runuser|env)\b[^\n]*KIRO_API_KEY=/);
+    for (const file of ["deploy/bootstrap.sh", "deploy/update.sh", "deploy/env-value.sh"]) {
+      const body = read(file).split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+      expect(body, file).not.toMatch(/\bset\s+-\w*x|bash -x|xtrace/);
+    }
+  });
+
+  it("seance-ircd.service checks the login directory in ExecStartPre, not ConditionDirectoryNotEmpty, and holds no key", () => {
+    const unit = read("deploy/systemd/seance-ircd.service");
+    expect(unit).not.toMatch(/ConditionDirectoryNotEmpty/);
+    expect(unit).toMatch(/^ExecStartPre=\/bin\/sh -c '/m);
+    expect(unit).not.toMatch(/^Environment=.*KIRO_API_KEY/m);
+  });
+
+  it("seance-kiro-refresh.service reads the env file but sets no KIRO_API_KEY", () => {
+    const unit = read("deploy/systemd/seance-kiro-refresh.service");
+    expect(unit).toMatch(/^EnvironmentFile=-\/etc\/seance\/seance\.env$/m);
+    expect(unit).not.toMatch(/^Environment=.*KIRO_API_KEY/m);
+  });
+
+  it("the inline env_value of seance-kiro-refresh.sh is identical to the one in env-value.sh", () => {
+    const fn = (text: string): string => {
+      const start = text.indexOf("env_value() {");
+      return text.slice(start, text.indexOf("\n}\n", start) + 3);
+    };
+    const shared = fn(read("deploy/env-value.sh"));
+    const inline = read(SCRIPT);
+    const block = inline.slice(inline.indexOf("# BEGIN env_value"), inline.indexOf("# END env_value"));
+    expect(shared.length).toBeGreaterThan(100);
+    expect(fn(inline)).toBe(shared);
+    expect(block).toContain(shared);
+  });
+
+  describe("executable checks (no systemd)", () => {
+    let tmp: string | undefined;
+    afterEach(() => {
+      if (tmp !== undefined) rmSync(tmp, { recursive: true, force: true });
+      tmp = undefined;
+    });
+    const sh = (
+      script: string,
+      args: readonly string[],
+      env: Record<string, string>,
+    ): Promise<{ code: number; stdout: string; stderr: string }> =>
+      new Promise((done) => {
+        execFile("sh", [script, ...args], { env: { PATH: process.env["PATH"] ?? "", ...env } }, (error, stdout, stderr) => {
+          done({ code: error === null ? 0 : typeof error.code === "number" ? error.code : 1, stdout, stderr });
+        });
+      });
+
+    it("the refresh script exits 0 with one line when no SEANCE_SANDBOX_AUTH_DIR is configured", async () => {
+      tmp = mkdtempSync(join(tmpdir(), "seance-refresh-noauth-"));
+      const envFile = join(tmp, "seance.env");
+      writeFileSync(envFile, "SOMETHING=1\n# SEANCE_SANDBOX_AUTH_DIR=/x\n");
+      for (const blank of ["", "   "]) {
+        const r = await sh(resolve(ROOT, SCRIPT), [], {
+          SEANCE_SANDBOX_AUTH_DIR: blank,
+          SEANCE_ENV_FILE: envFile,
+          HOME: tmp,
+        });
+        expect(r.code).toBe(0);
+        expect(r.stdout.trimEnd().split("\n")).toHaveLength(1);
+        expect(r.stdout).toMatch(/^seance-kiro-refresh: /);
+      }
+    });
+
+    it("the ircd ExecStartPre passes with the variable unset, fails on an empty directory, passes on a non-empty one", async () => {
+      const unit = read("deploy/systemd/seance-ircd.service");
+      const m = /^ExecStartPre=\/bin\/sh -c '(.*)'$/m.exec(unit);
+      expect(m).not.toBeNull();
+      const cmd = (m?.[1] ?? "").replaceAll("$$", "$");
+      tmp = mkdtempSync(join(tmpdir(), "seance-ircd-pre-"));
+      const empty = join(tmp, "empty");
+      const full = join(tmp, "full");
+      mkdirSync(empty);
+      mkdirSync(full);
+      writeFileSync(join(full, "data.sqlite3"), "x");
+      const run = (env: Record<string, string>): Promise<number> =>
+        new Promise((done) => {
+          execFile("sh", ["-c", cmd], { env: { PATH: process.env["PATH"] ?? "", ...env } }, (error) => {
+            done(error === null ? 0 : typeof error.code === "number" ? error.code : 1);
+          });
+        });
+      expect(await run({})).toBe(0);
+      expect(await run({ SEANCE_SANDBOX_AUTH_DIR: "" })).toBe(0);
+      expect(await run({ SEANCE_SANDBOX_AUTH_DIR: empty })).not.toBe(0);
+      expect(await run({ SEANCE_SANDBOX_AUTH_DIR: full })).toBe(0);
+    });
   });
 
   it("update.sh reinstalls the script and both units, and enables the timer when agents were running", () => {
@@ -297,7 +427,10 @@ describe("Kiro login refresh (deploy-aws)", () => {
     expect(update).toContain("seance-kiro-refresh.service seance-kiro-refresh.timer");
     expect(update).toMatch(/install -m 0755 -o root -g root "\$REPO_DIR\/deploy\/seance-kiro-refresh\.sh" \/usr\/local\/sbin\/seance-kiro-refresh/);
     const guarded = update.slice(update.indexOf('if [ "$AGENTS_WERE_ACTIVE" -eq 1 ]; then'));
-    expect(guarded.slice(0, guarded.indexOf("\n  fi\n"))).toContain("systemctl enable --now seance-kiro-refresh.timer");
+    expect(guarded.slice(0, guarded.indexOf("\n  fi\n"))).toMatch(/^\s*sync_refresh_timer$/m);
+    // No enable outside that block.
+    expect(update.split("\n").filter((l) => /^\s*sync_refresh_timer$/.test(l))).toHaveLength(1);
+    expect(update).not.toMatch(/systemctl [^\n]*seance-kiro-refresh\.timer/);
   });
 
   it("the script is executable POSIX sh that runs as seance, on a copy, and installs it atomically", () => {
@@ -346,7 +479,9 @@ describe("Kiro login refresh (deploy-aws)", () => {
     expect(text).toContain("refresh FAILED, login kept (expires $old)");
     expect(text).toContain('env -i "HOME=$work"');
     expect(text).toMatch(/\?"?, \(KEY,\)/); // parameterised queries
-    expect(text).not.toContain("KIRO_API_KEY");
+    // The unit may load the env file with the key; the script drops it and only ever names it in unset.
+    expect(text).toMatch(/^unset KIRO_API_KEY$/m);
+    expect(text.split("\n").filter((l) => l.includes("KIRO_API_KEY") && !l.startsWith("#") && l !== "unset KIRO_API_KEY")).toEqual([]);
   });
 
   it("bootstrap.sh fixes the ownership of the auth dir without following symlinks", () => {
@@ -655,5 +790,180 @@ describe("deploy/bootstrap.sh agent image rebuild rule", () => {
   it("restarts seance-ircd after a changed image when it is running", () => {
     expect(sh).toMatch(/IMAGE_CHANGED.*= 1.*&& systemctl is-active --quiet seance-ircd\.service/);
     expect(sh).toContain("restarting seance-ircd: the runner uses the new agent image digest");
+  });
+});
+
+// sandbox-api-key-auth task 24.2: Property 19 runs the shipped env_value under sh on generated files.
+describe("deploy/env-value.sh env_value (sandbox-api-key-auth)", () => {
+  const SCRIPT = resolve(ROOT, "deploy/env-value.sh");
+  let tmp: string | undefined;
+  afterEach(() => {
+    if (tmp !== undefined) rmSync(tmp, { recursive: true, force: true });
+    tmp = undefined;
+  });
+
+  // Printable ASCII (space included, so `$`, backtick, `;`, `|`, `&`, `(`, `)`, `*`, `?` appear)
+  // plus multi-byte characters. "@M@" is replaced by the marker path of the case.
+  const asciiChar = fc.integer({ min: 0x20, max: 0x7e }).map((c) => String.fromCharCode(c));
+  const chunk = fc.oneof(
+    { weight: 6, arbitrary: asciiChar },
+    { weight: 2, arbitrary: fc.constantFrom("$", "`", ";", "|", "&", "(", ")", "*", "?", " ", "'", '"') },
+    { weight: 1, arbitrary: fc.constantFrom("é", "日本", "🙂", "ñ") },
+    { weight: 1, arbitrary: fc.constantFrom("$(touch @M@)", "`touch @M@`", "$(touch @M@)`touch @M@`") },
+  );
+  const body = fc.array(chunk, { maxLength: 12 }).map((p) => p.join(""));
+  const rawValue = fc.tuple(fc.constantFrom("", "'", '"'), body).map(([q, b]) => `${q}${b}${q}`);
+  const line = fc.oneof(
+    rawValue.map((v) => `TARGET=${v}`),
+    rawValue.map((v) => `TARGET=${v}`),
+    fc.tuple(fc.constantFrom("OTHER", "TARGET_X", "XTARGET", "TARGETS"), rawValue).map(([n, v]) => `${n}=${v}`),
+    body.map((b) => `# TARGET=${b}`),
+    body.map((b) => `#TARGET=${b}`),
+    body.map((b) => ` TARGET=${b}`),
+    body.map((b) => `export TARGET=${b}`),
+    body.map((b) => `# ${b}`),
+    fc.constantFrom("", "   "),
+  );
+
+  // Mirrors env_value: last "TARGET=" line, one matching pair of quotes removed (an empty pair
+  // `""` or `''` included, which leaves nothing), then nothing at all when no non-space character is left.
+  const expected = (lines: string[]): string => {
+    let v = "";
+    for (const l of lines) if (l.startsWith("TARGET=")) v = l.slice("TARGET=".length);
+    const chars = Array.from(v);
+    if (chars.length >= 2 && (chars[0] === '"' || chars[0] === "'") && chars[chars.length - 1] === chars[0]) {
+      v = chars.slice(1, -1).join("");
+    }
+    return /[^ ]/.test(v) ? `${v}\n` : "";
+  };
+
+  it("P19 env_value reads the last uncommented assignment, quotes stripped, blank is unset", () => {
+    fc.assert(
+      fc.property(fc.array(line, { maxLength: 12 }), (generated) => {
+        tmp = mkdtempSync(join(tmpdir(), "env-value-"));
+        const marker = join(tmp, "executed");
+        const lines = generated.map((l) => l.split("@M@").join(marker));
+        const file = join(tmp, "env");
+        writeFileSync(file, lines.map((l) => `${l}\n`).join(""));
+        const r = spawnSync("sh", ["-c", '. "$1"; env_value TARGET "$2"', "sh", SCRIPT, file], { encoding: "utf8" });
+        const ok = r.status === 0 && r.stdout === expected(lines) && !existsSync(marker);
+        rmSync(tmp, { recursive: true, force: true });
+        tmp = undefined;
+        return ok;
+      }),
+      { numRuns: 60 },
+    );
+  });
+
+  it.each([['TARGET=""'], ["TARGET=''"]])("%s is blank, so env_value prints nothing", (assignment) => {
+    tmp = mkdtempSync(join(tmpdir(), "env-value-"));
+    const file = join(tmp, "env");
+    writeFileSync(file, `${assignment}\n`);
+    const r = spawnSync("sh", ["-c", '. "$1"; env_value TARGET "$2"', "sh", SCRIPT, file], { encoding: "utf8" });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe("");
+  });
+});
+
+// sandbox-api-key-auth task 24.3: Property 20 runs the shipped kiro_credential_ok (with as_seance and
+// env_value, extracted by text from bootstrap.sh / env-value.sh) under `bash -x` with fake
+// runuser, kiro-cli, sudo and systemctl. No substitution is needed in the extracted text: as_seance
+// finds `runuser` through PATH, and its `env -i` PATH starts with $SEANCE_HOME/.local/bin, where the
+// fake kiro-cli lives.
+describe("deploy/bootstrap.sh kiro_credential_ok (sandbox-api-key-auth)", () => {
+  let tmp: string | undefined;
+  afterEach(() => {
+    if (tmp !== undefined) rmSync(tmp, { recursive: true, force: true });
+    tmp = undefined;
+  });
+
+  const extractFn = (text: string, name: string): string => {
+    const start = text.indexOf(`\n${name}() {\n`) + 1;
+    expect(start, name).toBeGreaterThan(0);
+    return text.slice(start, text.indexOf("\n}\n", start) + 3);
+  };
+
+  // Builds the sandbox; returns paths. `fakeLog` collects one argv per fake command.
+  const setup = (envFileText: string) => {
+    const dir = mkdtempSync(join(tmpdir(), "cred-ok-"));
+    tmp = dir;
+    const bin = join(dir, "bin");
+    const home = join(dir, "home");
+    mkdirSync(bin);
+    mkdirSync(join(home, ".local", "bin"), { recursive: true });
+    const log = join(dir, "argv.log");
+    const keyFile = join(dir, "key-seen");
+    const noKeyFile = join(dir, "no-key");
+    const record = (name: string): string => `{ echo "== ${name}"; for a in "$@"; do printf '%s\\n' "$a"; done; } >> "${log}"\n`;
+    const fake = (path: string, body: string): void => {
+      writeFileSync(path, `#!/bin/sh\n${body}`, { mode: 0o755 });
+    };
+    fake(
+      join(bin, "runuser"),
+      `${record("runuser")}while [ "$1" != -- ]; do shift; done\nshift\nexec "$@"\n`,
+    );
+    fake(join(bin, "sudo"), record("sudo"));
+    fake(join(bin, "systemctl"), record("systemctl"));
+    fake(
+      join(home, ".local", "bin", "kiro-cli"),
+      `${record("kiro-cli")}if [ "\${KIRO_API_KEY+set}" = set ]; then printf '%s' "$KIRO_API_KEY" > "${keyFile}"; else : > "${noKeyFile}"; fi\nexit 0\n`,
+    );
+    const envFile = join(dir, "seance.env");
+    writeFileSync(envFile, envFileText);
+    const bootstrap = read("deploy/bootstrap.sh");
+    const script = [
+      "set -euo pipefail",
+      `. ${JSON.stringify(resolve(ROOT, "deploy/env-value.sh"))}`,
+      `SEANCE_HOME=${JSON.stringify(home)} SEANCE_USER=seance SEANCE_UID=1000 ENV_FILE=${JSON.stringify(envFile)}`,
+      "KIRO_KEY_SET=0",
+      extractFn(bootstrap, "as_seance"),
+      extractFn(bootstrap, "kiro_credential_ok"),
+      'if kiro_credential_ok; then echo "ok key_set=$KIRO_KEY_SET"; else echo "failed"; exit 3; fi',
+      "",
+    ].join("\n");
+    const scriptFile = join(dir, "run.sh");
+    writeFileSync(scriptFile, script);
+    const r = spawnSync("bash", ["-x", scriptFile], {
+      encoding: "utf8",
+      env: { PATH: `${bin}:${process.env.PATH ?? ""}`, HOME: dir },
+    });
+    const read1 = (f: string): string | undefined => (existsSync(f) ? readFileSync(f, "utf8") : undefined);
+    return { r, argv: read1(log) ?? "", keySeen: read1(keyFile), noKey: existsSync(noKeyFile) };
+  };
+
+  // Keys: printable ASCII (shell metacharacters and edge spaces included) and multi-byte UTF-8.
+  const keyChar = fc.oneof(
+    { weight: 6, arbitrary: fc.integer({ min: 0x20, max: 0x7e }).map((c) => String.fromCharCode(c)) },
+    { weight: 2, arbitrary: fc.constantFrom("$", "`", "'", '"', "\\", ";", "|", "&", "*", "(", ")", " ") },
+    { weight: 1, arbitrary: fc.constantFrom("é", "日本", "🙂", "ñ") },
+  );
+  const key = fc
+    .array(keyChar, { minLength: 8, maxLength: 64 })
+    .map((p) => p.join(""))
+    .filter((k) => k.replace(/ /g, "").length >= 8);
+
+  it("P20 the credential check keeps the key out of argv, output and trace, and hands it to kiro-cli exactly", () => {
+    fc.assert(
+      fc.property(key, fc.constantFrom('"', "'"), (k, q) => {
+        // Quoted so leading and trailing spaces survive env_value; the other quote may appear inside.
+        const o = setup(`OTHER=1\nKIRO_API_KEY=${q}${k}${q}\n`);
+        const { r } = o;
+        const clean = !r.stdout.includes(k) && !r.stderr.includes(k) && !o.argv.includes(k);
+        const ok = r.status === 0 && r.stdout === "ok key_set=1\n" && o.keySeen === k && clean;
+        rmSync(tmp as string, { recursive: true, force: true });
+        tmp = undefined;
+        return ok;
+      }),
+      { numRuns: 40 },
+    );
+  }, 120_000);
+
+  it("without KIRO_API_KEY the fallback runs kiro-cli whoami with no KIRO_API_KEY in its environment", () => {
+    const o = setup("OTHER=1\n# KIRO_API_KEY=commented\nKIRO_API_KEY=\n");
+    expect(o.r.status).toBe(0);
+    expect(o.r.stdout).toBe("ok key_set=0\n");
+    expect(o.noKey).toBe(true);
+    expect(o.keySeen).toBeUndefined();
+    expect(o.argv).toContain("== kiro-cli\nwhoami\n");
   });
 });

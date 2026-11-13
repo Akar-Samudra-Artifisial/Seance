@@ -13,6 +13,10 @@ Wants=network-online.target
 Type=oneshot
 User=seance
 Group=seance
+# Only so the script can see SEANCE_SANDBOX_AUTH_DIR (it exits early without one). systemd reads
+# EnvironmentFile as root before dropping to User=seance, so the root-owned 0600 env file works.
+# The leading "-" tolerates a missing file. The script unsets KIRO_API_KEY at its start.
+EnvironmentFile=-/etc/seance/seance.env
 ExecStart=/usr/local/sbin/seance-kiro-refresh
 TimeoutStartSec=120
 UMask=0077

@@ -256,3 +256,53 @@ The terms below extend the Glossary for this requirement. In `apps/runner/src/pe
 9. THE test file `apps/runner/test/key-reader.test.ts` SHALL list every denied example of criteria 1 to 8 (`eval env`, `eval "printenv HOME"`, `eval 'sh -c env'`, `echo env | sh`, `printf 'env' | bash`, `bash <<< env`, `cat x | bash -s`, `sudo -u root env`, `exec -a x env`, `xargs -I {} printenv`, `time -o out.txt printenv`, `sudo --user=root printenv`, `/pr?c/self/environ`, `/p*/self/environ`, `/[p]roc/1/environ`) in its DENIED examples and SHALL assert that `matchDenyList` rejects each with the reason `protected-path`. THE same file SHALL list `sh script.sh`, `bash -c "git status"` and `git log | sort` in its allowed examples, SHALL assert that `isEnvironPath` returns true for the three Proc_Glob paths, and SHALL assert that an `eval` chain nested deeper than 4 levels is rejected.
 10. THE file `docs/SANDBOX.md` SHALL state in one line that the deny list is best-effort and that the dedicated low-limit key (Requirement 11) is the real control.
 11. WHEN `pnpm typecheck` and `pnpm test` run at the repository root with the Requirement 14 changes applied, THE `apps/runner` and `apps/ircd` projects SHALL pass both with exit code 0, and THE Requirement 14 changes SHALL NOT modify `apps/web/next-env.d.ts`.
+
+### Requirement 15: API-key-only deploy hosts
+
+**User Story:** As an operator of the public host, I want `deploy/bootstrap.sh`, `deploy/update.sh` and the systemd units to work with only `KIRO_API_KEY` set, so that the ircd starts without a Kiro login and no login-refresh job runs against a login that does not exist.
+
+The terms below extend the Glossary for this requirement.
+
+- **Env_File**: `/etc/seance/seance.env`, the host environment file read by the ircd service.
+- **Host_Key**: The value of `KIRO_API_KEY` set in the Env_File. A line with an empty or whitespace-only value counts as unset (Requirement 9).
+- **Host_Auth_Dir**: The value of `SEANCE_SANDBOX_AUTH_DIR` set in the Env_File. An empty or whitespace-only value counts as unset (Requirement 3). A commented-out line counts as unset.
+- **Bootstrap_Script**: `deploy/bootstrap.sh`, including its `ready_for_agents` gate.
+- **Update_Script**: `deploy/update.sh`.
+- **Refresh_Script**: `deploy/seance-kiro-refresh.sh`, installed as `/usr/local/sbin/seance-kiro-refresh`.
+- **Refresh_Timer**: The unit `seance-kiro-refresh.timer`.
+- **Ircd_Unit**: `deploy/systemd/seance-ircd.service`.
+- **Deploy_Docs**: `docs/DEPLOY.md` (section 5, "Kiro login") and `deploy/seance.env.example`.
+- **Deploy_Tests**: The tests in `apps/runner/test/sandbox-files.test.ts` that read files under `deploy/` and `docs/`.
+
+#### Acceptance Criteria
+
+1. WHEN the Bootstrap_Script checks the Kiro credential and the Host_Key is set, THE Bootstrap_Script SHALL run `kiro-cli whoami` as the `seance` user with `KIRO_API_KEY` set to the Host_Key in the environment of that `kiro-cli` process.
+2. WHILE the Bootstrap_Script runs the credential check of criterion 1, THE Bootstrap_Script SHALL keep the Host_Key out of the argv of every process it starts, including `sudo`, `su`, `env`, `runuser` and `kiro-cli`.
+3. WHILE the Bootstrap_Script runs the credential check of criterion 1, THE Bootstrap_Script SHALL keep the Host_Key out of its stdout, its stderr, `/var/log/seance-bootstrap.log` and any `set -x` trace, including a run with `set -x` or `bash -x` enabled.
+4. WHEN the Bootstrap_Script reads the Host_Key from the Env_File, THE Bootstrap_Script SHALL read it without sourcing the Env_File in the root shell and without echoing the line.
+5. IF the Env_File sets `KIRO_API_KEY` to an empty or whitespace-only value, THEN THE Bootstrap_Script SHALL treat the Host_Key as unset and run the credential check of criterion 1 without `KIRO_API_KEY`.
+6. WHEN the Host_Key is set and `kiro-cli whoami` as `seance` exits 0 with `KIRO_API_KEY` in its environment, THE Bootstrap_Script SHALL treat the Kiro credential as working. This holds when the `seance` user has no login and the Host_Auth_Dir is unset (verified with kiro-cli: `KIRO_API_KEY=<key> kiro-cli whoami` prints "Authenticated with API key" and exits 0).
+7. IF the Host_Key is unset and `kiro-cli whoami` as `seance` fails, THEN THE Bootstrap_Script SHALL treat the Kiro credential as missing, SHALL keep the ircd from starting as it does today, and SHALL print a next step that names both options: the `kiro-cli login --use-device-flow` login and setting `KIRO_API_KEY` in the Env_File.
+8. IF the Host_Key is set and `kiro-cli whoami` as `seance` fails, THEN THE Bootstrap_Script SHALL treat the Kiro credential as missing, SHALL keep the ircd from starting, and SHALL print a next step that names `KIRO_API_KEY` and `/etc/seance/seance.env` without printing the Host_Key.
+9. WHEN the Bootstrap_Script finishes the credential check, IF the Host_Auth_Dir is set, THEN THE Bootstrap_Script SHALL run `systemctl enable --now seance-kiro-refresh.timer`; IF it is unset, criterion 10 applies.
+10. WHEN the Bootstrap_Script finishes the credential check, IF the Host_Auth_Dir is unset, THEN THE Bootstrap_Script SHALL run `systemctl disable --now seance-kiro-refresh.timer` and SHALL NOT fail if the timer is not installed or not enabled.
+11. WHEN the Update_Script restarts the agents, THE Update_Script SHALL enable the Refresh_Timer only if the Host_Auth_Dir is set, and SHALL otherwise run `systemctl disable --now seance-kiro-refresh.timer`.
+12. WHEN the Bootstrap_Script or the Update_Script decides on the Refresh_Timer, THE script SHALL read the Host_Auth_Dir with the same rule: the last uncommented `SEANCE_SANDBOX_AUTH_DIR=` line of the Env_File, with a blank value counted as unset.
+13. WHEN the Refresh_Script starts and `SEANCE_SANDBOX_AUTH_DIR` is unset or blank in its environment, THE Refresh_Script SHALL print exactly one log line starting with `seance-kiro-refresh:`, SHALL exit with status 0, and SHALL NOT read, copy, write or lock any file of the Kiro login.
+14. IF `SEANCE_SANDBOX_AUTH_DIR` is absent from the Refresh_Script's process environment, THEN THE Refresh_Script SHALL read it from the Env_File with the rule of criterion 12 before applying criterion 13.
+15. THE `seance-kiro-refresh.service` unit SHALL NOT contain `KIRO_API_KEY` in any `Environment=` line.
+16. THE Ircd_Unit SHALL NOT contain a `ConditionDirectoryNotEmpty=` directive.
+17. WHERE the Host_Auth_Dir is set, THE Ircd_Unit SHALL run an `ExecStartPre=` command that exits non-zero, so the ircd does not start, when the directory named by the Host_Auth_Dir has no entries. Because systemd cannot branch on the Env_File, the command reads `SEANCE_SANDBOX_AUTH_DIR` from the unit's `EnvironmentFile` and exits 0 when it is unset.
+18. THE Ircd_Unit SHALL contain a comment stating that `bootstrap.sh` and the Runner at start (Requirement 4, criterion 1) check the credential.
+19. THE Deploy_Docs SHALL describe the API-key path in `docs/DEPLOY.md` section 5: set `KIRO_API_KEY` in `/etc/seance/seance.env`, leave `SEANCE_SANDBOX_AUTH_DIR` unset, run no `kiro-cli login`, and expect no `seance-kiro-refresh.timer`.
+20. THE `docs/DEPLOY.md` section 5 SHALL state that `bootstrap.sh` checks the key with `kiro-cli whoami` as `seance` and that the key does not appear in the argv of that check.
+21. THE `docs/DEPLOY.md` section 5 SHALL tell the operator that switching a host from a login to the key means unsetting `SEANCE_SANDBOX_AUTH_DIR` and running `sudo /opt/seance/deploy/bootstrap.sh` again, which disables the Refresh_Timer, and that teardown (section 9) still disables the timer first.
+22. THE `deploy/seance.env.example` SHALL show `SEANCE_SANDBOX_AUTH_DIR` as optional with the comment that it enables the login refresh timer, and SHALL keep `KIRO_API_KEY` as a placeholder (Requirement 6, criterion 6).
+23. THE Deploy_Tests SHALL assert on the text of `deploy/bootstrap.sh` that the credential check passes the Host_Key through the environment of the `kiro-cli` process and that no line of the script places `KIRO_API_KEY=` followed by a variable expansion inside a command that is an argument of `sudo`, `su`, `runuser` or `env` on the same command line, and that the script contains no `set -x`, `bash -x` or `xtrace` option.
+24. THE Deploy_Tests SHALL run the credential-check function of the Bootstrap_Script (or its extracted helper) in a shell with fake `kiro-cli`, `sudo` and `systemctl` commands on `PATH`, and SHALL assert that the Host_Key is absent from the recorded argv of every fake command, from captured stdout and stderr, and present in the environment seen by the fake `kiro-cli`.
+25. THE Deploy_Tests SHALL assert that the Bootstrap_Script and the Update_Script enable the Refresh_Timer only inside a branch guarded by the Host_Auth_Dir check, and contain `systemctl disable --now seance-kiro-refresh.timer` for the unset case. The existing assertions on the number and position of the `systemctl enable ... seance-kiro-refresh.timer` lines SHALL be updated to the new structure.
+26. THE Deploy_Tests SHALL run the Refresh_Script with `SEANCE_SANDBOX_AUTH_DIR` unset and with a blank value, and SHALL assert exit status 0, exactly one output line starting with `seance-kiro-refresh:`, and that no file under a temporary `HOME` was created or changed.
+27. THE Deploy_Tests SHALL assert that the Ircd_Unit has no `ConditionDirectoryNotEmpty=` directive and that `docs/DEPLOY.md` section 5 and `deploy/seance.env.example` contain the statements of criteria 19, 20 and 22.
+28. IF `shellcheck` is installed, THEN every changed file under `deploy/*.sh` SHALL pass `shellcheck --severity=style deploy/*.sh` (the command of the CI workflow) with exit code 0.
+29. IF `shellcheck` is not installed, THEN the implementer SHALL report that it was not run, and the CI step `shellcheck --severity=style deploy/*.sh` SHALL remain the check.
+30. WHEN `pnpm typecheck` and `pnpm test` run at the repository root with the Requirement 15 changes applied, THE `apps/runner` and `apps/ircd` projects SHALL pass both with exit code 0, and THE Requirement 15 changes SHALL NOT modify `apps/web/next-env.d.ts`.
